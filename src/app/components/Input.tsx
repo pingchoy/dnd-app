@@ -19,6 +19,9 @@ export default function Input({
         name="userInput"
         id="userInput"
         onChange={(e) => handleUserInput(e)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSubmit();
+        }}
         className="rounded-t-none block h-24 w-full rounded-bl-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400  sm:text-sm sm:leading-6"
         placeholder="Your action"
         value={userInput}

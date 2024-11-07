@@ -1,10 +1,7 @@
 "use client";
-import Image from "next/image";
 import Input from "../components/Input";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ChatCard from "../components/ChatCard";
-import OpenAI from "openai";
-import { Assistant } from "openai/resources/beta/assistants.mjs";
 import { useSession } from "../hooks/useSession";
 
 export default function Home() {
@@ -21,6 +18,14 @@ export default function Home() {
 
   const handleSubmit = async () => {
     // Call gptPrompt API
+    setUserInput("");
+    const tmpMessageList = [...messageList];
+    tmpMessageList.push({
+      role: "player",
+      content: [{ text: { value: userInput } }],
+      created_at: new Date().toISOString(),
+    });
+    setMessageList(tmpMessageList);
     console.log(assistant, threadId);
     if (assistant && threadId) {
       setIsLoading(true);
@@ -61,7 +66,6 @@ export default function Home() {
           });
           setMessageList(data.messageList);
           setIsLoading(false);
-          setUserInput("");
         });
     }
   };
