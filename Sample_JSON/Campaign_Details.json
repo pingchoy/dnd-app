@@ -1,0 +1,39 @@
+{
+  "campaign": {
+    "title": "The Shadows of Evershade",
+    "background": "Evershade is a large, bustling city surrounded by dense forests and towering mountains. The city is known for its trade and diversity, but it harbors many dark secrets. Ancient ruins and hidden caverns lie beneath its streets, and rumors of dark magic and shadowy figures persist.",
+    "plot_line": "The players are a group of adventurers who have come to Evershade seeking fortune and glory. They soon discover that the city is plagued by a series of mysterious disappearances and strange occurrences. As they delve deeper, they uncover a dark conspiracy that threatens the very heart of Evershade. To save the city, they must navigate treacherous alliances, face formidable foes, and ultimately confront the source of the evil that lurks beneath Evershade.",
+    "allies": [
+      {
+        "name": "Captain Elara Thorne",
+        "description": "A stern and experienced captain of the Evershade City Guard. She is dedicated to maintaining order in the city and is one of the few people who suspects that something sinister is afoot."
+      },
+      {
+        "name": "Robin",
+        "description": "A rogue with a heart of gold who grew up on the streets of Evershade. He has a network of contacts throughout the city and can provide valuable information and assistance to the players."
+      },
+      {
+        "name": "Seraphina",
+        "description": "A wise and kind-hearted cleric who runs a small temple dedicated to the goddess of light. She offers healing and guidance to those in need and becomes a trusted ally to the players."
+      }
+    ],
+    "enemies": [
+      {
+        "name": "The Black Hand",
+        "description": "A secretive criminal organization that has its fingers in every illegal activity in Evershade. They are ruthless and will stop at nothing to protect their interests."
+      },
+      {
+        "name": "Shadow Wraiths",
+        "description": "Dark, ethereal beings that haunt the ancient ruins and caverns beneath the city. They are remnants of a long-forgotten war and serve the dark powers that threaten Evershade."
+      },
+      {
+        "name": "Corrupt Nobles",
+        "description": "A group of influential nobles who are involved in the dark conspiracy. They use their wealth and power to manipulate events in the city to their advantage."
+      }
+    ],
+    "big_boss": {
+      "name": "Lord Malakar",
+      "description": "An ancient and powerful sorcerer who seeks to plunge Evershade into darkness. He has been manipulating events from the shadows, using his dark magic to control the Black Hand and the Shadow Wraiths. The players must gather their strength and allies to face him in a final, epic showdown."
+    }
+  }
+}

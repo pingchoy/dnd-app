@@ -1,0 +1,18 @@
+{
+  "name": "Xavier",
+  "age": 27,
+  "height": "5'8\"",
+  "race": "Half-Elf",
+  "gender": "Male",
+  "class": "Rogue",
+  "level": 5,
+  "stats": {
+    "strength": 8,
+    "dexterity": 16,
+    "constitution": 12,
+    "intelligence": 14,
+    "wisdom": 10,
+    "charisma": 13
+  },
+  "backstory": "Xavier grew up in the bustling city of Evershade, a place teeming with crime and corruption. Orphaned at a young age, he learned to survive on the streets by picking pockets and running errands for local thieves' guilds. Despite his rough upbringing, Xavier has a strong moral compass and often uses his skills to help those in need. His half-elven heritage gives him an edge in both agility and charm, making him a valuable ally and a cunning adversary."
+}

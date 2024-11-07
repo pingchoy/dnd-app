@@ -1,0 +1,19 @@
+{
+    "name": "Glombus",
+    "age": 35,
+    "height": "6'0\"",
+    "race": "Human",
+    "gender": "Male",
+    "class": "Wizard",
+    "level": 7,
+    "stats": {
+      "strength": 8,
+      "dexterity": 12,
+      "constitution": 10,
+      "intelligence": 18,
+      "wisdom": 15,
+      "charisma": 11
+    },
+    "backstory": "Glombus was born in a small village on the outskirts of the kingdom. From a young age, he showed a remarkable aptitude for magic, often causing unintended magical effects when he was upset or excited. Recognizing his potential, his parents sent him to study at the Grand Academy of Magic in the capital city. Glombus excelled in his studies, becoming one of the academy's most promising students. After graduating, he chose to travel the world, seeking out ancient tomes and arcane knowledge to further enhance his magical abilities. Despite his scholarly demeanor, Glombus has a strong sense of justice and often uses his powers to protect the innocent and combat evil."
+  }
+  
