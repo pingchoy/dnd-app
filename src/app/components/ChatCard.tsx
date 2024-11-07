@@ -68,25 +68,27 @@ function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-export default function ChatCard({
-  message,
-  tokens,
-}: {
-  message: Message;
-  tokens: number;
-}) {
+export default function ChatCard({ message }: { message: Message }) {
   return (
     <div className="flex h-auto items-start space-x-4  mt-6" key={message.id}>
       <div className="flex-shrink-0">
-        <img
-          className="inline-block h-10 w-10 rounded-full"
-          src="https://images.unsplash.com/photo-1550525811-e5869dd03032?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
-          alt=""
-        />
+        {message.role === "assistant" ? (
+          <img
+            className="inline-block h-10 w-10 rounded-full"
+            src="https://external-preview.redd.it/what-is-your-opinion-on-ai-dungeon-masters-like-what-is-v0-WpaWjhuCTQqDr7Bjxfgk64VRVNcQRQdDef5AHf2Nm00.jpg?auto=webp&s=9b13adb0302ff2b30200fcf5f6e2d9595f7551ce"
+            alt=""
+          />
+        ) : (
+          <img
+            className="inline-block h-10 w-10 rounded-full"
+            src="https://easy-peasy.ai/cdn-cgi/image/quality=80,format=auto,width=700/https://fdczvxmwwjwpwbeeqcth.supabase.co/storage/v1/object/public/images/00255baa-a07c-4a37-9ede-f778c4dc6506/cf1754f3-8fe1-42bb-bd2f-25d2dd29be4e.png"
+            alt=""
+          />
+        )}
       </div>
       <div className="min-w-0 w-full h-auto grow">
         <form action="#" className="relative h-auto">
-          <div className="overflow-hidden  rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600">
+          <div className="overflow-hidden  rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600 bg-white">
             <label htmlFor="title" className="sr-only">
               DM
             </label>
@@ -105,9 +107,6 @@ export default function ChatCard({
               className="block w-full h-auto pb-6 px-4 resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
             >
               {cleanDialog(message.content[0].text.value)}
-              <br />
-              <br />
-              {"tokens:" + tokens}
             </div>
           </div>
         </form>

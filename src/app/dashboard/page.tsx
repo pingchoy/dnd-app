@@ -8,7 +8,7 @@ import { Assistant } from "openai/resources/beta/assistants.mjs";
 import { useSession } from "../hooks/useSession";
 
 export default function Home() {
-  const { assistant, threadId, existingMessageList } = useSession();
+  const { assistant, threadId, existingMessageList } = useSession(); // Input thread Id as argument if you want to get an existing session
 
   const [userInput, setUserInput] = useState("");
   const [currentRun, setCurrentRun] = useState();
@@ -21,7 +21,6 @@ export default function Home() {
 
   const handleSubmit = async () => {
     // Call gptPrompt API
-    console.log("Test");
     console.log(assistant, threadId);
     if (assistant && threadId) {
       setIsLoading(true);
@@ -68,24 +67,26 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-col h-screen items-center px-24 py-12 ">
-      <div className="w-full h-full overflow-auto mt-12 pb-12 border-gray-600 border-2 rounded-md rounded-b-none bg-white">
-        {messageList.map((message) => {
-          return (
-            <div className="w-full h-auto px-6" key={message.id}>
-              <ChatCard message={message} tokens={totalTokens} />
-            </div>
-          );
-        })}
-        {isLoading && <p>Loading...</p>}
+    <main className="flex flex-col h-screen items-center px-24 py-12 bg-gray-700 ">
+      <div className="flex flex-col w-full h-full overflow-auto mt-12 pb-12  border-gray-600 border-[1px] rounded-md rounded-b-none bg-gray-100">
+        <div className="flex flex-col h-full grow flex-1 items-start">
+          {messageList.map((message) => {
+            return (
+              <div className="w-full h-auto px-6" key={message.id}>
+                <ChatCard message={message} />
+              </div>
+            );
+          })}
+          {isLoading && <p>Loading...</p>}
+          <div className="mt-12 ml-6">Total Tokens Consumed: {totalTokens}</div>
+        </div>
       </div>
-      <Input setUserInput={setUserInput} />
-      <button
-        onClick={() => handleSubmit()}
-        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
-      >
-        Submit
-      </button>
+
+      <Input
+        userInput={userInput}
+        setUserInput={setUserInput}
+        handleSubmit={handleSubmit}
+      />
     </main>
   );
 }

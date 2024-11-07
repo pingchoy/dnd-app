@@ -158,48 +158,48 @@ export async function GET(
   });
 }
 
-// const generateEmbedding = async (text: string) => {
-//   const dataToUpload: any[] = [];
+const generateEmbedding = async (text: string) => {
+  const dataToUpload: any[] = [];
 
-//   const processedDialgoue = Promise.all(
-//     dialogue.messages.map(async (message) => {
-//       const processedText = `${message.name}: ${message.dialogue
-//         .toLowerCase()
-//         .trim()}`;
+  const processedDialgoue = Promise.all(
+    dialogue.messages.map(async (message) => {
+      const processedText = `${message.name}: ${message.dialogue
+        .toLowerCase()
+        .trim()}`;
 
-//       const embedding = await openai.embeddings
-//         .create({
-//           model: "text-embedding-ada-002",
-//           input: text,
-//         })
-//         .then((response) => {
-//           return response.data[0].embedding;
-//         });
+      const embedding = await openai.embeddings
+        .create({
+          model: "text-embedding-ada-002",
+          input: text,
+        })
+        .then((response) => {
+          return response.data[0].embedding;
+        });
 
-//       dataToUpload.push({
-//         name: message.name,
-//         embedding: embedding,
-//         metadata: message.dialogue,
-//       });
-//     })
-//   ).then(async () => {
-//     const jsonString = JSON.stringify(dataToUpload, null, 2);
-//     fs.writeFileSync("dnd_dialogues.json", jsonString);
-//     console.log("Data prepared and saved to dnd_dialogues.json");
+      dataToUpload.push({
+        name: message.name,
+        embedding: embedding,
+        metadata: message.dialogue,
+      });
+    })
+  ).then(async () => {
+    const jsonString = JSON.stringify(dataToUpload, null, 2);
+    fs.writeFileSync("dnd_dialogues.json", jsonString);
+    console.log("Data prepared and saved to dnd_dialogues.json");
 
-//     const response = await openai.files.create({
-//       file: fs.createReadStream("dnd_dialogues.json"),
-//       purpose: "assistants",
-//     });
+    const response = await openai.files.create({
+      file: fs.createReadStream("dnd_dialogues.json"),
+      purpose: "assistants",
+    });
 
-//     const myVectorStoreFile = await openai.beta.vectorStores.files.create(
-//       "vs_cfvOlQZ6ZUQSc4Q3t5K8yRgu",
-//       {
-//         file_id: response.id,
-//       }
-//     );
+    const myVectorStoreFile = await openai.beta.vectorStores.files.create(
+      "vs_cfvOlQZ6ZUQSc4Q3t5K8yRgu",
+      {
+        file_id: response.id,
+      }
+    );
 
-//     console.log(myVectorStoreFile);
-//     return myVectorStoreFile;
-//   });
-// };
+    console.log(myVectorStoreFile);
+    return myVectorStoreFile;
+  });
+};
