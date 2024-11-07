@@ -96,7 +96,7 @@ export default function ChatCard({ message }: { message: Message }) {
               type="text"
               name="title"
               id="title"
-              className="block w-full border-0 pt-2.5 text-lg font-medium placeholder:text-gray-400 focus:ring-0 bg-transparent"
+              className="block w-full border-0 pt-2.5 text-lg font-medium placeholder:text-gray-400 text-gray-900 focus:ring-0 bg-transparent"
               placeholder="Title"
               defaultValue={
                 message.role === "assistant" ? "Dungeon Master" : "Player"

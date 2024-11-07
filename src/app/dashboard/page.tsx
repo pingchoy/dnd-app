@@ -10,7 +10,7 @@ export default function Home() {
   const [userInput, setUserInput] = useState("");
   const [currentRun, setCurrentRun] = useState();
   const [messageList, setMessageList] = useState<any[]>(
-    existingMessageList ?? []
+    existingMessageList ?? [],
   );
   const [isLoading, setIsLoading] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
@@ -82,7 +82,9 @@ export default function Home() {
             );
           })}
           {isLoading && <p>Loading...</p>}
-          <div className="mt-12 ml-6">Total Tokens Consumed: {totalTokens}</div>
+          <div className="mt-12 ml-6 text-gray-900">
+            Total Tokens Consumed: {totalTokens}
+          </div>
         </div>
       </div>
 
