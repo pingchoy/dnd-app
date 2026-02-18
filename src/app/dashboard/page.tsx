@@ -1,98 +1,176 @@
 "use client";
-import Input from "../components/Input";
-import { useState } from "react";
-import ChatCard from "../components/ChatCard";
-import { useSession } from "../hooks/useSession";
 
-export default function Home() {
-  const { assistant, threadId, existingMessageList } = useSession(); // Input thread Id as argument if you want to get an existing session
+import { useRef, useEffect } from "react";
+import { useState } from "react";
+import Input from "../components/Input";
+import ChatCard from "../components/ChatCard";
+import DiceRoll from "../components/DiceRoll";
+import CharacterSheet from "../components/CharacterSheet";
+import { useChat } from "../hooks/useChat";
+
+function HpBar({ current, max }: { current: number; max: number }) {
+  const pct = max > 0 ? (current / max) * 100 : 0;
+  const color = pct > 50 ? "#4ade80" : pct > 25 ? "#facc15" : "#f87171";
+  return (
+    <div className="hp-bar w-20">
+      <div className="hp-fill" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  );
+}
+
+function LoadingIndicator({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 px-6 py-4 mt-2 animate-fade-in">
+      <div className="w-8 h-8 rounded-full bg-dungeon-mid border border-gold/40 flex items-center justify-center">
+        <span className="text-gold text-xs">✦</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-parchment/50 font-crimson italic text-sm mr-1">{label}</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-1" />
+        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-2" />
+        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-3" />
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const {
+    messages,
+    gameState,
+    pendingRoll,
+    isRolling,
+    isNarrating,
+    totalTokens,
+    estimatedCostUsd,
+    sendMessage,
+    confirmRoll,
+  } = useChat();
 
   const [userInput, setUserInput] = useState("");
-  const [currentRun, setCurrentRun] = useState();
-  const [messageList, setMessageList] = useState<any[]>(
-    existingMessageList ?? [],
-  );
-  const [isLoading, setIsLoading] = useState(false);
-  const [totalTokens, setTotalTokens] = useState(0);
-  const [playerName, setPlayerName] = useState("Xavier");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, pendingRoll, isRolling, isNarrating]);
 
   const handleSubmit = async () => {
-    // Call gptPrompt API
+    const input = userInput.trim();
+    if (!input) return;
     setUserInput("");
-    const tmpMessageList = [...messageList];
-    tmpMessageList.push({
-      role: "player",
-      content: [{ text: { value: userInput } }],
-      created_at: new Date().toISOString(),
-    });
-    setMessageList(tmpMessageList);
-    console.log(assistant, threadId);
-    if (assistant && threadId) {
-      setIsLoading(true);
-      const inputWithMetadata = `%%%Player_Character=${playerName}\n${userInput}`;
-
-      const messageRes = await fetch("/api/Message", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          threadId,
-          inputWithMetadata,
-        }),
-      });
-      console.log(messageRes);
-
-      const runRes = fetch("/api/Run", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          assistantId: assistant.id,
-          threadId: threadId,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          console.log(data);
-          setTotalTokens(totalTokens + data.token);
-          // sort data.messageList
-          data.messageList.sort((a: any, b: any) => {
-            return (
-              new Date(a.created_at).getTime() -
-              new Date(b.created_at).getTime()
-            );
-          });
-          setMessageList(data.messageList);
-          setIsLoading(false);
-        });
-    }
+    await sendMessage(input);
   };
 
+  const { player, story } = gameState;
+  const isBusy = isRolling || isNarrating || !!pendingRoll;
+
   return (
-    <main className="flex flex-col h-screen items-center px-24 py-12 bg-gray-700 ">
-      <div className="flex flex-col w-full h-full overflow-auto mt-12 pb-12  border-gray-600 border-[1px] rounded-md rounded-b-none bg-gray-100">
-        <div className="flex flex-col h-full grow flex-1 items-start">
-          {messageList.map((message) => {
-            return (
-              <div className="w-full h-auto px-6" key={message.id}>
-                <ChatCard message={message} />
+    <main className="flex flex-col h-screen bg-dungeon bg-stone-texture">
+      {/* ── Mobile sheet pop-out ── */}
+      {sheetOpen && (
+        <div
+          className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm h-[85vh] rounded-lg overflow-hidden border border-gold-dark/40 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-full flex flex-col">
+              <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-2 flex items-center justify-between">
+                <span className="font-cinzel text-gold text-xs tracking-widest uppercase">✦ Character Sheet ✦</span>
+                <button
+                  onClick={() => setSheetOpen(false)}
+                  className="font-cinzel text-parchment/40 hover:text-parchment text-lg leading-none"
+                >
+                  ✕
+                </button>
               </div>
-            );
-          })}
-          {isLoading && <p>Loading...</p>}
-          <div className="mt-12 ml-6 text-gray-900">
-            Total Tokens Consumed: {totalTokens}
+              <div className="flex-1 overflow-hidden">
+                <CharacterSheet player={player} />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <Input
-        userInput={userInput}
-        setUserInput={setUserInput}
-        handleSubmit={handleSubmit}
-      />
+      {/* ── Header ── */}
+      <header className="flex-shrink-0 border-b border-[#3a2a1a] bg-dungeon-light/90 backdrop-blur-sm px-4 sm:px-6 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-cinzel text-gold text-sm sm:text-lg tracking-[0.15em] sm:tracking-[0.2em] uppercase leading-none truncate">
+            ✦ {story.campaignTitle} ✦
+          </h1>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {/* Stats (hidden on small mobile) */}
+            <div className="hidden sm:flex items-center gap-x-3 text-xs font-cinzel text-parchment/50 tracking-wide">
+              <span className="text-parchment/70 hidden md:inline">{story.currentLocation}</span>
+              <span className="text-parchment/30 hidden md:inline">|</span>
+              <span>{totalTokens.toLocaleString()} tokens</span>
+              <span className="text-gold/50">est. ${estimatedCostUsd.toFixed(4)}</span>
+            </div>
+            {/* Mobile sheet button */}
+            <button
+              onClick={() => setSheetOpen(true)}
+              className="lg:hidden font-cinzel text-[10px] tracking-widest text-parchment/40 uppercase border border-parchment/20 rounded px-2 py-1 hover:text-gold hover:border-gold/40 transition-colors"
+            >
+              Sheet
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Body: chat + sidebar ── */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* ── Left: chat area ── */}
+        <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-4 min-w-0">
+          <div className="tome-container flex-1 overflow-hidden flex flex-col rounded-t-md">
+            <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+
+              {messages.map((message, idx) => (
+                <ChatCard key={idx} message={message} />
+              ))}
+
+              {isRolling && <LoadingIndicator label="The fates are consulted" />}
+
+              {pendingRoll && (
+                <DiceRoll
+                  result={pendingRoll.parsed}
+                  onContinue={confirmRoll}
+                  isNarrating={isNarrating}
+                />
+              )}
+
+              {isNarrating && !pendingRoll && (
+                <LoadingIndicator label="The Dungeon Master weaves the tale" />
+              )}
+
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Session stats footer */}
+            <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 sm:px-6 py-2 flex items-center justify-end">
+              <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
+                <span>{totalTokens.toLocaleString()} tokens</span>
+                <span className="text-parchment/20">|</span>
+                <span className="text-gold/50">est. ${estimatedCostUsd.toFixed(4)}</span>
+              </div>
+            </div>
+          </div>
+
+          <Input
+            userInput={userInput}
+            setUserInput={setUserInput}
+            handleSubmit={handleSubmit}
+            disabled={isBusy}
+          />
+        </div>
+
+        {/* ── Right: character sheet sidebar (desktop only) ── */}
+        <aside className="hidden lg:block w-80 flex-shrink-0 overflow-hidden border-l border-[#3a2a1a]">
+          <CharacterSheet player={player} />
+        </aside>
+      </div>
     </main>
   );
 }

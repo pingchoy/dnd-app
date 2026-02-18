@@ -1,115 +1,48 @@
-import { Fragment, useState } from "react";
-import {
-  FaceFrownIcon,
-  FaceSmileIcon,
-  FireIcon,
-  HandThumbUpIcon,
-  HeartIcon,
-  PaperClipIcon,
-  XMarkIcon,
-} from "@heroicons/react/20/solid";
-import {
-  Label,
-  Listbox,
-  ListboxButton,
-  ListboxOption,
-  ListboxOptions,
-  Transition,
-} from "@headlessui/react";
-import { Message } from "openai/resources/beta/threads/messages.mjs";
-import { cleanDialog } from "../utils/cleanDialog";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { ChatMessage } from "../hooks/useChat";
+import DiceRoll from "./DiceRoll";
 
-const moods = [
-  {
-    name: "Excited",
-    value: "excited",
-    icon: FireIcon,
-    iconColor: "text-white",
-    bgColor: "bg-red-500",
-  },
-  {
-    name: "Loved",
-    value: "loved",
-    icon: HeartIcon,
-    iconColor: "text-white",
-    bgColor: "bg-pink-400",
-  },
-  {
-    name: "Happy",
-    value: "happy",
-    icon: FaceSmileIcon,
-    iconColor: "text-white",
-    bgColor: "bg-green-400",
-  },
-  {
-    name: "Sad",
-    value: "sad",
-    icon: FaceFrownIcon,
-    iconColor: "text-white",
-    bgColor: "bg-yellow-400",
-  },
-  {
-    name: "Thumbsy",
-    value: "thumbsy",
-    icon: HandThumbUpIcon,
-    iconColor: "text-white",
-    bgColor: "bg-blue-500",
-  },
-  {
-    name: "I feel nothing",
-    value: null,
-    icon: XMarkIcon,
-    iconColor: "text-gray-400",
-    bgColor: "bg-transparent",
-  },
-];
+export default function ChatCard({ message }: { message: ChatMessage }) {
+  // Historical dice-roll card — no avatar, just the compact roll result
+  if (message.rollResult) {
+    return <DiceRoll result={message.rollResult} isHistorical />;
+  }
 
-function classNames(...classes: string[]) {
-  return classes.filter(Boolean).join(" ");
-}
+  const isDM = message.role === "assistant";
 
-export default function ChatCard({ message }: { message: Message }) {
   return (
-    <div className="flex h-auto items-start space-x-4  mt-6" key={message.id}>
+    <div className={`animate-fade-in flex gap-4 mt-5 ${isDM ? "" : "flex-row-reverse"}`}>
+      {/* Avatar */}
       <div className="flex-shrink-0">
-        {message.role === "assistant" ? (
+        <div className={`relative w-11 h-11 rounded-full overflow-hidden border-2 ${isDM ? "border-gold" : "border-[#6b7280]"} shadow-lg`}>
           <img
-            className="inline-block h-10 w-10 rounded-full"
-            src="https://external-preview.redd.it/what-is-your-opinion-on-ai-dungeon-masters-like-what-is-v0-WpaWjhuCTQqDr7Bjxfgk64VRVNcQRQdDef5AHf2Nm00.jpg?auto=webp&s=9b13adb0302ff2b30200fcf5f6e2d9595f7551ce"
-            alt=""
+            src={
+              isDM
+                ? "https://external-preview.redd.it/what-is-your-opinion-on-ai-dungeon-masters-like-what-is-v0-WpaWjhuCTQqDr7Bjxfgk64VRVNcQRQdDef5AHf2Nm00.jpg?auto=webp&s=9b13adb0302ff2b30200fcf5f6e2d9595f7551ce"
+                : "https://easy-peasy.ai/cdn-cgi/image/quality=80,format=auto,width=700/https://fdczvxmwwjwpwbeeqcth.supabase.co/storage/v1/object/public/images/00255baa-a07c-4a37-9ede-f778c4dc6506/cf1754f3-8fe1-42bb-bd2f-25d2dd29be4e.png"
+            }
+            alt={isDM ? "Dungeon Master" : "Player"}
+            className="w-full h-full object-cover"
           />
-        ) : (
-          <img
-            className="inline-block h-10 w-10 rounded-full"
-            src="https://easy-peasy.ai/cdn-cgi/image/quality=80,format=auto,width=700/https://fdczvxmwwjwpwbeeqcth.supabase.co/storage/v1/object/public/images/00255baa-a07c-4a37-9ede-f778c4dc6506/cf1754f3-8fe1-42bb-bd2f-25d2dd29be4e.png"
-            alt=""
-          />
-        )}
+        </div>
       </div>
-      <div className="min-w-0 w-full h-auto grow">
-        <form action="#" className="relative h-auto">
-          <div className="overflow-hidden  rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600 bg-white">
-            <label htmlFor="title" className="sr-only">
-              DM
-            </label>
-            <input
-              type="text"
-              name="title"
-              id="title"
-              className="block w-full border-0 pt-2.5 text-lg font-medium placeholder:text-gray-400 text-gray-900 focus:ring-0 bg-transparent"
-              placeholder="Title"
-              defaultValue={
-                message.role === "assistant" ? "Dungeon Master" : "Player"
-              }
-            />
-            <div
-              id="comment"
-              className="block w-full h-auto pb-6 px-4 resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
-            >
-              {cleanDialog(message.content[0].text.value)}
-            </div>
-          </div>
-        </form>
+
+      {/* Message card */}
+      <div className={`flex-1 min-w-0 rounded-md overflow-hidden border-l-4 ${isDM ? "card-parchment border-gold-dark" : "card-parchment-player border-[#6b7280]"}`}>
+        <div className={`px-4 pt-3 pb-1 border-b ${isDM ? "border-gold-dark/30" : "border-gray-300/60"}`}>
+          <span className={`font-cinzel text-xs tracking-widest uppercase ${isDM ? "text-gold-dark" : "text-[#5a5a5a]"}`}>
+            {isDM ? "✦ Dungeon Master ✦" : "Xavier"}
+          </span>
+        </div>
+        <div className="px-4 py-3 text-ink text-[1.05rem] leading-relaxed prose prose-stone max-w-none
+          prose-strong:text-ink prose-strong:font-semibold
+          prose-em:italic prose-em:text-ink/80
+          prose-p:my-2 prose-p:leading-relaxed
+          prose-ul:my-2 prose-ul:pl-5 prose-li:my-0.5
+          prose-hr:border-gold-dark/30">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );
