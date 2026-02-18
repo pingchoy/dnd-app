@@ -15,22 +15,28 @@ import {
   isContestedAction,
   parseRulesOutcome,
 } from "../../agents/rulesAgent";
-import { getGameState } from "../../lib/gameState";
+import { loadGameState } from "../../lib/gameState";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { playerInput } = (await req.json()) as { playerInput: string };
+    const { characterId, playerInput } = (await req.json()) as {
+      characterId: string;
+      playerInput: string;
+    };
 
     if (!playerInput?.trim()) {
       return NextResponse.json({ error: "playerInput is required" }, { status: 400 });
+    }
+    if (!characterId?.trim()) {
+      return NextResponse.json({ error: "characterId is required" }, { status: 400 });
     }
 
     if (!isContestedAction(playerInput)) {
       return NextResponse.json({ isContested: false });
     }
 
-    const gameState = getGameState();
+    const gameState = await loadGameState(characterId);
     const outcome = await getRulesOutcome(playerInput, gameState.player, gameState.story.activeNPCs);
     const parsed = parseRulesOutcome(outcome.raw, outcome.roll);
     const rulesCost = calculateCost(

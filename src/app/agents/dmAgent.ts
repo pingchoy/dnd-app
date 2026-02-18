@@ -19,7 +19,6 @@ import {
   NPC,
   StateChanges,
   UpdateNPCInput,
-  applyStateChanges,
   createNPC,
   serializePlayerState,
   serializeStoryState,
@@ -45,6 +44,7 @@ const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       scene_update:       { type: "string", description: "Current scene state (1-2 sentences)." },
       notable_event:      { type: "string", description: "Key event to record (past tense, 1 sentence)." },
       gold_delta:         { type: "number",  description: "Gold change. Negative = spending, positive = receiving." },
+      xp_gained:          { type: "number",  description: "XP awarded to the player (e.g. after defeating enemies or completing objectives)." },
     },
     required: [],
   },
@@ -208,8 +208,8 @@ export async function getDMResponse(
       narrative += block.text;
     } else if (block.type === "tool_use") {
       if (block.name === "update_game_state") {
+        // Collect changes — the route will apply + persist them
         stateChanges = block.input as StateChanges;
-        applyStateChanges(stateChanges);
       } else if (block.name === "create_npc") {
         createNPC(block.input as CreateNPCInput);
       } else if (block.name === "update_npc") {

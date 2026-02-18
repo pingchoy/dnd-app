@@ -1,12 +1,19 @@
 /**
- * In-memory game state singleton.
+ * Game state — types, singleton, helpers, and Firestore persistence.
  *
- * Initialised from Xavier's character sheet (Player_Character_Xavier.json)
- * and The Shadows of Evershade campaign (Campaign_Details.json).
+ * The in-memory singleton is used within a single request.  Firestore
+ * is the durable store: loadGameState() hydrates the singleton at the
+ * start of each request; applyStateChangesAndPersist() flushes it at
+ * the end.
  *
- * A Firestore integration can replace this module later without touching
- * the agent or route code — just swap the getter/setter functions.
+ * activeNPCs are ephemeral (per-session only) and are never persisted.
  */
+
+import {
+  getSRDClassLevel,
+  loadCharacter,
+  saveCharacterState,
+} from "./characterStore";
 
 export interface CharacterStats {
   strength: number;
@@ -17,17 +24,28 @@ export interface CharacterStats {
   charisma: number;
 }
 
+export interface CharacterFeature {
+  name: string;
+  description: string;
+  level: number;        // level at which the feature was gained
+  scalesWithLevel?: boolean;
+  scalingFormula?: string; // e.g. "ceil(level/2)" — stored for display only
+}
+
 export interface PlayerState {
   name: string;
   characterClass: string;
-  level: number;
   race: string;
+  level: number;
+  hitDie: number;       // class hit die (d6=6, d8=8, d10=10, d12=12)
+  xp: number;
   currentHP: number;
   maxHP: number;
   armorClass: number;
   stats: CharacterStats;
   savingThrowProficiencies: string[];
   skillProficiencies: string[];
+  features: CharacterFeature[];
   inventory: string[];
   conditions: string[];
   gold: number;
@@ -140,85 +158,56 @@ export function serializeStoryState(s: StoryState): string {
 
 // ─── Opening narrative ────────────────────────────────────────────────────────
 
-export const OPENING_NARRATIVE = `You are **Xavier**, a **Half-Elf Rogue** of considerable skill and questionable reputation. Five levels deep into a life of shadow-work, you carry a shortsword at your hip, a hand crossbow across your back, and a set of thieves' tools that have never met a lock they couldn't eventually persuade.
+/**
+ * Generic opening message shown in the chat UI for brand-new characters
+ * (i.e. those with no conversation history yet).
+ * The DM will establish the actual scene in the first response.
+ */
+export const OPENING_NARRATIVE = `*Your adventure begins.*
 
----
+The world stretches before you — full of shadow, wonder, and danger in equal measure. Ancient ruins whisper secrets to those bold enough to listen. Taverns buzz with rumour. Roads fork at crossroads where choices echo for lifetimes.
 
-The city of **Evershade** swallows you whole the moment you pass through its iron gates. It is a place of crooked spires, candlelit alleys, and the persistent smell of river mud and old secrets. You have come here following rumours — three merchants, a city guard, and a minor noble have vanished without trace over the past fortnight. No bodies. No ransom notes. Just absence, spreading through the city like a cold draft under a door.
+Describe your first action, and the story will unfold from there.
 
-Your boots find the warped floorboards of **The Dagger's Edge Tavern**, a low-ceilinged den wedged between a tannery and a moneylender on the edge of the Merchant Quarter. The common room is half-full despite the early hour. Dice rattle somewhere in the back. A barmaid moves between tables with the efficiency of someone who has learned not to make eye contact.
-
-*In the far corner, half-hidden by the shadow of a support beam, sits a hooded figure nursing a drink they haven't touched.* They have not looked up since you entered — and yet you have the distinct impression they knew you were coming.
-
-What do you do?`;
+**What do you do?**`;
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
 
-export const INITIAL_GAME_STATE: GameState = {
+/**
+ * In-memory game state for the current request.
+ * Always initialised by loadGameState() before use — the placeholder below
+ * is never read in normal operation.
+ */
+let state: GameState = {
   player: {
-    name: "Xavier",
-    characterClass: "Rogue",
-    level: 5,
-    race: "Half-Elf",
-    currentHP: 27,
-    maxHP: 27,
-    armorClass: 14,
-    stats: {
-      strength: 8,
-      dexterity: 16,
-      constitution: 12,
-      intelligence: 14,
-      wisdom: 10,
-      charisma: 13,
-    },
-    savingThrowProficiencies: ["Dexterity", "Intelligence"],
-    skillProficiencies: [
-      "Stealth",
-      "Sleight of Hand",
-      "Thieves' Tools",
-      "Perception",
-      "Deception",
-      "Athletics",
-      "Persuasion",
-    ],
-    inventory: [
-      "Shortsword",
-      "Hand Crossbow (20 bolts)",
-      "Leather Armor",
-      "Thieves' Tools",
-      "Burglar's Pack",
-      "Dagger (x2)",
-    ],
+    name: "",
+    characterClass: "",
+    race: "",
+    level: 1,
+    hitDie: 8,
+    xp: 0,
+    currentHP: 0,
+    maxHP: 0,
+    armorClass: 10,
+    stats: { strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8 },
+    savingThrowProficiencies: [],
+    skillProficiencies: [],
+    features: [],
+    inventory: [],
     conditions: [],
-    gold: 50,
+    gold: 0,
   },
-
   story: {
-    campaignTitle: "The Shadows of Evershade",
-    campaignBackground:
-      "A sprawling city with forests, mountains, and ancient ruins. Mysterious disappearances plague the population. A dark conspiracy involving corrupt nobles and an ancient sorcerer named Lord Malakar lurks beneath the surface.",
-    currentLocation: "Evershade City — The Dagger's Edge Tavern",
-    currentScene:
-      "Xavier has just arrived in Evershade City. The Dagger's Edge Tavern buzzes with nervous whispers about recent disappearances. A hooded figure in the corner watches the door.",
-    activeQuests: ["Investigate the mysterious disappearances in Evershade"],
-    importantNPCs: [
-      "Captain Elara Thorne (City Guard, ally)",
-      "Robin (Rogue informant, neutral)",
-      "Seraphina (Cleric healer, ally)",
-      "Lord Malakar (Ancient sorcerer, main villain — unknown to player)",
-    ],
+    campaignTitle: "",
+    campaignBackground: "",
+    currentLocation: "",
+    currentScene: "",
+    activeQuests: [],
+    importantNPCs: [],
     activeNPCs: [],
     recentEvents: [],
   },
-
   conversationHistory: [],
-};
-
-// Server-side mutable copy
-let state: GameState = {
-  ...INITIAL_GAME_STATE,
-  player: { ...INITIAL_GAME_STATE.player },
-  story: { ...INITIAL_GAME_STATE.story, activeNPCs: [], importantNPCs: [...INITIAL_GAME_STATE.story.importantNPCs] },
 };
 
 // ─── Getters / Setters ────────────────────────────────────────────────────────
@@ -250,6 +239,7 @@ export interface StateChanges {
   scene_update?: string;
   notable_event?: string;
   gold_delta?: number;
+  xp_gained?: number;
 }
 
 export function applyStateChanges(changes: StateChanges): void {
@@ -287,6 +277,7 @@ export function applyStateChanges(changes: StateChanges): void {
     if (s.recentEvents.length > 10) s.recentEvents = s.recentEvents.slice(-10);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
+  if (changes.xp_gained && changes.xp_gained > 0) p.xp = (p.xp ?? 0) + changes.xp_gained;
 }
 
 // ─── NPC management ───────────────────────────────────────────────────────────
@@ -352,4 +343,120 @@ export function updateNPC(input: UpdateNPCInput): void {
   if (input.remove_from_scene) {
     state.story.activeNPCs = state.story.activeNPCs.filter((n) => n.id !== npc.id);
   }
+}
+
+// ─── XP / Level-up ────────────────────────────────────────────────────────────
+
+/** XP required to reach each level (index 0 = level 1, index 19 = level 20). */
+export const XP_THRESHOLDS = [
+  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
+  85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
+];
+
+export function xpForLevel(level: number): number {
+  return XP_THRESHOLDS[Math.max(0, level - 1)] ?? 0;
+}
+
+function levelForXP(xp: number): number {
+  let level = 1;
+  for (let i = 1; i < XP_THRESHOLDS.length; i++) {
+    if (xp >= XP_THRESHOLDS[i]) level = i + 1;
+    else break;
+  }
+  return Math.min(level, 20);
+}
+
+// ─── Firestore-backed async functions ─────────────────────────────────────────
+
+/**
+ * Load a character from Firestore and hydrate the in-memory singleton.
+ * activeNPCs are ephemeral and always start empty.
+ */
+export async function loadGameState(characterId: string): Promise<GameState> {
+  const stored = await loadCharacter(characterId);
+  if (!stored) throw new Error(`Character "${characterId}" not found in Firestore`);
+
+  state = {
+    player: stored.player,
+    story: {
+      ...stored.story,
+      activeNPCs: [], // ephemeral — never persisted
+    },
+    conversationHistory: stored.conversationHistory,
+  };
+
+  return state;
+}
+
+/** Persist current in-memory state to Firestore (strips ephemeral activeNPCs). */
+async function persistState(characterId: string): Promise<void> {
+  await saveCharacterState(characterId, {
+    player: state.player,
+    story: {
+      ...state.story,
+      activeNPCs: [],
+    },
+    // Keep last 40 conversation entries (20 user+assistant pairs)
+    conversationHistory: state.conversationHistory.slice(-40),
+  });
+}
+
+/**
+ * Apply state changes to the in-memory singleton and persist to Firestore.
+ * Also triggers awardXPAsync if xp_gained is set and a level-up occurs.
+ */
+export async function applyStateChangesAndPersist(
+  changes: StateChanges,
+  characterId: string,
+): Promise<void> {
+  applyStateChanges(changes);
+
+  if (changes.xp_gained && changes.xp_gained > 0) {
+    await awardXPAsync(characterId, 0); // XP already added by applyStateChanges; check level-up
+  }
+
+  await persistState(characterId);
+}
+
+/**
+ * Award XP to the player and handle level-up if a threshold is crossed.
+ * Fetches new features from srdClassLevels in Firestore (class-agnostic).
+ * HP gain = floor(hitDie / 2) + 1 + CON modifier.
+ *
+ * @param characterId  Firestore character document ID
+ * @param amount       XP to award (0 = just check if current xp triggers level-up)
+ */
+export async function awardXPAsync(characterId: string, amount: number): Promise<void> {
+  if (amount > 0) state.player.xp = (state.player.xp ?? 0) + amount;
+
+  const currentLevel = state.player.level;
+  const targetLevel = levelForXP(state.player.xp);
+
+  if (targetLevel <= currentLevel) return; // no level-up needed
+
+  for (let lvl = currentLevel + 1; lvl <= targetLevel; lvl++) {
+    const classSlug = state.player.characterClass.toLowerCase();
+    const levelData = await getSRDClassLevel(classSlug, lvl);
+
+    // Class-agnostic HP: floor(hitDie/2) + 1 + CON modifier
+    const conMod = getModifier(state.player.stats.constitution);
+    const hpGain = Math.floor(state.player.hitDie / 2) + 1 + conMod;
+    state.player.maxHP += hpGain;
+    state.player.currentHP = Math.min(state.player.currentHP + hpGain, state.player.maxHP);
+
+    // Append new features from Firestore (deduplicate by name)
+    for (const feat of levelData?.features ?? []) {
+      if (!state.player.features.some((f) => f.name === feat.name)) {
+        state.player.features.push({
+          name: feat.name,
+          description: feat.description,
+          level: lvl,
+        });
+      }
+    }
+
+    state.player.level = lvl;
+  }
+
+  await persistState(characterId);
 }

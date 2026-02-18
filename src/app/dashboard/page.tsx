@@ -39,6 +39,7 @@ export default function Dashboard() {
     messages,
     gameState,
     pendingRoll,
+    isLoading,
     isRolling,
     isNarrating,
     totalTokens,
@@ -61,6 +62,17 @@ export default function Dashboard() {
     setUserInput("");
     await sendMessage(input);
   };
+
+  if (isLoading || !gameState) {
+    return (
+      <main className="flex items-center justify-center h-screen bg-dungeon">
+        <div className="flex flex-col items-center gap-4">
+          <span className="font-cinzel text-gold text-3xl animate-pulse">✦</span>
+          <p className="font-crimson text-parchment/50 italic text-sm">Loading your adventure…</p>
+        </div>
+      </main>
+    );
+  }
 
   const { player, story } = gameState;
   const isBusy = isRolling || isNarrating || !!pendingRoll;

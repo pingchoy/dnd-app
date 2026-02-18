@@ -7,12 +7,21 @@
  *
  * If precomputedRules is provided the rules agent is skipped entirely —
  * no duplicate API call, no duplicate cost.
+ *
+ * GET /api/chat?characterId=xxx
+ *   Returns the current game state for a character (used on initial load).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDMResponse } from "../../agents/dmAgent";
 import { getRulesOutcome, isContestedAction } from "../../agents/rulesAgent";
-import { addConversationTurn, getGameState } from "../../lib/gameState";
+import {
+  addConversationTurn,
+  applyStateChangesAndPersist,
+  awardXPAsync,
+  getGameState,
+  loadGameState,
+} from "../../lib/gameState";
 import { HISTORY_WINDOW, MODELS, calculateCost } from "../../lib/anthropic";
 import { RulesOutcome } from "../../agents/rulesAgent";
 
@@ -25,17 +34,21 @@ interface PrecomputedRules {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
+      characterId: string;
       playerInput: string;
       precomputedRules?: PrecomputedRules;
     };
 
-    const { playerInput, precomputedRules } = body;
+    const { characterId, playerInput, precomputedRules } = body;
 
     if (!playerInput?.trim()) {
       return NextResponse.json({ error: "playerInput is required" }, { status: 400 });
     }
+    if (!characterId?.trim()) {
+      return NextResponse.json({ error: "characterId is required" }, { status: 400 });
+    }
 
-    const gameState = getGameState();
+    const gameState = await loadGameState(characterId);
     let rulesOutcome: RulesOutcome | null = null;
     let rulesCost = 0;
 
@@ -60,6 +73,18 @@ export async function POST(req: NextRequest) {
     addConversationTurn("user", playerInput, HISTORY_WINDOW);
     addConversationTurn("assistant", dmResult.narrative, HISTORY_WINDOW);
 
+    // Apply state changes (HP, inventory, conditions, gold, XP) and persist to Firestore
+    if (dmResult.stateChanges) {
+      await applyStateChangesAndPersist(dmResult.stateChanges, characterId);
+    } else {
+      // No state changes from DM — still persist conversation history
+      await applyStateChangesAndPersist({}, characterId);
+    }
+
+    // Standalone XP awards (e.g. from route-level logic, future quest rewards)
+    // awardXPAsync is also called inside applyStateChangesAndPersist when xp_gained is set.
+    // This block is a hook for future use.
+
     return NextResponse.json({
       narrative: dmResult.narrative,
       gameState: getGameState(),
@@ -77,6 +102,17 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({ gameState: getGameState() });
+export async function GET(req: NextRequest) {
+  try {
+    const characterId = req.nextUrl.searchParams.get("characterId");
+    if (!characterId) {
+      return NextResponse.json({ error: "characterId query param is required" }, { status: 400 });
+    }
+    const gameState = await loadGameState(characterId);
+    return NextResponse.json({ gameState });
+  } catch (err: unknown) {
+    console.error("[/api/chat GET]", err);
+    const message = err instanceof Error ? err.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
