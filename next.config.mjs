@@ -4,7 +4,10 @@ const nextConfig = {
   // be bundled for the browser. Marking it external tells Next.js to leave it
   // as a native require() so it only runs in server-side contexts.
   experimental: {
-    serverComponentsExternalPackages: ["firebase-admin"],
+    serverComponentsExternalPackages: [
+      "firebase-admin",
+      "@google-cloud/firestore",
+    ],
   },
 };
 
