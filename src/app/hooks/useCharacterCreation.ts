@@ -9,7 +9,7 @@ import {
   getAllSRDRaces,
   getSRDClassLevel,
 } from "../lib/characterStore";
-import { getModifier } from "../lib/gameState";
+import { getModifier, xpForLevel } from "../lib/gameState";
 import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameState";
 import { CHARACTER_ID_KEY } from "./useChat";
 
@@ -245,6 +245,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         level: 1,
         hitDie: selectedClass.hitDie,
         xp: 0,
+        xpToNextLevel: xpForLevel(2),
         currentHP: maxHP,
         maxHP,
         armorClass,
@@ -255,6 +256,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         inventory: [],
         conditions: [],
         gold: 0,
+        weaponDamage: {},
       };
 
       const story = buildDefaultStory(characterName.trim(), selectedClass.name);

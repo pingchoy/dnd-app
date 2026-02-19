@@ -44,7 +44,20 @@ const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       scene_update:       { type: "string", description: "Current scene state (1-2 sentences)." },
       notable_event:      { type: "string", description: "Key event to record (past tense, 1 sentence)." },
       gold_delta:         { type: "number",  description: "Gold change. Negative = spending, positive = receiving." },
-      xp_gained:          { type: "number",  description: "XP awarded to the player (e.g. after defeating enemies or completing objectives)." },
+      xp_gained:          { type: "number",  description: "XP awarded for quest completion, clever roleplay, or milestone moments. Do NOT include monster kill XP — that is handled automatically." },
+      weapon_damage: {
+        type: "object",
+        description: "For each weapon in items_gained, provide its damage breakdown keyed by the exact item name.",
+        additionalProperties: {
+          type: "object",
+          properties: {
+            dice:  { type: "string", description: "Damage dice, e.g. '1d8', '2d6'." },
+            stat:  { type: "string", enum: ["str", "dex", "finesse", "none"], description: "Ability modifier added to damage. Use 'finesse' for finesse weapons, 'none' for e.g. ammunition." },
+            bonus: { type: "number", description: "Flat bonus beyond the ability modifier, e.g. 1 for a +1 magic weapon." },
+          },
+          required: ["dice", "stat", "bonus"],
+        },
+      },
     },
     required: [],
   },
@@ -64,10 +77,11 @@ const CREATE_NPC_TOOL: Anthropic.Tool = {
       damage_dice:         { type: "string", description: "Damage dice expression, e.g. '1d6', '2d4'." },
       damage_bonus:        { type: "number", description: "Flat bonus added to damage roll." },
       saving_throw_bonus:  { type: "number", description: "General saving throw bonus." },
+      xp_value:            { type: "number", description: "XP awarded to the player when this creature is defeated. Use standard D&D 5e XP values (e.g. Giant Rat 25, Bandit 25, Guard 100, Veteran 1100, Mage 2300)." },
       disposition:         { type: "string", enum: ["hostile", "neutral", "friendly"], description: "Attitude toward the player." },
       notes:               { type: "string", description: "Special abilities or notable traits (brief)." },
     },
-    required: ["name", "ac", "max_hp", "attack_bonus", "damage_dice", "damage_bonus", "disposition"],
+    required: ["name", "ac", "max_hp", "attack_bonus", "damage_dice", "damage_bonus", "xp_value", "disposition"],
   },
 };
 
@@ -138,9 +152,10 @@ ${serializePlayerState(state.player)}
 YOUR ROLE:
 - Narrate in second person ("You see…", "You hear…"), present tense, vivid and atmospheric.
 - Strictly enforce D&D 5e rules. Use provided dice roll outcomes — do not invent your own.
-- Call update_game_state whenever the player's HP, inventory, conditions, location, or story state changes.
-- Call create_npc when introducing ANY new creature (pre-planned or improvised) before it acts.
-- Call update_npc after a creature takes damage, gains a condition, or is defeated.
+- Call update_game_state whenever the player's HP, inventory, conditions, location, or story state changes. When adding a weapon via items_gained, always include weapon_damage with the item name as the key and { dice, stat, bonus } as the value — e.g. a Longsword +1 is { dice: "1d8", stat: "str", bonus: 1 }. The modifier is computed automatically from the player's current stats.
+- Call create_npc when introducing ANY new creature (pre-planned or improvised) before it acts. Always set xp_value to the standard D&D 5e XP for that creature type.
+- Call update_npc after a creature takes damage, gains a condition, or is defeated. Monster kill XP is awarded automatically — do NOT add it to xp_gained.
+- Use update_game_state xp_gained when the player completes a quest, achieves a meaningful milestone, or demonstrates exceptional roleplay. Typical quest XP: minor 50–150, moderate 200–500, major 500–1000+.
 - Use pre-rolled NPC attack dice exactly as provided. Do not re-roll or ignore them.
 - Do not allow impossible actions or meta-gaming.
 - Keep responses to 2–4 paragraphs. Do not end with a question; offer information and let the player decide.

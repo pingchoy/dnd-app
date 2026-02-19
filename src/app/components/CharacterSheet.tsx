@@ -1,28 +1,28 @@
 "use client";
 
-import { PlayerState, getModifier, getProficiencyBonus } from "../lib/gameState";
+import { PlayerState, getModifier, getProficiencyBonus, formatWeaponDamage } from "../lib/gameState";
 
-// D&D 5e skill → governing ability
+
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
-  Acrobatics:      "dexterity",
-  "Animal Handling":"wisdom",
-  Arcana:          "intelligence",
-  Athletics:       "strength",
-  Deception:       "charisma",
-  History:         "intelligence",
-  Insight:         "wisdom",
-  Intimidation:    "charisma",
-  Investigation:   "intelligence",
-  Medicine:        "wisdom",
-  Nature:          "intelligence",
-  Perception:      "wisdom",
-  Performance:     "charisma",
-  Persuasion:      "charisma",
-  Religion:        "intelligence",
-  "Sleight of Hand":"dexterity",
-  Stealth:         "dexterity",
-  Survival:        "wisdom",
-  "Thieves' Tools":"dexterity",
+  Acrobatics:        "dexterity",
+  "Animal Handling": "wisdom",
+  Arcana:            "intelligence",
+  Athletics:         "strength",
+  Deception:         "charisma",
+  History:           "intelligence",
+  Insight:           "wisdom",
+  Intimidation:      "charisma",
+  Investigation:     "intelligence",
+  Medicine:          "wisdom",
+  Nature:            "intelligence",
+  Perception:        "wisdom",
+  Performance:       "charisma",
+  Persuasion:        "charisma",
+  Religion:          "intelligence",
+  "Sleight of Hand": "dexterity",
+  Stealth:           "dexterity",
+  Survival:          "wisdom",
+  "Thieves' Tools":  "dexterity",
 };
 
 function fmt(n: number) {
@@ -32,7 +32,7 @@ function fmt(n: number) {
 function StatBlock({ label, value }: { label: string; value: number }) {
   const mod = getModifier(value);
   return (
-    <div className="flex flex-col items-center bg-dungeon-mid border border-gold/20 rounded p-2 min-w-[72px]">
+    <div className="flex flex-col items-center bg-dungeon-mid border border-gold/20 rounded p-2">
       <span className="font-cinzel text-[10px] tracking-widest text-gold/70 uppercase">{label}</span>
       <span className="font-cinzel text-2xl text-parchment mt-0.5">{value}</span>
       <span className={`font-cinzel text-sm font-bold ${mod >= 0 ? "text-green-400" : "text-red-400"}`}>
@@ -48,7 +48,6 @@ interface Props {
 
 export default function CharacterSheet({ player }: Props) {
   const prof = getProficiencyBonus(player.level);
-
   const allSkills = Object.entries(SKILL_ABILITIES).sort(([a], [b]) => a.localeCompare(b));
 
   return (
@@ -82,6 +81,19 @@ export default function CharacterSheet({ player }: Props) {
             <span>AC <strong>{player.armorClass}</strong></span>
             <span>Prof <strong>{fmt(prof)}</strong></span>
             <span>Gold <strong>{player.gold}gp</strong></span>
+          </div>
+          {/* XP bar */}
+          <div className="mt-3">
+            <div className="flex justify-between font-cinzel text-[10px] tracking-wide mb-1">
+              <span className="text-gold-dark font-bold">XP {player.xp.toLocaleString()}</span>
+              <span className="text-ink/50">{player.xpToNextLevel.toLocaleString()} → Lv.{player.level + 1}</span>
+            </div>
+            <div className="h-2 rounded-full bg-ink/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gold/70 transition-all duration-500"
+                style={{ width: `${Math.min(100, (player.xp / player.xpToNextLevel) * 100)}%` }}
+              />
+            </div>
           </div>
           {player.conditions.length > 0 && (
             <div className="mt-2 flex flex-wrap justify-center gap-1">
@@ -148,6 +160,30 @@ export default function CharacterSheet({ player }: Props) {
           </div>
         </section>
 
+        {/* Features */}
+        <section>
+          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Features & Traits</h3>
+          <div className="space-y-2">
+            {player.features.map((f) => (
+              <div key={f.name}>
+                <div className="flex items-baseline gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1 ${
+                    f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/30"
+                  }`} />
+                  <span className="font-cinzel text-[10px] text-ink">{f.name}</span>
+                  <span className="font-crimson text-[9px] text-ink/40 italic ml-auto flex-shrink-0">{f.source}</span>
+                </div>
+                <p className="font-crimson text-[10px] text-ink/60 leading-snug pl-3">{f.description}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3 mt-2 font-cinzel text-[8px] text-ink/30 tracking-wide">
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gold inline-block"/>Active</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"/>Reaction</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-ink/30 inline-block"/>Passive</span>
+          </div>
+        </section>
+
         {/* Inventory */}
         <section>
           <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Inventory</h3>
@@ -155,11 +191,21 @@ export default function CharacterSheet({ player }: Props) {
             <p className="font-crimson italic text-ink/40 text-xs">Nothing carried.</p>
           ) : (
             <ul className="space-y-0.5">
-              {player.inventory.map((item, i) => (
-                <li key={i} className="font-crimson text-xs text-ink/80 flex items-center gap-1.5">
-                  <span className="text-gold/50 flex-shrink-0">◆</span> {item}
-                </li>
-              ))}
+              {player.inventory.map((item, i) => {
+                const weaponStat = player.weaponDamage[item];
+                const damage = weaponStat ? formatWeaponDamage(weaponStat, player.stats) : null;
+                return (
+                  <li key={i} className="font-crimson text-xs text-ink/80 flex items-center gap-1.5">
+                    <span className="text-gold/50 flex-shrink-0">◆</span>
+                    <span className="truncate">{item}</span>
+                    {damage && (
+                      <span className="ml-auto flex-shrink-0 font-cinzel text-[9px] text-amber-700 bg-amber-50 border border-amber-300/60 rounded px-1 py-0.5">
+                        {damage}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

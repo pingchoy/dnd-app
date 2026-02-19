@@ -56,3 +56,19 @@ npm run lint   # ESLint
 
 ## Adding More Players
 Update `src/app/lib/gameState.ts` — the `GameState` interface can be extended to support multiple players when needed.
+
+## Architecture Principle: Class-Agnostic Design
+**Every system must be generic across all D&D 5e classes — never hardcoded for a specific class or campaign.**
+
+When implementing any feature, ask: *"Would this break or need rewriting for a Wizard, Barbarian, or Paladin?"*
+
+Common violations to avoid:
+- **Scaling features hardcoded to Rogue logic** — e.g. `Math.ceil(level / 2)` for Sneak Attack dice is Rogue-specific. Instead, store scaling data in `CharacterFeature` itself (e.g. a `scalingFormula` field) or derive it from the feature list rather than the class name.
+- **HP-per-level hardcoded to d8** — different classes use d6, d8, d10, d12. Store `hitDie` on the character and compute from that.
+- **Proficiency assumptions** — don't assume saving throw or skill proficiencies based on class; always read from the character data.
+- **Weapon/damage assumptions** — don't infer damage from weapon names; always use `weaponDamage` in state (set by the DM or character creation).
+- **Feature progression tables** — Sneak Attack, Rage uses, Spell Slots, Ki Points etc. should not be computed from class name. Either store the current value in state and let the DM/level-up flow update it, or maintain a class progression table keyed by class name.
+
+**Current known violations to fix:**
+- `awardXP` / `updateFeaturesOnLevelUp` in `gameState.ts` — Sneak Attack update logic is Rogue-specific. Should scan `features` array for a `scalesWithLevel` flag rather than knowing about Sneak Attack by name.
+- `awardXP` HP gain uses a hardcoded `5` (average of d8). Should use a `hitDie` field on `PlayerState`.

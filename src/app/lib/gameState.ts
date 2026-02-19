@@ -27,9 +27,18 @@ export interface CharacterStats {
 export interface CharacterFeature {
   name: string;
   description: string;
-  level: number;        // level at which the feature was gained
+  level: number;           // level at which the feature was gained
+  source?: string;         // e.g. "Rogue 1", "Half-Elf", "Thief 3"
+  type?: "active" | "passive" | "reaction";
   scalesWithLevel?: boolean;
   scalingFormula?: string; // e.g. "ceil(level/2)" — stored for display only
+}
+
+/** Stored separately from the flat string so modifiers stay live as stats change. */
+export interface WeaponStat {
+  dice: string;                              // e.g. "1d6", "2d6"
+  stat: "str" | "dex" | "finesse" | "none"; // which ability drives the modifier
+  bonus: number;                             // flat bonus (e.g. +1 for a magic weapon)
 }
 
 export interface PlayerState {
@@ -39,6 +48,7 @@ export interface PlayerState {
   level: number;
   hitDie: number;       // class hit die (d6=6, d8=8, d10=10, d12=12)
   xp: number;
+  xpToNextLevel: number;
   currentHP: number;
   maxHP: number;
   armorClass: number;
@@ -49,6 +59,17 @@ export interface PlayerState {
   inventory: string[];
   conditions: string[];
   gold: number;
+  weaponDamage: Record<string, WeaponStat>; // item name → weapon stats
+}
+
+export function formatWeaponDamage(weapon: WeaponStat, stats: CharacterStats): string {
+  const strMod = getModifier(stats.strength);
+  const dexMod = getModifier(stats.dexterity);
+  let mod = weapon.bonus;
+  if (weapon.stat === "str") mod += strMod;
+  else if (weapon.stat === "dex") mod += dexMod;
+  else if (weapon.stat === "finesse") mod += Math.max(strMod, dexMod);
+  return mod === 0 ? weapon.dice : `${weapon.dice}${mod >= 0 ? "+" : ""}${mod}`;
 }
 
 /**
@@ -66,6 +87,7 @@ export interface NPC {
   damageDice: string;     // e.g. "1d6", "2d4"
   damageBonus: number;    // flat bonus on damage rolls
   savingThrowBonus: number;
+  xpValue: number;        // XP awarded to player on defeat
   disposition: "hostile" | "neutral" | "friendly";
   conditions: string[];
   notes: string;          // special abilities, lore, etc.
@@ -121,6 +143,8 @@ export function serializePlayerState(p: PlayerState): string {
     `Inventory: ${p.inventory.join(", ")}`,
     `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
     `Gold: ${p.gold}gp`,
+    `XP: ${p.xp} / ${p.xpToNextLevel} (Level ${p.level})`,
+    `Features: ${p.features.map((f) => f.name).join(" | ")}`,
   ].join("\n");
 }
 
@@ -186,6 +210,7 @@ let state: GameState = {
     level: 1,
     hitDie: 8,
     xp: 0,
+    xpToNextLevel: 0,
     currentHP: 0,
     maxHP: 0,
     armorClass: 10,
@@ -196,6 +221,7 @@ let state: GameState = {
     inventory: [],
     conditions: [],
     gold: 0,
+    weaponDamage: {},
   },
   story: {
     campaignTitle: "",
@@ -240,6 +266,7 @@ export interface StateChanges {
   notable_event?: string;
   gold_delta?: number;
   xp_gained?: number;
+  weapon_damage?: Record<string, WeaponStat>;
 }
 
 export function applyStateChanges(changes: StateChanges): void {
@@ -278,6 +305,15 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   if (changes.xp_gained && changes.xp_gained > 0) p.xp = (p.xp ?? 0) + changes.xp_gained;
+  if (changes.weapon_damage) Object.assign(p.weaponDamage, changes.weapon_damage);
+  // Remove weaponDamage entries for items that were lost
+  if (changes.items_lost?.length) {
+    for (const lost of changes.items_lost) {
+      for (const key of Object.keys(p.weaponDamage)) {
+        if (key.toLowerCase().includes(lost.toLowerCase())) delete p.weaponDamage[key];
+      }
+    }
+  }
 }
 
 // ─── NPC management ───────────────────────────────────────────────────────────
@@ -290,6 +326,7 @@ export interface CreateNPCInput {
   damage_dice: string;
   damage_bonus: number;
   saving_throw_bonus: number;
+  xp_value: number;
   disposition: "hostile" | "neutral" | "friendly";
   notes: string;
 }
@@ -305,6 +342,7 @@ export function createNPC(input: CreateNPCInput): NPC {
     damageDice: input.damage_dice,
     damageBonus: input.damage_bonus,
     savingThrowBonus: input.saving_throw_bonus,
+    xpValue: input.xp_value ?? 0,
     disposition: input.disposition,
     conditions: [],
     notes: input.notes ?? "",
@@ -341,6 +379,10 @@ export function updateNPC(input: UpdateNPCInput): void {
     );
   }
   if (input.remove_from_scene) {
+    // Auto-award XP for defeating hostile NPCs; level-up is checked in applyStateChangesAndPersist
+    if (npc.disposition === "hostile" && npc.xpValue > 0) {
+      state.player.xp = (state.player.xp ?? 0) + npc.xpValue;
+    }
     state.story.activeNPCs = state.story.activeNPCs.filter((n) => n.id !== npc.id);
   }
 }
@@ -403,18 +445,15 @@ async function persistState(characterId: string): Promise<void> {
 
 /**
  * Apply state changes to the in-memory singleton and persist to Firestore.
- * Also triggers awardXPAsync if xp_gained is set and a level-up occurs.
+ * Always calls awardXPAsync to catch level-ups from both xp_gained and NPC kills.
  */
 export async function applyStateChangesAndPersist(
   changes: StateChanges,
   characterId: string,
 ): Promise<void> {
   applyStateChanges(changes);
-
-  if (changes.xp_gained && changes.xp_gained > 0) {
-    await awardXPAsync(characterId, 0); // XP already added by applyStateChanges; check level-up
-  }
-
+  // Check for level-up regardless of source (xp_gained field or NPC kill XP)
+  await awardXPAsync(characterId, 0);
   await persistState(characterId);
 }
 
@@ -456,6 +495,7 @@ export async function awardXPAsync(characterId: string, amount: number): Promise
     }
 
     state.player.level = lvl;
+    state.player.xpToNextLevel = xpForLevel(lvl + 1);
   }
 
   await persistState(characterId);
