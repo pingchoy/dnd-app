@@ -2,6 +2,7 @@
  * characterStore.ts
  *
  * Firestore CRUD layer for characters and SRD data.
+ * Uses the Firebase Admin SDK (server-side only).
  *
  * Character documents live at: characters/{id}
  * SRD collections:
@@ -11,21 +12,9 @@
  *   srdSpells/{slug}
  *   srdEquipment/{slug}
  *   srdSubclassLevels/{slug}_{level}
- *
- * NOTE: Uses the Firebase client SDK for now.
- * TODO: Switch to firebase-admin for server-side API routes when ready.
  */
 
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import { adminDb } from "./firebaseAdmin";
 import type { PlayerState, StoryState, ConversationTurn } from "./gameState";
 
 // ─── SRD Types ────────────────────────────────────────────────────────────────
@@ -94,8 +83,8 @@ export async function createCharacter(
   player: PlayerState,
   story: StoryState,
 ): Promise<string> {
-  const ref = doc(collection(db, "characters"));
-  await setDoc(ref, {
+  const ref = adminDb.collection("characters").doc();
+  await ref.set({
     player,
     story,
     conversationHistory: [],
@@ -110,9 +99,8 @@ export async function createCharacter(
  * Returns null if not found.
  */
 export async function loadCharacter(id: string): Promise<StoredCharacter | null> {
-  const ref = doc(db, "characters", id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
+  const snap = await adminDb.collection("characters").doc(id).get();
+  if (!snap.exists) return null;
   return { id: snap.id, ...(snap.data() as Omit<StoredCharacter, "id">) };
 }
 
@@ -124,8 +112,7 @@ export async function saveCharacterState(
   id: string,
   updates: Partial<Omit<StoredCharacter, "id" | "createdAt">>,
 ): Promise<void> {
-  const ref = doc(db, "characters", id);
-  await updateDoc(ref, {
+  await adminDb.collection("characters").doc(id).update({
     ...updates,
     updatedAt: Date.now(),
   });
@@ -134,8 +121,8 @@ export async function saveCharacterState(
 // ─── SRD Readers ──────────────────────────────────────────────────────────────
 
 export async function getSRDClass(slug: string): Promise<SRDClass | null> {
-  const snap = await getDoc(doc(db, "srdClasses", slug));
-  return snap.exists() ? (snap.data() as SRDClass) : null;
+  const snap = await adminDb.collection("srdClasses").doc(slug).get();
+  return snap.exists ? (snap.data() as SRDClass) : null;
 }
 
 export async function getSRDClassLevel(
@@ -143,21 +130,21 @@ export async function getSRDClassLevel(
   level: number,
 ): Promise<SRDClassLevel | null> {
   const id = `${classSlug}_${level}`;
-  const snap = await getDoc(doc(db, "srdClassLevels", id));
-  return snap.exists() ? (snap.data() as SRDClassLevel) : null;
+  const snap = await adminDb.collection("srdClassLevels").doc(id).get();
+  return snap.exists ? (snap.data() as SRDClassLevel) : null;
 }
 
 export async function getSRDRace(slug: string): Promise<SRDRace | null> {
-  const snap = await getDoc(doc(db, "srdRaces", slug));
-  return snap.exists() ? (snap.data() as SRDRace) : null;
+  const snap = await adminDb.collection("srdRaces").doc(slug).get();
+  return snap.exists ? (snap.data() as SRDRace) : null;
 }
 
 export async function getAllSRDClasses(): Promise<SRDClass[]> {
-  const snap = await getDocs(collection(db, "srdClasses"));
+  const snap = await adminDb.collection("srdClasses").get();
   return snap.docs.map((d) => d.data() as SRDClass);
 }
 
 export async function getAllSRDRaces(): Promise<SRDRace[]> {
-  const snap = await getDocs(collection(db, "srdRaces"));
+  const snap = await adminDb.collection("srdRaces").get();
   return snap.docs.map((d) => d.data() as SRDRace);
 }

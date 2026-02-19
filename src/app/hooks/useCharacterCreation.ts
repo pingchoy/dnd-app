@@ -3,12 +3,6 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass } from "../lib/characterStore";
-import {
-  createCharacter,
-  getAllSRDClasses,
-  getAllSRDRaces,
-  getSRDClassLevel,
-} from "../lib/characterStore";
 import { getModifier, xpForLevel } from "../lib/gameState";
 import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameState";
 import { CHARACTER_ID_KEY } from "./useChat";
@@ -113,11 +107,24 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     setState((prev) => ({ ...prev, ...updates }));
   }, []);
 
-  /** Load races and classes from Firestore (called once on wizard mount). */
+  /** Load races and classes from API (called once on wizard mount). */
   const loadSRD = useCallback(async () => {
     patch({ isLoadingSRD: true, error: null });
     try {
-      const [races, classes] = await Promise.all([getAllSRDRaces(), getAllSRDClasses()]);
+      const [racesRes, classesRes] = await Promise.all([
+        fetch("/api/srd?type=races"),
+        fetch("/api/srd?type=classes"),
+      ]);
+
+      if (!racesRes.ok || !classesRes.ok) {
+        throw new Error("Failed to fetch SRD data");
+      }
+
+      const [races, classes]: [SRDRace[], SRDClass[]] = await Promise.all([
+        racesRes.json(),
+        classesRes.json(),
+      ]);
+
       // Sort alphabetically for consistent display
       races.sort((a, b) => a.name.localeCompare(b.name));
       classes.sort((a, b) => a.name.localeCompare(b.name));
@@ -125,7 +132,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     } catch (err) {
       patch({
         isLoadingSRD: false,
-        error: "Failed to load character options. Check your Firestore connection.",
+        error: "Failed to load character options. Check your connection.",
       });
     }
   }, [patch]);
@@ -194,7 +201,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     return result;
   })();
 
-  /** Build and save the character to Firestore, then redirect to /dashboard. */
+  /** Build and save the character via API, then redirect to /dashboard. */
   const confirm = useCallback(async () => {
     const { selectedRace, selectedClass, characterName, baseStats, selectedSkills } = state;
 
@@ -206,9 +213,10 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     patch({ isSaving: true, error: null });
 
     try {
-      // Fetch level-1 features from Firestore
+      // Fetch level-1 features from API
       const classSlug = selectedClass.slug;
-      const levelData = await getSRDClassLevel(classSlug, 1);
+      const levelRes = await fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`);
+      const levelData = levelRes.ok ? await levelRes.json() : null;
 
       // Collect race traits + class features into CharacterFeature[]
       const features: CharacterFeature[] = [
@@ -217,7 +225,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           description: t.description,
           level: 0, // 0 = racial, not from a class level
         })),
-        ...(levelData?.features ?? []).map((f) => ({
+        ...(levelData?.features ?? []).map((f: { name: string; description: string }) => ({
           name: f.name,
           description: f.description,
           level: 1,
@@ -260,8 +268,18 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       };
 
       const story = buildDefaultStory(characterName.trim(), selectedClass.name);
-      const id = await createCharacter(player, story);
 
+      const res = await fetch("/api/characters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player, story }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to create character");
+      }
+
+      const { id } = await res.json() as { id: string };
       localStorage.setItem(CHARACTER_ID_KEY, id);
       router.replace("/dashboard");
     } catch (err) {

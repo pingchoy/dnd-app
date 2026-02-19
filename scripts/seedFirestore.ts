@@ -7,7 +7,7 @@
  *   npm run seed
  *
  * Prerequisites:
- *   - GOOGLE_APPLICATION_CREDENTIALS pointing to a Firebase service account JSON
+ *   - FIREBASE_SERVICE_ACCOUNT_KEY env var containing service account JSON string
  *   - The Firestore database exists in the dnd-app-9609f project
  *
  * Collections seeded:
@@ -22,6 +22,7 @@
  * Set: allow read, write: if true;  (change before public deploy!)
  */
 
+import "dotenv/config";
 import * as admin from "firebase-admin";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -29,7 +30,9 @@ import { join } from "path";
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
 admin.initializeApp({
-  credential: admin.credential.applicationDefault(),
+  credential: admin.credential.cert(
+    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY!)
+  ),
   projectId: "dnd-app-9609f",
 });
 
@@ -38,7 +41,7 @@ const db = admin.firestore();
 // ─── Open5e API helpers ───────────────────────────────────────────────────────
 
 const OPEN5E_BASE = "https://api.open5e.com/v1";
-const SRD_FILTER = "document__slug=5esrd";
+const SRD_FILTER = "document__slug=wotc-srd";
 
 interface Open5ePage<T> {
   count: number;
