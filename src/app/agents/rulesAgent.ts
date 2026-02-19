@@ -7,6 +7,8 @@
  */
 
 import { anthropic, MAX_TOKENS, MODELS } from "../lib/anthropic";
+import { isContestedAction } from "../lib/actionKeywords";
+export { isContestedAction };
 import {
   NPC,
   PlayerState,
@@ -46,21 +48,6 @@ DC/AC: [number or N/A]
 RESULT: [SUCCESS or FAILURE]
 NOTES: [one line — key rule or effect that applies, e.g. "Sneak Attack adds 3d6"]`;
 
-const CONTESTED_KEYWORDS = [
-  "attack", "strike", "stab", "slash", "shoot", "fire", "cast", "throw",
-  "sneak", "hide", "stealth",
-  "pick", "lock", "disarm", "trap",
-  "persuade", "convince", "deceive", "lie", "intimidate", "bluff",
-  "investigate", "search", "examine", "perceive", "notice",
-  "climb", "jump", "sprint", "dodge", "grapple", "push", "shove",
-  "arcana", "history", "nature", "religion", "medicine", "survival",
-  "insight", "acrobatics",
-];
-
-export function isContestedAction(playerInput: string): boolean {
-  const lower = playerInput.toLowerCase();
-  return CONTESTED_KEYWORDS.some((kw) => lower.includes(kw));
-}
 
 export function rollD20(): number {
   return Math.floor(Math.random() * 20) + 1;

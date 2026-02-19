@@ -24,6 +24,7 @@ import {
   serializeStoryState,
   updateNPC,
 } from "../lib/gameState";
+import { querySRD } from "../lib/characterStore";
 import { RulesOutcome } from "./rulesAgent";
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
@@ -99,6 +100,36 @@ const UPDATE_NPC_TOOL: Anthropic.Tool = {
       remove_from_scene:  { type: "boolean", description: "True when the NPC is defeated or leaves." },
     },
     required: ["name"],
+  },
+};
+
+const QUERY_SRD_TOOL: Anthropic.Tool = {
+  name: "query_srd",
+  description:
+    "Look up D&D 5e SRD reference data — monster stat blocks, spell descriptions, magic items, conditions, feats, armor, class spell lists, or class level features. " +
+    "Call this when you need accurate rules text before narrating. Costs a database read, so only call it when the data is genuinely needed for this turn.",
+  input_schema: {
+    type: "object",
+    properties: {
+      type: {
+        type: "string",
+        enum: ["monster", "spell", "magic_item", "condition", "feat", "background", "armor", "spell_list", "class_level"],
+        description: "Category of data to fetch.",
+      },
+      slug: {
+        type: "string",
+        description: "Kebab-case identifier, e.g. 'giant-rat', 'fireball', 'ring-of-protection', 'wizard'. Omit for class_level.",
+      },
+      class_slug: {
+        type: "string",
+        description: "Class identifier, e.g. 'wizard'. Required when type is 'class_level'.",
+      },
+      level: {
+        type: "number",
+        description: "Level 1–20. Required when type is 'class_level'.",
+      },
+    },
+    required: ["type"],
   },
 };
 
@@ -179,6 +210,11 @@ export interface DMResponse {
   outputTokens: number;
 }
 
+/** Maximum query_srd calls allowed per DM response to limit Firestore reads. */
+const MAX_SRD_QUERIES = 3;
+/** Maximum total loop iterations (guards against unexpected infinite loops). */
+const MAX_ITERATIONS = 8;
+
 export async function getDMResponse(
   playerInput: string,
   gameState: GameState,
@@ -207,36 +243,96 @@ export async function getDMResponse(
     { role: "user", content: userContent },
   ];
 
-  const response = await anthropic.messages.create({
-    model: MODELS.NARRATIVE,
-    max_tokens: MAX_TOKENS.NARRATIVE,
-    system: buildSystemPrompt(gameState),
-    tools: [UPDATE_GAME_STATE_TOOL, CREATE_NPC_TOOL, UPDATE_NPC_TOOL],
-    messages,
-  });
+  const tools = [UPDATE_GAME_STATE_TOOL, CREATE_NPC_TOOL, UPDATE_NPC_TOOL, QUERY_SRD_TOOL];
 
   let narrative = "";
   let stateChanges: StateChanges | null = null;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let srdQueryCount = 0;
 
-  for (const block of response.content) {
-    if (block.type === "text") {
-      narrative += block.text;
-    } else if (block.type === "tool_use") {
+  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+    const response = await anthropic.messages.create({
+      model: MODELS.NARRATIVE,
+      max_tokens: MAX_TOKENS.NARRATIVE,
+      system: buildSystemPrompt(gameState),
+      tools,
+      messages,
+    });
+
+    totalInputTokens += response.usage.input_tokens;
+    totalOutputTokens += response.usage.output_tokens;
+
+    // Collect narrative text from this turn
+    for (const block of response.content) {
+      if (block.type === "text") narrative += block.text;
+    }
+
+    // Done — no more tool calls needed
+    if (response.stop_reason === "end_turn") break;
+
+    // Build tool results for every tool_use block in this response
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+    let hasQuerySRD = false;
+
+    for (const block of response.content) {
+      if (block.type !== "tool_use") continue;
+
       if (block.name === "update_game_state") {
-        // Collect changes — the route will apply + persist them
         stateChanges = block.input as StateChanges;
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: '{"ok":true}' });
+
       } else if (block.name === "create_npc") {
         createNPC(block.input as CreateNPCInput);
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: '{"ok":true}' });
+
       } else if (block.name === "update_npc") {
         updateNPC(block.input as UpdateNPCInput);
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: '{"ok":true}' });
+
+      } else if (block.name === "query_srd") {
+        hasQuerySRD = true;
+        const input = block.input as {
+          type: string;
+          slug?: string;
+          class_slug?: string;
+          level?: number;
+        };
+
+        let resultContent: string;
+        if (srdQueryCount >= MAX_SRD_QUERIES) {
+          resultContent = '{"error":"SRD query limit reached for this turn. Use your existing knowledge."}';
+        } else {
+          srdQueryCount++;
+          const docSlug =
+            input.type === "class_level"
+              ? `${input.class_slug}_${input.level}`
+              : (input.slug ?? "");
+          const data = await querySRD(input.type, docSlug);
+          resultContent = data
+            ? JSON.stringify(data)
+            : `{"error":"No ${input.type} found for '${docSlug}'"}`;
+        }
+
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultContent });
       }
     }
+
+    if (toolResults.length === 0) break; // no tool_use blocks — shouldn't happen, but guard
+
+    // Append assistant turn + tool results so the model can continue
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: toolResults });
+
+    // If this iteration had no SRD queries, only state-mutation tools were called.
+    // The model is done after receiving their acknowledgements.
+    if (!hasQuerySRD) break;
   }
 
   return {
     narrative: narrative.trim(),
     stateChanges,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
   };
 }

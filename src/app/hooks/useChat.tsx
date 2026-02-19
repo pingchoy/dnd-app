@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameState";
+import { GameState, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 

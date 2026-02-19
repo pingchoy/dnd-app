@@ -41,7 +41,7 @@ const config: Config = {
           "radial-gradient(ellipse at 20% 50%, rgba(70,40,20,0.12) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(50,20,10,0.08) 0%, transparent 60%)",
       },
       boxShadow: {
-        parchment: "0 2px 12px rgba(0,0,0,0.4), inset 0 0 40px rgba(180,130,40,0.05)",
+        parchment: "0 2px 12px rgba(0,0,0,0.4)",
         "gold-glow": "0 0 12px rgba(201,168,76,0.3)",
       },
       keyframes: {

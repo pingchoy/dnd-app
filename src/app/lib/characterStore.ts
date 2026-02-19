@@ -15,7 +15,7 @@
  */
 
 import { adminDb } from "./firebaseAdmin";
-import type { PlayerState, StoryState, ConversationTurn } from "./gameState";
+import type { PlayerState, StoryState, ConversationTurn } from "./gameTypes";
 
 // ─── SRD Types ────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,12 @@ export interface SRDRace {
   extraSkillChoices?: number;
 }
 
+export interface SRDArchetype {
+  slug: string;
+  name: string;
+  description: string;
+}
+
 export interface SRDClass {
   slug: string;
   name: string;
@@ -50,7 +56,9 @@ export interface SRDClass {
   /** Pool of skill options available to this class */
   skillOptions: string[];
   primaryAbility: string;
-  subclassSlugs?: string[];
+  archetypes: SRDArchetype[];
+  /** Level at which the player chooses their archetype (1, 2, or 3) */
+  archetypeLevel: number;
 }
 
 export interface SRDClassLevel {
@@ -118,7 +126,54 @@ export async function saveCharacterState(
   });
 }
 
+// ─── SRD Query (with in-memory cache) ────────────────────────────────────────
+
+/**
+ * Maps query_srd tool "type" values to their Firestore collection names.
+ * class_level IDs are formatted as "{classSlug}_{level}" by the caller.
+ */
+const SRD_COLLECTION_MAP: Record<string, string> = {
+  monster:     "srdMonsters",
+  spell:       "srdSpells",
+  magic_item:  "srdMagicItems",
+  condition:   "srdConditions",
+  feat:        "srdFeats",
+  background:  "srdBackgrounds",
+  armor:       "srdArmor",
+  spell_list:  "srdSpellLists",
+  class_level: "srdClassLevels",
+};
+
+/** Module-level cache — SRD data is static so we never need to invalidate. */
+const srdCache = new Map<string, Record<string, unknown>>();
+
+/**
+ * Fetch a single SRD document by type + slug.
+ * Results are cached in memory for the lifetime of the server process,
+ * so each document costs at most one Firestore read.
+ */
+export async function querySRD(
+  type: string,
+  slug: string,
+): Promise<Record<string, unknown> | null> {
+  const col = SRD_COLLECTION_MAP[type];
+  if (!col || !slug) return null;
+
+  const cacheKey = `${col}/${slug}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey)!;
+
+  const snap = await adminDb.collection(col).doc(slug).get();
+  if (!snap.exists) return null;
+
+  const data = snap.data() as Record<string, unknown>;
+  srdCache.set(cacheKey, data);
+  return data;
+}
+
 // ─── SRD Readers ──────────────────────────────────────────────────────────────
+
+/** Cache for full collection reads (static SRD data — never needs invalidation). */
+const collectionCache = new Map<string, unknown[]>();
 
 export async function getSRDClass(slug: string): Promise<SRDClass | null> {
   const snap = await adminDb.collection("srdClasses").doc(slug).get();
@@ -140,11 +195,21 @@ export async function getSRDRace(slug: string): Promise<SRDRace | null> {
 }
 
 export async function getAllSRDClasses(): Promise<SRDClass[]> {
+  if (collectionCache.has("srdClasses")) {
+    return collectionCache.get("srdClasses") as SRDClass[];
+  }
   const snap = await adminDb.collection("srdClasses").get();
-  return snap.docs.map((d) => d.data() as SRDClass);
+  const data = snap.docs.map((d) => d.data() as SRDClass);
+  collectionCache.set("srdClasses", data);
+  return data;
 }
 
 export async function getAllSRDRaces(): Promise<SRDRace[]> {
+  if (collectionCache.has("srdRaces")) {
+    return collectionCache.get("srdRaces") as SRDRace[];
+  }
   const snap = await adminDb.collection("srdRaces").get();
-  return snap.docs.map((d) => d.data() as SRDRace);
+  const data = snap.docs.map((d) => d.data() as SRDRace);
+  collectionCache.set("srdRaces", data);
+  return data;
 }

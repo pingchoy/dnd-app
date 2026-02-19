@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useCharacterCreation } from "../hooks/useCharacterCreation";
 import StepRace from "./StepRace";
 import StepClass from "./StepClass";
+import StepArchetype from "./StepArchetype";
 import StepPointBuy from "./StepPointBuy";
 import StepSkills from "./StepSkills";
 import StepReview from "./StepReview";
@@ -20,7 +21,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
         return (
           <div key={i} className="flex items-center gap-2">
             <div
-              className={`flex items-center justify-center w-6 h-6 rounded-full border font-cinzel text-[10px] transition-all ${
+              className={`flex items-center justify-center w-6 h-6 rounded-full border font-cinzel text-[10px] leading-none transition-all ${
                 isDone
                   ? "border-gold bg-gold text-dungeon"
                   : isCurrent
@@ -121,11 +122,20 @@ export default function CharacterCreationPage() {
               />
             )}
 
-            {wizard.step === 2 && (
+            {wizard.step === 2 && !wizard.showingArchetypeStep && (
               <StepClass
                 classes={wizard.classes}
                 selectedClass={wizard.selectedClass}
                 onSelect={wizard.selectClass}
+              />
+            )}
+
+            {wizard.step === 2 && wizard.showingArchetypeStep && wizard.selectedClass && (
+              <StepArchetype
+                selectedClass={wizard.selectedClass}
+                selectedArchetype={wizard.selectedArchetype}
+                onSelect={wizard.selectArchetype}
+                onBack={() => wizard.goToStep(2)}
               />
             )}
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { PlayerState, getModifier, getProficiencyBonus, formatWeaponDamage } from "../lib/gameState";
+import MarkdownProse from "./MarkdownProse";
+import { PlayerState, getModifier, getProficiencyBonus, formatWeaponDamage } from "../lib/gameTypes";
 
 
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
@@ -173,7 +174,9 @@ export default function CharacterSheet({ player }: Props) {
                   <span className="font-cinzel text-[10px] text-ink">{f.name}</span>
                   <span className="font-crimson text-[9px] text-ink/40 italic ml-auto flex-shrink-0">{f.source}</span>
                 </div>
-                <p className="font-crimson text-[10px] text-ink/60 leading-snug pl-3">{f.description}</p>
+                <MarkdownProse className="font-crimson text-[10px] text-ink/60 pl-3 prose-strong:text-ink/80 prose-em:text-ink/70 prose-p:my-0.5">
+                  {f.description}
+                </MarkdownProse>
               </div>
             ))}
           </div>

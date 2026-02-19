@@ -2,9 +2,9 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { SRDRace, SRDClass } from "../lib/characterStore";
-import { getModifier, xpForLevel } from "../lib/gameState";
-import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameState";
+import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
+import { getModifier, xpForLevel } from "../lib/gameTypes";
+import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameTypes";
 import { CHARACTER_ID_KEY } from "./useChat";
 
 // ─── Point Buy ────────────────────────────────────────────────────────────────
@@ -46,6 +46,8 @@ export interface CharacterCreationState {
   isLoadingSRD: boolean;
   selectedRace: SRDRace | null;
   selectedClass: SRDClass | null;
+  selectedArchetype: SRDArchetype | null;
+  showingArchetypeStep: boolean;
   characterName: string;
   /** Base stats before racial ASI */
   baseStats: CharacterStats;
@@ -59,6 +61,7 @@ export interface UseCharacterCreationReturn extends CharacterCreationState {
   loadSRD: () => Promise<void>;
   selectRace: (race: SRDRace) => void;
   selectClass: (cls: SRDClass) => void;
+  selectArchetype: (archetype: SRDArchetype) => void;
   setCharacterName: (name: string) => void;
   adjustStat: (stat: keyof CharacterStats, delta: 1 | -1) => void;
   toggleSkill: (skill: string) => void;
@@ -95,6 +98,8 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     isLoadingSRD: false,
     selectedRace: null,
     selectedClass: null,
+    selectedArchetype: null,
+    showingArchetypeStep: false,
     characterName: "",
     baseStats: { ...EMPTY_STATS },
     pointsRemaining: POINT_BUY_BUDGET,
@@ -142,7 +147,15 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
   }, [patch]);
 
   const selectClass = useCallback((cls: SRDClass) => {
-    patch({ selectedClass: cls, selectedSkills: [], step: 3 });
+    if (cls.archetypeLevel === 1 && cls.archetypes.length > 0) {
+      patch({ selectedClass: cls, selectedArchetype: null, selectedSkills: [], showingArchetypeStep: true });
+    } else {
+      patch({ selectedClass: cls, selectedArchetype: null, selectedSkills: [], showingArchetypeStep: false, step: 3 });
+    }
+  }, [patch]);
+
+  const selectArchetype = useCallback((archetype: SRDArchetype) => {
+    patch({ selectedArchetype: archetype, showingArchetypeStep: false, step: 3 });
   }, [patch]);
 
   const setCharacterName = useCallback((name: string) => {
@@ -187,7 +200,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
   }, []);
 
   const goToStep = useCallback((step: WizardStep) => {
-    patch({ step, error: null });
+    patch({ step, error: null, showingArchetypeStep: false });
   }, [patch]);
 
   /** Compute final stats by applying racial ASI on top of base stats. */
@@ -218,7 +231,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       const levelRes = await fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`);
       const levelData = levelRes.ok ? await levelRes.json() : null;
 
-      // Collect race traits + class features into CharacterFeature[]
+      // Collect race traits + class features + archetype into CharacterFeature[]
       const features: CharacterFeature[] = [
         ...(selectedRace.traits ?? []).map((t) => ({
           name: t.name,
@@ -230,6 +243,12 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           description: f.description,
           level: 1,
         })),
+        ...(state.selectedArchetype ? [{
+          name: state.selectedArchetype.name,
+          description: state.selectedArchetype.description,
+          level: 1,
+          source: `${selectedClass.name} 1`,
+        }] : []),
       ];
 
       // Compute derived HP: hitDie + CON modifier (max roll at level 1)
@@ -265,6 +284,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         conditions: [],
         gold: 0,
         weaponDamage: {},
+        ...(state.selectedArchetype ? { subclass: state.selectedArchetype.name } : {}),
       };
 
       const story = buildDefaultStory(characterName.trim(), selectedClass.name);
@@ -296,6 +316,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     loadSRD,
     selectRace,
     selectClass,
+    selectArchetype,
     setCharacterName,
     adjustStat,
     toggleSkill,

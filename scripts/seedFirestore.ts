@@ -8,21 +8,28 @@
  *
  * Prerequisites:
  *   - FIREBASE_SERVICE_ACCOUNT_KEY env var containing service account JSON string
- *   - The Firestore database exists in the dnd-app-9609f project
  *
  * Collections seeded:
- *   srdRaces/{slug}
- *   srdClasses/{slug}
- *   srdClassLevels/{classSlug}_{level}
- *   srdSpells/{slug}
- *   srdEquipment/{slug}
- *   srdSubclassLevels/{slug}_{level}   ← from bundled JSON (API doesn't expose these)
+ *   srdRaces/{slug}             (v1, wotc-srd)
+ *   srdClasses/{slug}           (v1, wotc-srd)
+ *   srdClassLevels/{slug}_{N}   (parsed from class tables)
+ *   srdSpells/{slug}            (v1, wotc-srd)
+ *   srdEquipment/{slug}         (v1, wotc-srd — weapons)
+ *   srdSubclassLevels/{slug}    (bundled JSON)
+ *   srdConditions/{key}         (v2, all OGL)
+ *   srdBackgrounds/{key}        (v2, all OGL)
+ *   srdFeats/{key}              (v2, all OGL)
+ *   srdArmor/{key}              (v2, all OGL)
+ *   srdMonsters/{slug}          (v1, wotc-srd)
+ *   srdMagicItems/{slug}        (v1, wotc-srd)
+ *   srdSpellLists/{classSlug}   (v1, all — wotc-srd filter only returns 3/7 classes)
  *
  * Firestore security rules must allow writes during seeding.
  * Set: allow read, write: if true;  (change before public deploy!)
  */
 
-import "dotenv/config";
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -31,16 +38,17 @@ import { join } from "path";
 
 admin.initializeApp({
   credential: admin.credential.cert(
-    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY!)
+    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY!),
   ),
-  projectId: "dnd-app-9609f",
 });
 
 const db = admin.firestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 // ─── Open5e API helpers ───────────────────────────────────────────────────────
 
-const OPEN5E_BASE = "https://api.open5e.com/v1";
+const OPEN5E_V1 = "https://api.open5e.com/v1";
+const OPEN5E_V2 = "https://api.open5e.com/v2";
 const SRD_FILTER = "document__slug=wotc-srd";
 
 interface Open5ePage<T> {
@@ -49,13 +57,48 @@ interface Open5ePage<T> {
   results: T[];
 }
 
+/** Fetch all pages from a v1 endpoint (filters to wotc-srd documents). */
 async function fetchAll<T>(path: string): Promise<T[]> {
   const results: T[] = [];
-  let url: string | null = `${OPEN5E_BASE}${path}?${SRD_FILTER}&limit=100`;
+  let url: string | null = `${OPEN5E_V1}${path}?${SRD_FILTER}&limit=100`;
 
   while (url) {
     console.log(`  GET ${url}`);
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    const page: Open5ePage<T> = await res.json();
+    results.push(...page.results);
+    url = page.next;
+  }
+
+  return results;
+}
+
+/** Fetch all pages from a v1 endpoint without any document filter. */
+async function fetchAllV1Unfiltered<T>(path: string): Promise<T[]> {
+  const results: T[] = [];
+  let url: string | null = `${OPEN5E_V1}${path}?limit=100`;
+
+  while (url) {
+    console.log(`  GET ${url}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    const page: Open5ePage<T> = await res.json();
+    results.push(...page.results);
+    url = page.next;
+  }
+
+  return results;
+}
+
+/** Fetch all pages from a v2 endpoint (no document filter — fetches all OGL content). */
+async function fetchAllV2<T>(path: string): Promise<T[]> {
+  const results: T[] = [];
+  let url: string | null = `${OPEN5E_V2}${path}?limit=100`;
+
+  while (url) {
+    console.log(`  GET ${url}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const page: Open5ePage<T> = await res.json();
     results.push(...page.results);
@@ -96,22 +139,50 @@ async function batchWrite(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformRace(r: any): Record<string, unknown> {
   const abilityBonuses: Record<string, number> = {};
-  for (const bonus of r.ability_bonuses ?? []) {
-    const ability = bonus.ability_score?.name?.toLowerCase();
-    if (ability) abilityBonuses[ability] = bonus.bonus;
+
+  if (Array.isArray(r.asi)) {
+    // wotc-srd format: [{attributes: ['Strength'], value: 2}, ...]
+    for (const bonus of r.asi) {
+      for (const attr of bonus.attributes ?? []) {
+        abilityBonuses[attr.toLowerCase()] = bonus.value;
+      }
+    }
+  } else {
+    // old 5esrd format: [{ability_score: {name: 'Strength'}, bonus: 2}, ...]
+    for (const bonus of r.ability_bonuses ?? []) {
+      const ability = bonus.ability_score?.name?.toLowerCase();
+      if (ability) abilityBonuses[ability] = bonus.bonus;
+    }
   }
+
+  // traits is a markdown string in wotc-srd; was an array in old format
+  const traits = Array.isArray(r.traits)
+    ? r.traits.map((t: { name: string; description?: string }) => ({
+        name: t.name,
+        description: t.description ?? "",
+      }))
+    : r.traits
+      ? [{ name: "Racial Traits", description: r.traits as string }]
+      : [];
+
+  // speed is {walk: 30} in wotc-srd; was a number in old format
+  const speed =
+    typeof r.speed === "object" ? (r.speed?.walk ?? 30) : (r.speed ?? 30);
+
+  // Normalise size to just the category word — wotc-srd sometimes returns
+  // a full sentence like "Your size is Medium." instead of just "Medium".
+  const rawSize: string = r.size ?? "Medium";
+  const sizeMatch = rawSize.match(/\b(Tiny|Small|Medium|Large|Huge|Gargantuan)\b/i);
+  const size = sizeMatch ? sizeMatch[0] : rawSize;
 
   return {
     slug: r.slug,
     name: r.name,
-    speed: r.speed ?? 30,
-    size: r.size ?? "Medium",
+    speed,
+    size,
     abilityBonuses,
-    traits: (r.traits ?? []).map((t: { name: string; description: string }) => ({
-      name: t.name,
-      description: t.description ?? "",
-    })),
-    languages: r.languages ? r.languages.split(",").map((l: string) => l.trim()).filter(Boolean) : [],
+    traits,
+    languages: [],
     skillProficiencies: [],
     extraSkillChoices: r.slug === "half-elf" ? 2 : 0,
   };
@@ -119,23 +190,61 @@ function transformRace(r: any): Record<string, unknown> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformClass(c: any): Record<string, unknown> {
-  const hitDie = parseInt((c.hit_die ?? "d8").replace("d", ""), 10);
-  const saves: string[] = (c.saving_throws ?? []).map(
-    (s: { name: string }) => s.name,
+  // hit_dice is "1d12" in wotc-srd; hit_die was "d8" in old format
+  const hitDie = parseInt(
+    (c.hit_dice ?? c.hit_die ?? "d8").replace(/.*d/, ""),
+    10,
   );
 
-  // Extract skill choices from the proficiency description
+  // prof_saving_throws is "Strength, Constitution" in wotc-srd; was an array in old format
+  const saves: string[] = c.prof_saving_throws
+    ? c.prof_saving_throws
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean)
+    : (c.saving_throws ?? []).map((s: { name: string }) => s.name);
+
+  // Extract skill choices count from prof_skills description
   const profDesc: string = c.prof_skills ?? c.proficiency_choices_desc ?? "";
   const choiceMatch = profDesc.match(/choose\s+(\d+)/i);
   const skillChoices = choiceMatch ? parseInt(choiceMatch[1], 10) : 2;
 
-  // Extract skill options list
-  const skillOptions: string[] = (c.proficiency_choices?.[0]?.from ?? [])
-    .filter((p: { type?: string; item?: { name?: string } }) => p.type === "Proficiency")
-    .map((p: { item?: { name?: string } }) =>
-      (p.item?.name ?? "").replace("Skill: ", ""),
+  // Extract skill options: everything after "from" or "following" in the prof_skills string
+  const afterFrom = profDesc.replace(/^.*?(?:from|following[^:]*:?)/i, "");
+  const skillOptions: string[] = afterFrom
+    .split(",")
+    .map((s: string) =>
+      s
+        .replace(/\band\b/i, "")
+        .replace(/\.$/, "")
+        .trim(),
     )
-    .filter(Boolean);
+    .filter((s: string) => s.length > 0 && s.length < 30 && /^[A-Z]/.test(s));
+
+  // Archetypes from Open5e
+  const archetypes = (c.archetypes ?? []).map(
+    (a: { slug: string; name: string; desc?: string }) => ({
+      slug: a.slug,
+      name: a.name,
+      description: a.desc ?? "",
+    }),
+  );
+
+  // Detect which level the player chooses their archetype by scanning the table
+  // for the first level where a feature name is a substring of subtypes_name
+  const subtypesName: string = (c.subtypes_name ?? "").toLowerCase();
+  let archetypeLevel = 3; // default for most classes
+  if (subtypesName) {
+    outer: for (let lvl = 1; lvl <= 3; lvl++) {
+      const levelInfo = parseClassTable(c.table ?? "").get(lvl);
+      for (const f of levelInfo?.features ?? []) {
+        if (subtypesName.includes(f.name.toLowerCase())) {
+          archetypeLevel = lvl;
+          break outer;
+        }
+      }
+    }
+  }
 
   return {
     slug: c.slug,
@@ -145,31 +254,66 @@ function transformClass(c: any): Record<string, unknown> {
     skillChoices,
     skillOptions,
     primaryAbility: c.primary_ability ?? "",
-    subclassSlugs: [],
+    archetypes,
+    archetypeLevel,
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformClassLevel(l: any, classSlug: string, level: number): Record<string, unknown> {
-  const features = (l.features ?? []).map((f: { name: string; description?: string }) => ({
-    name: f.name,
-    description: f.description ?? "",
-    level,
-  }));
+// ─── Class table parser ───────────────────────────────────────────────────────
 
-  const spellSlots: Record<string, number> = {};
-  for (let i = 1; i <= 9; i++) {
-    const key = `spell_slots_level_${i}`;
-    if (l[key] && l[key] > 0) spellSlots[String(i)] = l[key];
+interface LevelInfo {
+  features: Array<{ name: string; description: string; level: number }>;
+  spellSlots: Record<string, number>;
+}
+
+function parseClassTable(table: string): Map<number, LevelInfo> {
+  const result = new Map<number, LevelInfo>();
+  const isSeparator = (line: string) => /^[\|\s\-:]+$/.test(line);
+  const parseRow = (line: string) => line.split("|").slice(1, -1).map((c) => c.trim());
+
+  const lines = table.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("|"));
+  if (lines.length < 3) return result;
+
+  const headers = parseRow(lines[0]).map((h) => h.toLowerCase());
+  const levelIdx = headers.findIndex((h) => h.includes("level"));
+  const featuresIdx = headers.findIndex((h) => h.includes("feature"));
+
+  // Spell slot columns are labelled "1st", "2nd", "3rd" … "9th"
+  const spellSlotCols = new Map<number, string>();
+  headers.forEach((h, i) => {
+    const m = h.match(/^(\d+)(st|nd|rd|th)$/);
+    if (m) spellSlotCols.set(i, m[1]);
+  });
+
+  for (let i = 1; i < lines.length; i++) {
+    if (isSeparator(lines[i])) continue;
+    const cells = parseRow(lines[i]);
+
+    const rawLevel = cells[levelIdx >= 0 ? levelIdx : 0] ?? "";
+    const levelMatch = rawLevel.match(/(\d+)/);
+    if (!levelMatch) continue;
+    const level = parseInt(levelMatch[1], 10);
+    if (level < 1 || level > 20) continue;
+
+    const featuresRaw = featuresIdx >= 0 ? cells[featuresIdx] : "";
+    const features = featuresRaw
+      ? featuresRaw
+          .split(",")
+          .map((f) => f.trim())
+          .filter((f) => f && f !== "-" && f !== "—")
+          .map((name) => ({ name, description: "", level }))
+      : [];
+
+    const spellSlots: Record<string, number> = {};
+    spellSlotCols.forEach((slotLevel, colIdx) => {
+      const num = parseInt(cells[colIdx] ?? "", 10);
+      if (!isNaN(num) && num > 0) spellSlots[slotLevel] = num;
+    });
+
+    result.set(level, { features, spellSlots });
   }
 
-  return {
-    classSlug,
-    level,
-    proficiencyBonus: l.prof_bonus ?? Math.ceil(level / 4) + 1,
-    features,
-    ...(Object.keys(spellSlots).length ? { spellSlots } : {}),
-  };
+  return result;
 }
 
 // ─── Seeding functions ────────────────────────────────────────────────────────
@@ -185,31 +329,40 @@ async function seedRaces(): Promise<void> {
   console.log(`  ✓ ${docs.length} races seeded`);
 }
 
-async function seedClasses(): Promise<void> {
+async function seedClasses(): Promise<Array<Record<string, unknown>>> {
   console.log("\n── Seeding srdClasses ──");
-  const raw = await fetchAll<unknown>("/classes");
-  const docs = raw.map((c: unknown) => {
+  const raw = await fetchAll<Record<string, unknown>>("/classes");
+  const docs = raw.map((c) => {
     const t = transformClass(c);
     return { id: t.slug as string, data: t };
   });
   await batchWrite("srdClasses", docs);
   console.log(`  ✓ ${docs.length} classes seeded`);
+  return raw;
 }
 
-async function seedClassLevels(): Promise<void> {
-  console.log("\n── Seeding srdClassLevels ──");
-  const raw = await fetchAll<unknown>("/levels");
+async function seedClassLevels(classData: Array<Record<string, unknown>>): Promise<void> {
+  console.log("\n── Seeding srdClassLevels (parsed from class tables) ──");
   const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
 
-  for (const l of raw as Array<Record<string, unknown>>) {
-    // Open5e levels have a url like /v1/levels/barbarian-1/
-    const urlStr = l.url as string ?? "";
-    const match = urlStr.match(/\/levels\/([a-z-]+)-(\d+)\//);
-    if (!match) continue;
-    const classSlug = match[1];
-    const level = parseInt(match[2], 10);
-    const id = `${classSlug}_${level}`;
-    docs.push({ id, data: transformClassLevel(l, classSlug, level) });
+  for (const c of classData) {
+    const classSlug = c.slug as string;
+    const levelMap = parseClassTable((c.table as string) ?? "");
+
+    for (let level = 1; level <= 20; level++) {
+      const proficiencyBonus = Math.ceil(level / 4) + 1;
+      const info = levelMap.get(level) ?? { features: [], spellSlots: {} };
+      docs.push({
+        id: `${classSlug}_${level}`,
+        data: {
+          classSlug,
+          level,
+          proficiencyBonus,
+          features: info.features,
+          ...(Object.keys(info.spellSlots).length > 0 ? { spellSlots: info.spellSlots } : {}),
+        },
+      });
+    }
   }
 
   await batchWrite("srdClassLevels", docs);
@@ -264,7 +417,9 @@ async function seedEquipment(): Promise<void> {
 async function seedSubclassLevels(): Promise<void> {
   console.log("\n── Seeding srdSubclassLevels (bundled) ──");
   const jsonPath = join(__dirname, "data", "subclassLevels.json");
-  const raw: Array<Record<string, unknown>> = JSON.parse(readFileSync(jsonPath, "utf-8"));
+  const raw: Array<Record<string, unknown>> = JSON.parse(
+    readFileSync(jsonPath, "utf-8"),
+  );
 
   const docs = raw.map((entry) => ({
     id: entry.slug as string,
@@ -274,17 +429,182 @@ async function seedSubclassLevels(): Promise<void> {
   console.log(`  ✓ ${docs.length} subclass levels seeded`);
 }
 
+async function seedConditions(): Promise<void> {
+  console.log("\n── Seeding srdConditions (v2) ──");
+  const raw = await fetchAllV2<Record<string, unknown>>("/conditions");
+  const docs = raw.map((c) => {
+    // key format: "{doc}_{slug}" e.g. "srd_blinded"
+    const key = c.key as string;
+    const descriptions = Array.isArray(c.descriptions)
+      ? (c.descriptions as Array<{ desc: string }>).map((d) => d.desc).join("\n\n")
+      : (c.desc as string) ?? "";
+    return {
+      id: key,
+      data: {
+        slug: key,
+        name: c.name,
+        description: descriptions,
+      },
+    };
+  });
+  await batchWrite("srdConditions", docs);
+  console.log(`  ✓ ${docs.length} conditions seeded`);
+}
+
+async function seedBackgrounds(): Promise<void> {
+  console.log("\n── Seeding srdBackgrounds (v2) ──");
+  const raw = await fetchAllV2<Record<string, unknown>>("/backgrounds");
+  const docs = raw.map((b) => {
+    const key = b.key as string;
+    const benefits = Array.isArray(b.benefits) ? b.benefits : [];
+    return {
+      id: key,
+      data: {
+        slug: key,
+        name: b.name,
+        description: b.desc ?? "",
+        benefits,
+      },
+    };
+  });
+  await batchWrite("srdBackgrounds", docs);
+  console.log(`  ✓ ${docs.length} backgrounds seeded`);
+}
+
+async function seedFeats(): Promise<void> {
+  console.log("\n── Seeding srdFeats (v2) ──");
+  const raw = await fetchAllV2<Record<string, unknown>>("/feats");
+  const docs = raw.map((f) => {
+    const key = f.key as string;
+    const benefits = Array.isArray(f.benefits) ? f.benefits : [];
+    return {
+      id: key,
+      data: {
+        slug: key,
+        name: f.name,
+        description: f.desc ?? "",
+        prerequisite: f.prerequisite ?? "",
+        benefits,
+      },
+    };
+  });
+  await batchWrite("srdFeats", docs);
+  console.log(`  ✓ ${docs.length} feats seeded`);
+}
+
+async function seedArmor(): Promise<void> {
+  console.log("\n── Seeding srdArmor (v2) ──");
+  const raw = await fetchAllV2<Record<string, unknown>>("/armor");
+  const docs = raw.map((a) => {
+    const key = a.key as string;
+    return {
+      id: key,
+      data: {
+        slug: key,
+        name: a.name,
+        category: a.category ?? "",
+        acBase: a.ac_base ?? 10,
+        acAddDexMod: a.ac_add_dexmod ?? false,
+        acCapDexMod: a.ac_cap_dexmod ?? null,
+        stealthDisadvantage: a.grants_stealth_disadvantage ?? false,
+        strengthRequired: a.strength_score_required ?? 0,
+        acDisplay: a.ac_display ?? "",
+        cost: a.cost ?? "",
+        weight: a.weight ?? "",
+      },
+    };
+  });
+  await batchWrite("srdArmor", docs);
+  console.log(`  ✓ ${docs.length} armor entries seeded`);
+}
+
+async function seedMonsters(): Promise<void> {
+  console.log("\n── Seeding srdMonsters (v1) ──");
+  const raw = await fetchAll<Record<string, unknown>>("/monsters");
+  const docs = raw.map((m) => ({
+    id: m.slug as string,
+    data: {
+      slug: m.slug,
+      name: m.name,
+      size: m.size,
+      type: m.type,
+      alignment: m.alignment,
+      armorClass: m.armor_class,
+      hitPoints: m.hit_points,
+      hitDice: m.hit_dice,
+      speed: m.speed,
+      strength: m.strength,
+      dexterity: m.dexterity,
+      constitution: m.constitution,
+      intelligence: m.intelligence,
+      wisdom: m.wisdom,
+      charisma: m.charisma,
+      challengeRating: m.cr,
+      xp: m.xp ?? 0,
+      senses: m.senses ?? "",
+      languages: m.languages ?? "",
+      specialAbilities: m.special_abilities ?? [],
+      actions: m.actions ?? [],
+      legendaryActions: m.legendary_actions ?? [],
+      reactions: m.reactions ?? [],
+    },
+  }));
+  await batchWrite("srdMonsters", docs);
+  console.log(`  ✓ ${docs.length} monsters seeded`);
+}
+
+async function seedSpellLists(): Promise<void> {
+  console.log("\n── Seeding srdSpellLists (v1, unfiltered) ──");
+  // Fetched without document filter — the wotc-srd filter only returns 3/7 classes.
+  const raw = await fetchAllV1Unfiltered<Record<string, unknown>>("/spelllist");
+  const docs = raw.map((l) => ({
+    id: l.slug as string,
+    data: {
+      slug: l.slug,
+      name: l.name,
+      spells: l.spells ?? [],
+    },
+  }));
+  await batchWrite("srdSpellLists", docs);
+  console.log(`  ✓ ${docs.length} spell lists seeded`);
+}
+
+async function seedMagicItems(): Promise<void> {
+  console.log("\n── Seeding srdMagicItems (v1) ──");
+  const raw = await fetchAll<Record<string, unknown>>("/magicitems");
+  const docs = raw.map((i) => ({
+    id: i.slug as string,
+    data: {
+      slug: i.slug,
+      name: i.name,
+      type: i.type ?? "",
+      rarity: i.rarity ?? "",
+      requiresAttunement: i.requires_attunement ?? "",
+      description: i.desc ?? "",
+    },
+  }));
+  await batchWrite("srdMagicItems", docs);
+  console.log(`  ✓ ${docs.length} magic items seeded`);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   console.log("Starting Firestore seeding from Open5e SRD...\n");
 
   await seedRaces();
-  await seedClasses();
-  await seedClassLevels();
+  const classData = await seedClasses();
+  await seedClassLevels(classData);
   await seedSpells();
   await seedEquipment();
   await seedSubclassLevels();
+  await seedConditions();
+  await seedBackgrounds();
+  await seedFeats();
+  await seedArmor();
+  await seedMonsters();
+  await seedMagicItems();
+  await seedSpellLists();
 
   console.log("\n✅ Seeding complete. Check your Firestore console.");
   process.exit(0);

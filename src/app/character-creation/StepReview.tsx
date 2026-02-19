@@ -1,8 +1,9 @@
 "use client";
 
+import MarkdownProse from "../components/MarkdownProse";
 import type { SRDRace, SRDClass } from "../lib/characterStore";
-import type { CharacterStats } from "../lib/gameState";
-import { getModifier, getProficiencyBonus } from "../lib/gameState";
+import type { CharacterStats } from "../lib/gameTypes";
+import { getModifier, getProficiencyBonus } from "../lib/gameTypes";
 
 interface Props {
   characterName: string;
@@ -134,19 +135,18 @@ export default function StepReview({
           <div className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase mb-1.5">
             Racial Traits
           </div>
-          <div className="space-y-1">
-            {selectedRace.traits.slice(0, 3).map((t) => (
-              <div key={t.name} className="font-crimson text-xs text-parchment/60">
-                <span className="text-parchment/80 font-semibold">{t.name}:</span>{" "}
-                {t.description.slice(0, 80)}{t.description.length > 80 ? "…" : ""}
-              </div>
-            ))}
-            {selectedRace.traits.length > 3 && (
-              <div className="font-crimson text-xs text-parchment/30 italic">
-                +{selectedRace.traits.length - 3} more traits
-              </div>
-            )}
-          </div>
+          <MarkdownProse
+            className="font-crimson text-xs text-parchment/60
+                       prose-strong:text-parchment/85 prose-em:text-parchment/70"
+          >
+            {selectedRace.traits[0].description
+              .split(/\n\n+/)
+              .slice(0, 5)
+              .join("\n\n")}
+          </MarkdownProse>
+          {selectedRace.traits[0].description.split(/\n\n+/).length > 5 && (
+            <p className="font-crimson text-xs text-parchment/30 italic mt-1">…and more traits</p>
+          )}
         </div>
       )}
 

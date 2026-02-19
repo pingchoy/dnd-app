@@ -72,14 +72,17 @@ for domain in \
     "statsig.com" \
     "marketplace.visualstudio.com" \
     "vscode.blob.core.windows.net" \
-    "update.code.visualstudio.com"; do
+    "update.code.visualstudio.com" \
+    "api.open5e.com" \
+    "oauth2.googleapis.com" \
+    "accounts.google.com"; do
     echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
         echo "ERROR: Failed to resolve $domain"
         exit 1
     fi
-    
+
     while read -r ip; do
         if [[ ! "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
             echo "ERROR: Invalid IP from DNS for $domain: $ip"
@@ -89,6 +92,29 @@ for domain in \
         ipset add allowed-domains "$ip"
     done < <(echo "$ips")
 done
+
+# Add Google Cloud IP ranges from their published list.
+# firestore.googleapis.com uses Google's Anycast infrastructure — the IP
+# actually used for a gRPC connection may differ from what dig returns at
+# startup. Fetching the full CIDR list ensures all Google Cloud IPs are allowed.
+echo "Fetching Google Cloud IP ranges..."
+gcloud_json=$(curl -s --connect-timeout 10 https://www.gstatic.com/ipranges/cloud.json)
+if [ -n "$gcloud_json" ] && echo "$gcloud_json" | jq -e '.prefixes' >/dev/null 2>&1; then
+    added=0
+    while read -r prefix; do
+        if [[ "$prefix" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+            ipset add allowed-domains "$prefix" 2>/dev/null || true
+            added=$((added + 1))
+        fi
+    done < <(echo "$gcloud_json" | jq -r '.prefixes[] | select(.ipv4Prefix != null) | .ipv4Prefix')
+    echo "Added $added Google Cloud IPv4 CIDR ranges"
+else
+    echo "WARNING: Could not fetch Google Cloud IP ranges — falling back to DNS for firestore.googleapis.com"
+    ips=$(dig +noall +answer A firestore.googleapis.com | awk '$4 == "A" {print $5}')
+    while read -r ip; do
+        [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && ipset add allowed-domains "$ip" 2>/dev/null || true
+    done < <(echo "$ips")
+fi
 
 # Get host IP from default route
 HOST_IP=$(ip route | grep default | cut -d" " -f3)

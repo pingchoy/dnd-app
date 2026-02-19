@@ -1,7 +1,7 @@
 "use client";
 
-import type { CharacterStats } from "../lib/gameState";
-import { getModifier } from "../lib/gameState";
+import type { CharacterStats } from "../lib/gameTypes";
+import { getModifier } from "../lib/gameTypes";
 import type { SRDRace } from "../lib/characterStore";
 import { POINT_BUY_COSTS, POINT_BUY_BUDGET, BASE_STAT_MIN, BASE_STAT_MAX } from "../hooks/useCharacterCreation";
 

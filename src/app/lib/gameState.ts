@@ -15,116 +15,38 @@ import {
   saveCharacterState,
 } from "./characterStore";
 
-export interface CharacterStats {
-  strength: number;
-  dexterity: number;
-  constitution: number;
-  intelligence: number;
-  wisdom: number;
-  charisma: number;
-}
+export type {
+  CharacterStats,
+  CharacterFeature,
+  WeaponStat,
+  PlayerState,
+  NPC,
+  StoryState,
+  ConversationTurn,
+  GameState,
+} from "./gameTypes";
 
-export interface CharacterFeature {
-  name: string;
-  description: string;
-  level: number;           // level at which the feature was gained
-  source?: string;         // e.g. "Rogue 1", "Half-Elf", "Thief 3"
-  type?: "active" | "passive" | "reaction";
-  scalesWithLevel?: boolean;
-  scalingFormula?: string; // e.g. "ceil(level/2)" — stored for display only
-}
+export {
+  getModifier,
+  getProficiencyBonus,
+  formatWeaponDamage,
+  XP_THRESHOLDS,
+  xpForLevel,
+  OPENING_NARRATIVE,
+} from "./gameTypes";
 
-/** Stored separately from the flat string so modifiers stay live as stats change. */
-export interface WeaponStat {
-  dice: string;                              // e.g. "1d6", "2d6"
-  stat: "str" | "dex" | "finesse" | "none"; // which ability drives the modifier
-  bonus: number;                             // flat bonus (e.g. +1 for a magic weapon)
-}
-
-export interface PlayerState {
-  name: string;
-  characterClass: string;
-  race: string;
-  level: number;
-  hitDie: number;       // class hit die (d6=6, d8=8, d10=10, d12=12)
-  xp: number;
-  xpToNextLevel: number;
-  currentHP: number;
-  maxHP: number;
-  armorClass: number;
-  stats: CharacterStats;
-  savingThrowProficiencies: string[];
-  skillProficiencies: string[];
-  features: CharacterFeature[];
-  inventory: string[];
-  conditions: string[];
-  gold: number;
-  weaponDamage: Record<string, WeaponStat>; // item name → weapon stats
-}
-
-export function formatWeaponDamage(weapon: WeaponStat, stats: CharacterStats): string {
-  const strMod = getModifier(stats.strength);
-  const dexMod = getModifier(stats.dexterity);
-  let mod = weapon.bonus;
-  if (weapon.stat === "str") mod += strMod;
-  else if (weapon.stat === "dex") mod += dexMod;
-  else if (weapon.stat === "finesse") mod += Math.max(strMod, dexMod);
-  return mod === 0 ? weapon.dice : `${weapon.dice}${mod >= 0 ? "+" : ""}${mod}`;
-}
-
-/**
- * A single NPC or monster in the current scene.
- * Created either at startup (pre-defined) or on the fly by the DM's
- * create_npc tool call when introducing a new creature mid-session.
- */
-export interface NPC {
-  id: string;
-  name: string;
-  ac: number;
-  currentHp: number;
-  maxHp: number;
-  attackBonus: number;    // added to d20 for attack rolls
-  damageDice: string;     // e.g. "1d6", "2d4"
-  damageBonus: number;    // flat bonus on damage rolls
-  savingThrowBonus: number;
-  xpValue: number;        // XP awarded to player on defeat
-  disposition: "hostile" | "neutral" | "friendly";
-  conditions: string[];
-  notes: string;          // special abilities, lore, etc.
-}
-
-export interface StoryState {
-  campaignTitle: string;
-  campaignBackground: string;
-  currentLocation: string;
-  currentScene: string;
-  activeQuests: string[];
-  importantNPCs: string[];   // narrative list (names + roles)
-  activeNPCs: NPC[];         // stat-tracked creatures currently in the scene
-  recentEvents: string[];
-}
-
-export interface ConversationTurn {
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
-}
-
-export interface GameState {
-  player: PlayerState;
-  story: StoryState;
-  conversationHistory: ConversationTurn[];
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-export function getModifier(stat: number): number {
-  return Math.floor((stat - 10) / 2);
-}
-
-export function getProficiencyBonus(level: number): number {
-  return Math.ceil(level / 4) + 1;
-}
+import {
+  CharacterStats,
+  NPC,
+  PlayerState,
+  StoryState,
+  GameState,
+  WeaponStat,
+  getModifier,
+  getProficiencyBonus,
+  xpForLevel,
+  XP_THRESHOLDS,
+} from "./gameTypes";
 
 function fmt(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`;
@@ -179,21 +101,6 @@ export function serializeStoryState(s: StoryState): string {
     .filter(Boolean)
     .join("\n");
 }
-
-// ─── Opening narrative ────────────────────────────────────────────────────────
-
-/**
- * Generic opening message shown in the chat UI for brand-new characters
- * (i.e. those with no conversation history yet).
- * The DM will establish the actual scene in the first response.
- */
-export const OPENING_NARRATIVE = `*Your adventure begins.*
-
-The world stretches before you — full of shadow, wonder, and danger in equal measure. Ancient ruins whisper secrets to those bold enough to listen. Taverns buzz with rumour. Roads fork at crossroads where choices echo for lifetimes.
-
-Describe your first action, and the story will unfold from there.
-
-**What do you do?**`;
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
 
@@ -388,16 +295,6 @@ export function updateNPC(input: UpdateNPCInput): void {
 }
 
 // ─── XP / Level-up ────────────────────────────────────────────────────────────
-
-/** XP required to reach each level (index 0 = level 1, index 19 = level 20). */
-export const XP_THRESHOLDS = [
-  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
-  85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
-];
-
-export function xpForLevel(level: number): number {
-  return XP_THRESHOLDS[Math.max(0, level - 1)] ?? 0;
-}
 
 function levelForXP(xp: number): number {
   let level = 1;

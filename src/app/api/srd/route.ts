@@ -9,15 +9,18 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const type = searchParams.get("type");
 
+  // SRD data is static — safe to cache for 1 hour in the browser and CDN.
+  const srdHeaders = { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" };
+
   try {
     if (type === "classes") {
       const classes = await getAllSRDClasses();
-      return NextResponse.json(classes);
+      return NextResponse.json(classes, { headers: srdHeaders });
     }
 
     if (type === "races") {
       const races = await getAllSRDRaces();
-      return NextResponse.json(races);
+      return NextResponse.json(races, { headers: srdHeaders });
     }
 
     if (type === "class-level") {
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest) {
       if (!data) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
-      return NextResponse.json(data);
+      return NextResponse.json(data, { headers: srdHeaders });
     }
 
     return NextResponse.json(
