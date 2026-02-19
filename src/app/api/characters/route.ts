@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createCharacter } from "../../lib/characterStore";
-import type { PlayerState, StoryState } from "../../lib/gameState";
+import type { PlayerState, StoryState } from "../../lib/gameTypes";
 
 export async function POST(request: NextRequest) {
   try {
