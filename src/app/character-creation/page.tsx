@@ -1,17 +1,30 @@
 "use client";
 
 import { useEffect } from "react";
-import { useCharacterCreation } from "../hooks/useCharacterCreation";
+import {
+  useCharacterCreation,
+  type WizardStep,
+} from "../hooks/useCharacterCreation";
 import StepRace from "./StepRace";
 import StepClass from "./StepClass";
 import StepArchetype from "./StepArchetype";
+import StepFeatureChoices from "./StepFeatureChoices";
 import StepPointBuy from "./StepPointBuy";
 import StepSkills from "./StepSkills";
+import StepSpells from "./StepSpells";
 import StepReview from "./StepReview";
 
-const STEP_LABELS = ["Race", "Class", "Abilities", "Skills", "Review"];
+const BASE_LABELS = ["Race", "Class", "Abilities", "Skills"];
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function StepIndicator({
+  current,
+  total,
+  labels,
+}: {
+  current: number;
+  total: number;
+  labels: string[];
+}) {
   return (
     <div className="flex items-center gap-2">
       {Array.from({ length: total }).map((_, i) => {
@@ -25,21 +38,27 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
                 isDone
                   ? "border-gold bg-gold text-dungeon"
                   : isCurrent
-                  ? "border-gold text-gold"
-                  : "border-gold/20 text-parchment/30"
+                    ? "border-gold text-gold"
+                    : "border-gold/20 text-parchment/30"
               }`}
             >
               {isDone ? "✓" : stepNum}
             </div>
             <span
               className={`font-cinzel text-[10px] tracking-wide hidden sm:block ${
-                isCurrent ? "text-gold" : isDone ? "text-parchment/50" : "text-parchment/20"
+                isCurrent
+                  ? "text-gold"
+                  : isDone
+                    ? "text-parchment/50"
+                    : "text-parchment/20"
               }`}
             >
-              {STEP_LABELS[i]}
+              {labels[i]}
             </span>
             {i < total - 1 && (
-              <div className={`w-6 h-px ${isDone ? "bg-gold/60" : "bg-gold/15"}`} />
+              <div
+                className={`w-6 h-px ${isDone ? "bg-gold/60" : "bg-gold/15"}`}
+              />
             )}
           </div>
         );
@@ -54,22 +73,33 @@ export default function CharacterCreationPage() {
   // Load SRD data when the wizard first mounts
   useEffect(() => {
     wizard.loadSRD();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canAdvanceFromRace = !!wizard.selectedRace;
-  const canAdvanceFromClass = !!wizard.selectedClass;
-  const canAdvanceFromStats = wizard.pointsRemaining >= 0; // always true if hook is correct
+  const { totalSteps, reviewStep, isSpellcaster } = wizard;
+  const stepLabels = isSpellcaster
+    ? [...BASE_LABELS, "Spells", "Review"]
+    : [...BASE_LABELS, "Review"];
+
   const canAdvanceFromSkills =
     wizard.selectedSkills.length ===
-    (wizard.selectedClass?.skillChoices ?? 0) + (wizard.selectedRace?.extraSkillChoices ?? 0);
+    (wizard.selectedClass?.skillChoices ?? 0) +
+      (wizard.selectedRace?.extraSkillChoices ?? 0);
+
+  const canAdvanceFromSpells =
+    wizard.selectedCantrips.length === wizard.cantripsToChoose &&
+    wizard.selectedSpells.length === wizard.spellsToChoose;
 
   function handleNext() {
-    if (wizard.step < 5) wizard.goToStep((wizard.step + 1) as 1 | 2 | 3 | 4 | 5);
+    if (wizard.step < reviewStep)
+      wizard.goToStep((wizard.step + 1) as WizardStep);
   }
   function handleBack() {
-    if (wizard.step > 1) wizard.goToStep((wizard.step - 1) as 1 | 2 | 3 | 4 | 5);
+    if (wizard.step > 1) wizard.goToStep((wizard.step - 1) as WizardStep);
   }
+
+  // When navigating to the spells step, load spell data
+  const spellStep: WizardStep | null = isSpellcaster ? 5 : null;
 
   return (
     <main className="min-h-screen bg-dungeon bg-stone-texture flex flex-col items-center justify-start px-4 py-8">
@@ -79,7 +109,11 @@ export default function CharacterCreationPage() {
           ✦ Create Your Character ✦
         </h1>
         <div className="flex justify-center">
-          <StepIndicator current={wizard.step} total={5} />
+          <StepIndicator
+            current={wizard.step}
+            total={totalSteps}
+            labels={stepLabels}
+          />
         </div>
       </div>
 
@@ -89,7 +123,9 @@ export default function CharacterCreationPage() {
         {wizard.isLoadingSRD && (
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-3">
-              <span className="font-cinzel text-gold text-3xl animate-pulse">✦</span>
+              <span className="font-cinzel text-gold text-3xl animate-pulse">
+                ✦
+              </span>
               <p className="font-crimson text-parchment/50 italic text-sm">
                 Consulting the ancient tomes…
               </p>
@@ -122,22 +158,38 @@ export default function CharacterCreationPage() {
               />
             )}
 
-            {wizard.step === 2 && !wizard.showingArchetypeStep && (
-              <StepClass
-                classes={wizard.classes}
-                selectedClass={wizard.selectedClass}
-                onSelect={wizard.selectClass}
-              />
-            )}
+            {wizard.step === 2 &&
+              !wizard.showingArchetypeStep &&
+              !wizard.showingFeatureChoicesStep && (
+                <StepClass
+                  classes={wizard.classes}
+                  selectedClass={wizard.selectedClass}
+                  onSelect={wizard.selectClass}
+                />
+              )}
 
-            {wizard.step === 2 && wizard.showingArchetypeStep && wizard.selectedClass && (
-              <StepArchetype
-                selectedClass={wizard.selectedClass}
-                selectedArchetype={wizard.selectedArchetype}
-                onSelect={wizard.selectArchetype}
-                onBack={() => wizard.goToStep(2)}
-              />
-            )}
+            {wizard.step === 2 &&
+              wizard.showingArchetypeStep &&
+              wizard.selectedClass && (
+                <StepArchetype
+                  selectedClass={wizard.selectedClass}
+                  selectedArchetype={wizard.selectedArchetype}
+                  onSelect={wizard.selectArchetype}
+                  onBack={() => wizard.goToStep(2)}
+                />
+              )}
+
+            {wizard.step === 2 &&
+              wizard.showingFeatureChoicesStep &&
+              !wizard.showingArchetypeStep && (
+                <StepFeatureChoices
+                  choiceFeatures={wizard.choiceFeatures}
+                  featureChoices={wizard.featureChoices}
+                  onSetChoice={wizard.setFeatureChoice}
+                  onConfirm={wizard.confirmFeatureChoices}
+                  onBack={() => wizard.goToStep(2)}
+                />
+              )}
 
             {wizard.step === 3 && wizard.selectedRace && (
               <StepPointBuy
@@ -158,7 +210,21 @@ export default function CharacterCreationPage() {
               />
             )}
 
-            {wizard.step === 5 &&
+            {spellStep && wizard.step === spellStep && (
+              <StepSpells
+                availableCantrips={wizard.availableCantrips}
+                availableSpells={wizard.availableSpells}
+                cantripsToChoose={wizard.cantripsToChoose}
+                spellsToChoose={wizard.spellsToChoose}
+                selectedCantrips={wizard.selectedCantrips}
+                selectedSpells={wizard.selectedSpells}
+                onToggleCantrip={wizard.toggleCantrip}
+                onToggleSpell={wizard.toggleSpell}
+                isLoading={wizard.isLoadingSpells}
+              />
+            )}
+
+            {wizard.step === reviewStep &&
               wizard.selectedRace &&
               wizard.selectedClass && (
                 <div className="space-y-4">
@@ -180,6 +246,28 @@ export default function CharacterCreationPage() {
                     />
                   </div>
 
+                  {/* Gender selector */}
+                  <div>
+                    <label className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase block mb-1.5">
+                      Gender
+                    </label>
+                    <div className="flex gap-2">
+                      {["Male", "Female"].map((g) => (
+                        <button
+                          key={g}
+                          onClick={() => wizard.setGender(g)}
+                          className={`flex-1 font-cinzel text-sm py-2 rounded border transition-colors ${
+                            wizard.selectedGender === g
+                              ? "border-gold bg-gold/10 text-gold"
+                              : "border-gold/20 text-parchment/40 hover:border-gold/50 hover:text-parchment/70"
+                          }`}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <StepReview
                     characterName={wizard.characterName}
                     selectedRace={wizard.selectedRace}
@@ -193,61 +281,81 @@ export default function CharacterCreationPage() {
                 </div>
               )}
 
-            {/* Navigation (steps 1–4 only; step 5 has its own buttons) */}
-            {wizard.step < 5 && (
-              <div className="flex justify-between items-center mt-6 pt-4 border-t border-gold/10">
-                <button
-                  onClick={handleBack}
-                  disabled={wizard.step === 1}
-                  className="font-cinzel text-xs text-parchment/40 tracking-widest uppercase
+            {/* Navigation (all steps except review have nav bar) */}
+            {wizard.step < reviewStep &&
+              !wizard.showingArchetypeStep &&
+              !wizard.showingFeatureChoicesStep && (
+                <div className="flex justify-between items-center mt-6 pt-4 border-t border-gold/10">
+                  <button
+                    onClick={handleBack}
+                    disabled={wizard.step === 1}
+                    className="font-cinzel text-xs text-parchment/40 tracking-widest uppercase
                              hover:text-parchment disabled:opacity-0 transition-colors"
-                >
-                  ← Back
-                </button>
+                  >
+                    ← Back
+                  </button>
 
-                {/* Step 1 and 2: selecting a card advances automatically */}
-                {wizard.step === 3 && (
-                  <button
-                    onClick={handleNext}
-                    disabled={!canAdvanceFromStats}
-                    className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
+                  {/* Step 1 and 2: selecting a card advances automatically */}
+                  {wizard.step === 3 && (
+                    <button
+                      onClick={handleNext}
+                      className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
                                tracking-widest uppercase hover:border-gold hover:bg-dungeon-mid
                                disabled:opacity-30 transition-colors"
-                  >
-                    Next → Skills
-                  </button>
-                )}
-                {wizard.step === 4 && (
-                  <button
-                    onClick={handleNext}
-                    disabled={!canAdvanceFromSkills}
-                    className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
+                    >
+                      Next → Skills
+                    </button>
+                  )}
+                  {wizard.step === 4 && (
+                    <button
+                      onClick={() => {
+                        if (isSpellcaster) {
+                          wizard.loadSpellData();
+                          wizard.goToStep(5 as WizardStep);
+                        } else {
+                          wizard.goToStep(reviewStep);
+                        }
+                      }}
+                      disabled={!canAdvanceFromSkills}
+                      className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
                                tracking-widest uppercase hover:border-gold hover:bg-dungeon-mid
                                disabled:opacity-30 transition-colors"
-                  >
-                    Next → Review
-                  </button>
-                )}
-                {(wizard.step === 1 || wizard.step === 2) && (
-                  <span className="font-crimson text-[11px] text-parchment/30 italic">
-                    {wizard.step === 1
-                      ? canAdvanceFromRace
-                        ? "Race selected — choose your class →"
-                        : "Select a race to continue"
-                      : canAdvanceFromClass
-                      ? "Class selected — assign ability scores →"
-                      : "Select a class to continue"}
-                  </span>
-                )}
-              </div>
-            )}
+                    >
+                      Next → {isSpellcaster ? "Spells" : "Review"}
+                    </button>
+                  )}
+                  {spellStep && wizard.step === spellStep && (
+                    <button
+                      onClick={() => wizard.goToStep(reviewStep)}
+                      disabled={!canAdvanceFromSpells}
+                      className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
+                               tracking-widest uppercase hover:border-gold hover:bg-dungeon-mid
+                               disabled:opacity-30 transition-colors"
+                    >
+                      Next → Review
+                    </button>
+                  )}
+                  {(wizard.step === 1 || wizard.step === 2) && (
+                    <span className="font-crimson text-[11px] text-parchment/30 italic">
+                      {wizard.step === 1
+                        ? wizard.selectedRace
+                          ? "Race selected — choose your class →"
+                          : "Select a race to continue"
+                        : wizard.selectedClass
+                          ? "Class selected — assign ability scores →"
+                          : "Select a class to continue"}
+                    </span>
+                  )}
+                </div>
+              )}
           </div>
         )}
       </div>
 
       {/* Footer note */}
       <p className="mt-6 font-crimson text-[11px] text-parchment/20 italic text-center max-w-sm">
-        Your character is saved to the cloud. You can return and continue your adventure anytime.
+        Your character is saved to the cloud. You can return and continue your
+        adventure anytime.
       </p>
     </main>
   );

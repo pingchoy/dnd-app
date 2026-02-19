@@ -59,6 +59,10 @@ export interface SRDClass {
   archetypes: SRDArchetype[];
   /** Level at which the player chooses their archetype (1, 2, or 3) */
   archetypeLevel: number;
+  /** "known" = fixed list (Bard, Sorcerer, Ranger, Warlock), "prepared" = ability_mod + level (Cleric, Druid, Paladin, Wizard), "none" = non-caster */
+  spellcastingType: "known" | "prepared" | "none";
+  /** The ability used for spellcasting, e.g. "Intelligence", "Wisdom", "Charisma". Empty for non-casters. */
+  spellcastingAbility: string;
 }
 
 export interface SRDClassLevel {
@@ -68,6 +72,8 @@ export interface SRDClassLevel {
   features: SRDFeature[];
   /** Spell slots by spell level, e.g. { "1": 4, "2": 2 } */
   spellSlots?: Record<string, number>;
+  cantripsKnown?: number;
+  spellsKnown?: number;
 }
 
 // ─── Stored Character ─────────────────────────────────────────────────────────
@@ -176,8 +182,15 @@ export async function querySRD(
 const collectionCache = new Map<string, unknown[]>();
 
 export async function getSRDClass(slug: string): Promise<SRDClass | null> {
+  const cacheKey = `srdClasses/${slug}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey) as unknown as SRDClass;
+
   const snap = await adminDb.collection("srdClasses").doc(slug).get();
-  return snap.exists ? (snap.data() as SRDClass) : null;
+  if (!snap.exists) return null;
+
+  const data = snap.data() as SRDClass;
+  srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
+  return data;
 }
 
 export async function getSRDClassLevel(
@@ -185,13 +198,27 @@ export async function getSRDClassLevel(
   level: number,
 ): Promise<SRDClassLevel | null> {
   const id = `${classSlug}_${level}`;
+  const cacheKey = `srdClassLevels/${id}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey) as unknown as SRDClassLevel;
+
   const snap = await adminDb.collection("srdClassLevels").doc(id).get();
-  return snap.exists ? (snap.data() as SRDClassLevel) : null;
+  if (!snap.exists) return null;
+
+  const data = snap.data() as SRDClassLevel;
+  srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
+  return data;
 }
 
 export async function getSRDRace(slug: string): Promise<SRDRace | null> {
+  const cacheKey = `srdRaces/${slug}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey) as unknown as SRDRace;
+
   const snap = await adminDb.collection("srdRaces").doc(slug).get();
-  return snap.exists ? (snap.data() as SRDRace) : null;
+  if (!snap.exists) return null;
+
+  const data = snap.data() as SRDRace;
+  srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
+  return data;
 }
 
 export async function getAllSRDClasses(): Promise<SRDClass[]> {
@@ -199,7 +226,11 @@ export async function getAllSRDClasses(): Promise<SRDClass[]> {
     return collectionCache.get("srdClasses") as SRDClass[];
   }
   const snap = await adminDb.collection("srdClasses").get();
-  const data = snap.docs.map((d) => d.data() as SRDClass);
+  const data = snap.docs.map((d) => {
+    const cls = d.data() as SRDClass;
+    srdCache.set(`srdClasses/${d.id}`, cls as unknown as Record<string, unknown>);
+    return cls;
+  });
   collectionCache.set("srdClasses", data);
   return data;
 }
@@ -209,7 +240,86 @@ export async function getAllSRDRaces(): Promise<SRDRace[]> {
     return collectionCache.get("srdRaces") as SRDRace[];
   }
   const snap = await adminDb.collection("srdRaces").get();
-  const data = snap.docs.map((d) => d.data() as SRDRace);
+  const data = snap.docs.map((d) => {
+    const race = d.data() as SRDRace;
+    srdCache.set(`srdRaces/${d.id}`, race as unknown as Record<string, unknown>);
+    return race;
+  });
   collectionCache.set("srdRaces", data);
   return data;
+}
+
+export interface SRDSpellCompact {
+  slug: string;
+  name: string;
+  school: string;
+  castingTime: string;
+  range: string;
+  description: string;
+}
+
+/**
+ * Return all spells for a class at a given spell level (0 = cantrips).
+ * Fetches the class spell list, then batch-reads individual spell docs.
+ */
+export async function getSRDSpellsByClassAndLevel(
+  classSlug: string,
+  spellLevel: number,
+): Promise<SRDSpellCompact[]> {
+  // 1. Get the class spell list
+  const listDoc = await querySRD("spell_list", classSlug);
+  if (!listDoc) return [];
+
+  const spellSlugs: string[] = (listDoc.spells as string[]) ?? [];
+  if (spellSlugs.length === 0) return [];
+
+  // 2. Batch-read all spell docs (use cache where available)
+  const results: SRDSpellCompact[] = [];
+  const uncachedSlugs: string[] = [];
+
+  for (const slug of spellSlugs) {
+    const cacheKey = `srdSpells/${slug}`;
+    if (srdCache.has(cacheKey)) {
+      const s = srdCache.get(cacheKey)!;
+      if ((s.level as number) === spellLevel) {
+        results.push({
+          slug: s.slug as string,
+          name: s.name as string,
+          school: s.school as string,
+          castingTime: s.castingTime as string,
+          range: s.range as string,
+          description: String(s.description ?? "").slice(0, 300),
+        });
+      }
+    } else {
+      uncachedSlugs.push(slug);
+    }
+  }
+
+  // Fetch uncached in batches of 10 (Firestore getAll limit is 100)
+  for (let i = 0; i < uncachedSlugs.length; i += 10) {
+    const batch = uncachedSlugs.slice(i, i + 10);
+    const refs = batch.map((slug) => adminDb.collection("srdSpells").doc(slug));
+    const snaps = await adminDb.getAll(...refs);
+
+    for (const snap of snaps) {
+      if (!snap.exists) continue;
+      const s = snap.data() as Record<string, unknown>;
+      srdCache.set(`srdSpells/${snap.id}`, s);
+
+      if ((s.level as number) === spellLevel) {
+        results.push({
+          slug: s.slug as string,
+          name: s.name as string,
+          school: s.school as string,
+          castingTime: s.castingTime as string,
+          range: s.range as string,
+          description: String(s.description ?? "").slice(0, 300),
+        });
+      }
+    }
+  }
+
+  results.sort((a, b) => a.name.localeCompare(b.name));
+  return results;
 }

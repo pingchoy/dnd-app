@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontSize: {
+        sm: ["16px", "24px"],
+      },
       fontFamily: {
         cinzel: ["var(--font-cinzel)", "Georgia", "serif"],
         crimson: ["var(--font-crimson)", "Georgia", "serif"],

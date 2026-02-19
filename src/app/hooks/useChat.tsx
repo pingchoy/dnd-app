@@ -125,6 +125,32 @@ export function useChat(): UseChatReturn {
       setTotalTokens((t) => t + (rollData.tokensUsed?.input ?? 0) + (rollData.tokensUsed?.output ?? 0));
       setEstimatedCostUsd((c) => c + (rollData.rulesCost ?? 0));
 
+      // Action impossible — skip dice, send rejection context to DM
+      if (rollData.parsed?.impossible) {
+        setIsRolling(false);
+        await requestNarrative(input, {
+          playerInput: input,
+          roll: 0,
+          parsed: rollData.parsed,
+          raw: rollData.raw,
+          rulesCost: rollData.rulesCost ?? 0,
+        });
+        return;
+      }
+
+      // No mechanical check needed — skip dice UI, pass to DM
+      if (rollData.parsed?.noCheck) {
+        setIsRolling(false);
+        await requestNarrative(input, {
+          playerInput: input,
+          roll: 0,
+          parsed: rollData.parsed,
+          raw: rollData.raw,
+          rulesCost: rollData.rulesCost ?? 0,
+        });
+        return;
+      }
+
       // Park the roll — the DiceRoll component will appear
       setPendingRoll({
         playerInput: input,
@@ -169,7 +195,15 @@ export function useChat(): UseChatReturn {
           characterId,
           playerInput,
           precomputedRules: roll
-            ? { raw: roll.raw, roll: roll.roll, rulesCost: roll.rulesCost }
+            ? {
+                raw: roll.raw,
+                roll: roll.roll,
+                rulesCost: roll.rulesCost,
+                damageTotal: roll.parsed.damage?.totalDamage,
+                damageBreakdown: roll.parsed.damage?.breakdown
+                  .map((b) => `${b.label}: [${b.rolls.join(",")}]${b.flatBonus ? (b.flatBonus > 0 ? `+${b.flatBonus}` : b.flatBonus) : ""}=${b.subtotal}${b.damageType ? ` ${b.damageType}` : ""}`)
+                  .join("; "),
+              }
             : undefined,
         }),
       });

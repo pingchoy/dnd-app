@@ -6,6 +6,7 @@ import Input from "../components/Input";
 import ChatCard from "../components/ChatCard";
 import DiceRoll from "../components/DiceRoll";
 import CharacterSheet from "../components/CharacterSheet";
+import CharacterSidebar from "../components/CharacterSidebar";
 import { useChat } from "../hooks/useChat";
 
 function HpBar({ current, max }: { current: number; max: number }) {
@@ -50,6 +51,7 @@ export default function Dashboard() {
 
   const [userInput, setUserInput] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,6 +96,34 @@ export default function Dashboard() {
                 <span className="font-cinzel text-gold text-xs tracking-widest uppercase">✦ Character Sheet ✦</span>
                 <button
                   onClick={() => setSheetOpen(false)}
+                  className="font-cinzel text-parchment/40 hover:text-parchment text-lg leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <CharacterSheet player={player} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Desktop full sheet modal ── */}
+      {fullSheetOpen && (
+        <div
+          className="fixed inset-0 z-50 hidden lg:flex items-center justify-center p-8 bg-black/70 backdrop-blur-sm"
+          onClick={() => setFullSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-5xl h-[90vh] rounded-lg overflow-hidden border border-gold-dark/40 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-full flex flex-col">
+              <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-2 flex items-center justify-between">
+                <span className="font-cinzel text-gold text-xs tracking-widest uppercase">✦ Character Sheet ✦</span>
+                <button
+                  onClick={() => setFullSheetOpen(false)}
                   className="font-cinzel text-parchment/40 hover:text-parchment text-lg leading-none"
                 >
                   ✕
@@ -178,9 +208,9 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* ── Right: character sheet sidebar (desktop only) ── */}
+        {/* ── Right: character sidebar (desktop only) ── */}
         <aside className="hidden lg:block w-80 flex-shrink-0 overflow-hidden border-l border-[#3a2a1a]">
-          <CharacterSheet player={player} />
+          <CharacterSidebar player={player} onOpenFullSheet={() => setFullSheetOpen(true)} />
         </aside>
       </div>
     </main>

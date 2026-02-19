@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import MarkdownProse from "./MarkdownProse";
+import SpellTag from "./SpellTag";
 import { PlayerState, getModifier, getProficiencyBonus, formatWeaponDamage } from "../lib/gameTypes";
 
 
@@ -30,16 +32,115 @@ function fmt(n: number) {
   return n >= 0 ? `+${n}` : `${n}`;
 }
 
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="font-cinzel text-gold-dark text-sm tracking-widest uppercase mb-2 border-b border-gold-dark/20 pb-1">
+      {children}
+    </h3>
+  );
+}
+
 function StatBlock({ label, value }: { label: string; value: number }) {
   const mod = getModifier(value);
   return (
     <div className="flex flex-col items-center bg-dungeon-mid border border-gold/20 rounded p-2">
-      <span className="font-cinzel text-[10px] tracking-widest text-gold/70 uppercase">{label}</span>
+      <span className="font-cinzel text-sm tracking-widest text-gold uppercase">{label}</span>
       <span className="font-cinzel text-2xl text-parchment mt-0.5">{value}</span>
       <span className={`font-cinzel text-sm font-bold ${mod >= 0 ? "text-green-400" : "text-red-400"}`}>
         {fmt(mod)}
       </span>
     </div>
+  );
+}
+
+type Feature = PlayerState["features"][number];
+
+function RacialTraits({ features }: { features: Feature[] }) {
+  if (features.length === 0) return null;
+  return (
+    <section>
+      <SectionHeading>Racial Traits</SectionHeading>
+      <div className="space-y-4">
+        {features.map((f) => {
+          const isBlob = f.name.toLowerCase() === "racial traits";
+          return (
+            <div key={f.name}>
+              {!isBlob && (
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                    f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/40"
+                  }`} />
+                  <span className="font-cinzel text-sm text-ink font-semibold">{f.name}</span>
+                </div>
+              )}
+              {f.description && (
+                <MarkdownProse className={`font-crimson text-sm text-ink/80 prose-strong:text-ink prose-em:text-ink/90 prose-p:my-0.5 leading-snug ${isBlob ? "" : "pl-4"}`}>
+                  {f.description}
+                </MarkdownProse>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ClassFeatures({ features }: { features: Feature[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  if (features.length === 0) return null;
+
+  const toggle = (name: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  return (
+    <section>
+      <SectionHeading>Class Features</SectionHeading>
+      <div className="space-y-1">
+        {features.map((f) => {
+          const isOpen = expanded.has(f.name);
+          return (
+            <div key={f.name} className="rounded border border-transparent hover:border-gold-dark/10 transition-colors">
+              <button
+                onClick={() => f.description && toggle(f.name)}
+                className="flex items-center gap-2 w-full text-left rounded px-1 py-1 hover:bg-ink/5 transition-colors"
+              >
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                  f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/40"
+                }`} />
+                <span className="font-cinzel text-sm text-ink font-semibold">{f.name}</span>
+                {f.chosenOption && (
+                  <span className="font-crimson text-sm text-gold-dark italic ml-1">— {f.chosenOption}</span>
+                )}
+                {f.description && (
+                  <span className={`ml-auto mr-2 text-ink/40 text-xs flex-shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}>
+                    ▶
+                  </span>
+                )}
+              </button>
+              {isOpen && f.description && (
+                <div className="pl-5 pr-2 pb-2 pt-1">
+                  <MarkdownProse className="font-crimson text-sm text-ink/85 prose-strong:text-ink prose-em:text-ink/90 prose-p:my-0.5 leading-snug">
+                    {f.description}
+                  </MarkdownProse>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-4 mt-3 font-cinzel text-sm text-ink/50 tracking-wide">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-gold inline-block"/>Active</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"/>Reaction</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-ink/40 inline-block"/>Passive</span>
+      </div>
+    </section>
   );
 }
 
@@ -54,164 +155,257 @@ export default function CharacterSheet({ player }: Props) {
   return (
     <div className="h-full flex flex-col card-parchment">
       {/* Header */}
-      <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-3">
-        <h2 className="font-cinzel text-gold tracking-widest uppercase text-xs text-center">
-          ✦ Character Sheet ✦
-        </h2>
-      </div>
-
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto scroll-pane px-4 py-4 space-y-4">
-        {/* Identity */}
-        <div className="text-center border-b border-gold-dark/20 pb-3">
-          <div className="font-cinzel text-lg text-ink">{player.name}</div>
-          <div className="font-crimson text-ink/60 italic text-sm mt-0.5">
-            {player.race} • {player.characterClass} • Lv.{player.level}
+      <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-6 py-3">
+        <div className="text-center">
+          <div className="font-cinzel text-xl text-parchment">{player.name}</div>
+          <div className="font-crimson text-parchment/70 italic text-base mt-0.5">
+            {player.race} • {player.characterClass} • Level {player.level}
           </div>
-          <div className="flex justify-center gap-4 mt-2 font-cinzel text-[11px] tracking-wide flex-wrap">
-            <span>
-              HP{" "}
-              <span className={`font-bold ${
-                player.currentHP / player.maxHP > 0.5 ? "text-green-600"
-                : player.currentHP / player.maxHP > 0.25 ? "text-yellow-600"
-                : "text-red-600"
-              }`}>
-                {player.currentHP}/{player.maxHP}
-              </span>
-            </span>
-            <span>AC <strong>{player.armorClass}</strong></span>
-            <span>Prof <strong>{fmt(prof)}</strong></span>
-            <span>Gold <strong>{player.gold}gp</strong></span>
-          </div>
-          {/* XP bar */}
-          <div className="mt-3">
-            <div className="flex justify-between font-cinzel text-[10px] tracking-wide mb-1">
-              <span className="text-gold-dark font-bold">XP {player.xp.toLocaleString()}</span>
-              <span className="text-ink/50">{player.xpToNextLevel.toLocaleString()} → Lv.{player.level + 1}</span>
-            </div>
-            <div className="h-2 rounded-full bg-ink/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gold/70 transition-all duration-500"
-                style={{ width: `${Math.min(100, (player.xp / player.xpToNextLevel) * 100)}%` }}
-              />
-            </div>
-          </div>
-          {player.conditions.length > 0 && (
-            <div className="mt-2 flex flex-wrap justify-center gap-1">
-              {player.conditions.map((c) => (
-                <span key={c} className="font-cinzel text-[9px] bg-red-100 text-red-700 border border-red-300 rounded px-1.5 py-0.5 uppercase tracking-wide">
-                  {c}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
-
-        {/* Ability scores */}
-        <section>
-          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-2">Ability Scores</h3>
-          <div className="grid grid-cols-3 gap-1.5">
-            <StatBlock label="STR" value={player.stats.strength} />
-            <StatBlock label="DEX" value={player.stats.dexterity} />
-            <StatBlock label="CON" value={player.stats.constitution} />
-            <StatBlock label="INT" value={player.stats.intelligence} />
-            <StatBlock label="WIS" value={player.stats.wisdom} />
-            <StatBlock label="CHA" value={player.stats.charisma} />
+        <div className="flex justify-center gap-5 mt-2 font-cinzel text-sm tracking-wide text-parchment flex-wrap">
+          <span>
+            HP{" "}
+            <span className={`font-bold ${
+              player.currentHP / player.maxHP > 0.5 ? "text-green-400"
+              : player.currentHP / player.maxHP > 0.25 ? "text-yellow-400"
+              : "text-red-400"
+            }`}>
+              {player.currentHP}/{player.maxHP}
+            </span>
+          </span>
+          <span>AC <strong className="text-gold-light">{player.armorClass}</strong></span>
+          <span>Prof <strong className="text-gold-light">{fmt(prof)}</strong></span>
+          <span>Gold <strong className="text-gold-light">{player.gold}gp</strong></span>
+        </div>
+        {/* XP bar */}
+        <div className="mt-2 px-4">
+          <div className="flex justify-between font-cinzel text-sm tracking-wide mb-1 text-parchment/70">
+            <span className="text-gold font-bold">XP {player.xp.toLocaleString()}</span>
+            <span>{player.xpToNextLevel.toLocaleString()} → Lv.{player.level + 1}</span>
           </div>
-        </section>
-
-        {/* Saving throws */}
-        <section>
-          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Saving Throws</h3>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-            {(["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const).map((ability) => {
-              const isProficient = player.savingThrowProficiencies.some(
-                (s) => s.toLowerCase() === ability,
-              );
-              const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
-              return (
-                <div key={ability} className="flex items-center gap-1 font-crimson text-xs text-ink/80">
-                  <span className={`w-2.5 h-2.5 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/30"}`} />
-                  <span className="capitalize">{ability.slice(0, 3)}</span>
-                  <span className={`ml-auto font-bold ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
-                </div>
-              );
-            })}
+          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gold/70 transition-all duration-500"
+              style={{ width: `${Math.min(100, (player.xp / player.xpToNextLevel) * 100)}%` }}
+            />
           </div>
-        </section>
-
-        {/* Skills */}
-        <section>
-          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Skills</h3>
-          <div className="space-y-0.5">
-            {allSkills.map(([skill, ability]) => {
-              const isProficient = player.skillProficiencies.some(
-                (s) => s.toLowerCase() === skill.toLowerCase(),
-              );
-              const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
-              return (
-                <div key={skill} className="flex items-center gap-1 font-crimson text-xs text-ink/80">
-                  <span className={`w-2.5 h-2.5 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/30"}`} />
-                  <span className="truncate">{skill}</span>
-                  <span className="text-ink/40 text-[9px] ml-0.5 flex-shrink-0">({ability.slice(0, 3).toUpperCase()})</span>
-                  <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Features */}
-        <section>
-          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Features & Traits</h3>
-          <div className="space-y-2">
-            {player.features.map((f) => (
-              <div key={f.name}>
-                <div className="flex items-baseline gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1 ${
-                    f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/30"
-                  }`} />
-                  <span className="font-cinzel text-[10px] text-ink">{f.name}</span>
-                  <span className="font-crimson text-[9px] text-ink/40 italic ml-auto flex-shrink-0">{f.source}</span>
-                </div>
-                <MarkdownProse className="font-crimson text-[10px] text-ink/60 pl-3 prose-strong:text-ink/80 prose-em:text-ink/70 prose-p:my-0.5">
-                  {f.description}
-                </MarkdownProse>
-              </div>
+        </div>
+        {player.conditions.length > 0 && (
+          <div className="mt-2 flex flex-wrap justify-center gap-1">
+            {player.conditions.map((c) => (
+              <span key={c} className="font-cinzel text-sm bg-red-100 text-red-700 border border-red-300 rounded px-2 py-0.5 uppercase tracking-wide">
+                {c}
+              </span>
             ))}
           </div>
-          <div className="flex gap-3 mt-2 font-cinzel text-[8px] text-ink/30 tracking-wide">
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gold inline-block"/>Active</span>
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"/>Reaction</span>
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-ink/30 inline-block"/>Passive</span>
-          </div>
-        </section>
+        )}
+      </div>
 
-        {/* Inventory */}
-        <section>
-          <h3 className="font-cinzel text-gold-dark text-[10px] tracking-widest uppercase mb-1.5">Inventory</h3>
-          {player.inventory.length === 0 ? (
-            <p className="font-crimson italic text-ink/40 text-xs">Nothing carried.</p>
-          ) : (
-            <ul className="space-y-0.5">
-              {player.inventory.map((item, i) => {
-                const weaponStat = player.weaponDamage[item];
-                const damage = weaponStat ? formatWeaponDamage(weaponStat, player.stats) : null;
+      {/* Two-column body */}
+      <div className="flex-1 overflow-hidden flex">
+
+        {/* ── Left column: compact stats ── */}
+        <div className="w-72 flex-shrink-0 overflow-y-auto scroll-pane px-4 py-4 space-y-5 border-r border-gold-dark/20">
+
+          {/* Ability scores */}
+          <section>
+            <SectionHeading>Ability Scores</SectionHeading>
+            <div className="grid grid-cols-3 gap-1.5">
+              <StatBlock label="STR" value={player.stats.strength} />
+              <StatBlock label="DEX" value={player.stats.dexterity} />
+              <StatBlock label="CON" value={player.stats.constitution} />
+              <StatBlock label="INT" value={player.stats.intelligence} />
+              <StatBlock label="WIS" value={player.stats.wisdom} />
+              <StatBlock label="CHA" value={player.stats.charisma} />
+            </div>
+          </section>
+
+          {/* Saving throws */}
+          <section>
+            <SectionHeading>Saving Throws</SectionHeading>
+            <div className="space-y-1">
+              {(["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const).map((ability) => {
+                const isProficient = player.savingThrowProficiencies.some(
+                  (s) => s.toLowerCase() === ability,
+                );
+                const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
                 return (
-                  <li key={i} className="font-crimson text-xs text-ink/80 flex items-center gap-1.5">
-                    <span className="text-gold/50 flex-shrink-0">◆</span>
-                    <span className="truncate">{item}</span>
-                    {damage && (
-                      <span className="ml-auto flex-shrink-0 font-cinzel text-[9px] text-amber-700 bg-amber-50 border border-amber-300/60 rounded px-1 py-0.5">
-                        {damage}
-                      </span>
-                    )}
-                  </li>
+                  <div key={ability} className="flex items-center gap-2 font-crimson text-sm text-ink/90">
+                    <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
+                    <span className="capitalize">{ability}</span>
+                    <span className={`ml-auto font-bold ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
+          </section>
+
+          {/* Inventory */}
+          <section>
+            <SectionHeading>Inventory</SectionHeading>
+            {player.inventory.length === 0 ? (
+              <p className="font-crimson italic text-ink/60 text-sm">Nothing carried.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {player.inventory.map((item, i) => {
+                  const weaponStat = player.weaponDamage[item];
+                  const damage = weaponStat ? formatWeaponDamage(weaponStat, player.stats) : null;
+                  return (
+                    <li key={i} className="font-crimson text-sm text-ink/90 flex items-center gap-1.5">
+                      <span className="text-gold-dark flex-shrink-0">◆</span>
+                      <span className="truncate">{item}</span>
+                      {damage && (
+                        <span className="ml-auto flex-shrink-0 font-cinzel text-sm text-amber-800 bg-amber-50 border border-amber-300/60 rounded px-1.5 py-0.5">
+                          {damage}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        {/* ── Right column: text-heavy sections ── */}
+        <div className="flex-1 overflow-y-auto scroll-pane px-5 py-4 space-y-5">
+
+          {/* Skills */}
+          <section>
+            <SectionHeading>Skills</SectionHeading>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {allSkills.map(([skill, ability]) => {
+                const isProficient = player.skillProficiencies.some(
+                  (s) => s.toLowerCase() === skill.toLowerCase(),
+                );
+                const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
+                return (
+                  <div key={skill} className="flex items-center gap-1.5 font-crimson text-sm text-ink/90">
+                    <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
+                    <span className="truncate">{skill}</span>
+                    <span className="text-ink/50 text-sm ml-0.5 flex-shrink-0">({ability.slice(0, 3).toUpperCase()})</span>
+                    <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <RacialTraits
+            features={player.features.filter(
+              (f) => f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0
+            )}
+          />
+
+          <ClassFeatures
+            features={player.features.filter(
+              (f) => f.source?.toLowerCase() !== player.race.toLowerCase() && f.level !== 0
+            )}
+          />
+
+          {/* Spellcasting (casters only) */}
+          {player.spellcastingAbility && (
+            <section>
+              <SectionHeading>Spellcasting</SectionHeading>
+              <div className="space-y-3">
+                {/* Spellcasting ability, DC, attack */}
+                <div className="flex gap-4 font-crimson text-sm text-ink/90">
+                  <span>
+                    Ability:{" "}
+                    <strong className="capitalize">{player.spellcastingAbility}</strong>
+                  </span>
+                  <span>
+                    Save DC:{" "}
+                    <strong>
+                      {8 + prof + getModifier(player.stats[player.spellcastingAbility])}
+                    </strong>
+                  </span>
+                  <span>
+                    Spell Attack:{" "}
+                    <strong>
+                      {fmt(prof + getModifier(player.stats[player.spellcastingAbility]))}
+                    </strong>
+                  </span>
+                </div>
+
+                {/* Cantrips */}
+                {player.cantrips && player.cantrips.length > 0 && (
+                  <div>
+                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                      Cantrips ({player.cantrips.length}/{player.maxCantrips ?? player.cantrips.length})
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {player.cantrips.map((c) => (
+                        <SpellTag
+                          key={c}
+                          name={c}
+                          className="font-crimson text-sm bg-dungeon-mid text-parchment/80 border border-gold/30 rounded px-2 py-0.5"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Known/Prepared spells */}
+                {player.knownSpells && player.knownSpells.length > 0 && (
+                  <div>
+                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                      Spells ({player.knownSpells.length}/{player.maxKnownSpells ?? player.knownSpells.length})
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {player.knownSpells.map((s) => (
+                        <SpellTag
+                          key={s}
+                          name={s}
+                          className="font-crimson text-sm bg-dungeon-mid text-gold-light border border-gold/40 rounded px-2 py-0.5 shadow-sm shadow-gold/10"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Spell slots */}
+                {player.spellSlots && Object.keys(player.spellSlots).length > 0 && (
+                  <div>
+                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                      Spell Slots
+                    </div>
+                    <div className="space-y-1">
+                      {Object.entries(player.spellSlots)
+                        .sort(([a], [b]) => Number(a) - Number(b))
+                        .map(([lvl, total]) => {
+                          const used = player.spellSlotsUsed?.[lvl] ?? 0;
+                          const remaining = total - used;
+                          return (
+                            <div key={lvl} className="flex items-center gap-2">
+                              <span className="font-cinzel text-sm text-ink/50 w-8">
+                                Lv{lvl}
+                              </span>
+                              <div className="flex gap-1">
+                                {Array.from({ length: total }).map((_, i) => (
+                                  <span
+                                    key={i}
+                                    className={`w-4 h-4 rounded-full border-2 ${
+                                      i < remaining
+                                        ? "bg-gold border-gold-dark"
+                                        : "bg-transparent border-ink/20"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="font-crimson text-sm text-ink/40 ml-1">
+                                {remaining}/{total}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
           )}
-        </section>
+        </div>
       </div>
     </div>
   );

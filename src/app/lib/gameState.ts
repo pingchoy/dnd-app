@@ -6,7 +6,7 @@
  * start of each request; applyStateChangesAndPersist() flushes it at
  * the end.
  *
- * activeNPCs are ephemeral (per-session only) and are never persisted.
+ * ALL game state (including activeNPCs) is persisted to Firestore.
  */
 
 import {
@@ -44,6 +44,7 @@ import {
   WeaponStat,
   getModifier,
   getProficiencyBonus,
+  formatWeaponDamage,
   xpForLevel,
   XP_THRESHOLDS,
 } from "./gameTypes";
@@ -55,19 +56,48 @@ function fmt(mod: number): string {
 /** Compact single-string summary of the player for injection into prompts. */
 export function serializePlayerState(p: PlayerState): string {
   const m = p.stats;
-  return [
-    `${p.name} | ${p.race} ${p.characterClass} Lv${p.level}`,
+  const lines = [
+    `${p.name} | ${p.gender} ${p.race} ${p.characterClass} Lv${p.level}`,
     `HP ${p.currentHP}/${p.maxHP} | AC ${p.armorClass}`,
     `STR ${m.strength}(${fmt(getModifier(m.strength))}) DEX ${m.dexterity}(${fmt(getModifier(m.dexterity))}) CON ${m.constitution}(${fmt(getModifier(m.constitution))}) INT ${m.intelligence}(${fmt(getModifier(m.intelligence))}) WIS ${m.wisdom}(${fmt(getModifier(m.wisdom))}) CHA ${m.charisma}(${fmt(getModifier(m.charisma))})`,
     `Proficiency bonus: ${fmt(getProficiencyBonus(p.level))}`,
     `Saving throws: ${p.savingThrowProficiencies.join(", ")}`,
     `Skills (proficient): ${p.skillProficiencies.join(", ")}`,
     `Inventory: ${p.inventory.join(", ")}`,
+    ...Object.entries(p.weaponDamage).map(
+      ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
+    ),
     `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
     `Gold: ${p.gold}gp`,
     `XP: ${p.xp} / ${p.xpToNextLevel} (Level ${p.level})`,
-    `Features: ${p.features.map((f) => f.name).join(" | ")}`,
-  ].join("\n");
+    `Features: ${p.features.map((f) => f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name).join(" | ")}`,
+  ];
+
+  // Spell block (only for casters)
+  if (p.spellcastingAbility) {
+    const abilityMod = getModifier(m[p.spellcastingAbility]);
+    const prof = getProficiencyBonus(p.level);
+    const saveDC = 8 + prof + abilityMod;
+    const spellAttack = prof + abilityMod;
+    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${fmt(spellAttack)})`);
+
+    if (p.cantrips?.length) {
+      lines.push(`Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.join(", ")}`);
+    }
+    if (p.knownSpells?.length) {
+      lines.push(`Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.join(", ")}`);
+    }
+    if (p.spellSlots && Object.keys(p.spellSlots).length > 0) {
+      const used = p.spellSlotsUsed ?? {};
+      const slotStr = Object.entries(p.spellSlots)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([lvl, total]) => `Lv${lvl}: ${total - (used[lvl] ?? 0)}/${total} remaining`)
+        .join(" ");
+      lines.push(`Spell Slots: ${slotStr}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /** Compact summary of active NPCs for injection into prompts. */
@@ -112,6 +142,7 @@ export function serializeStoryState(s: StoryState): string {
 let state: GameState = {
   player: {
     name: "",
+    gender: "",
     characterClass: "",
     race: "",
     level: 1,
@@ -162,6 +193,13 @@ export function addConversationTurn(
 
 // ─── Player state changes ─────────────────────────────────────────────────────
 
+export interface NPCToCreate {
+  name: string;
+  slug: string;
+  disposition: "hostile" | "neutral" | "friendly";
+  count?: number;
+}
+
 export interface StateChanges {
   hp_delta?: number;
   items_gained?: string[];
@@ -174,6 +212,15 @@ export interface StateChanges {
   gold_delta?: number;
   xp_gained?: number;
   weapon_damage?: Record<string, WeaponStat>;
+  /** Update chosenOption on existing class features, keyed by feature name. */
+  feature_choice_updates?: Record<string, string>;
+  /** Set spell slot usage. Keys are spell level strings, values are the NEW total used count. */
+  spell_slots_used?: Record<string, number>;
+  spells_learned?: string[];
+  spells_removed?: string[];
+  cantrips_learned?: string[];
+  /** NPCs the DM wants to introduce. Handled by the API route, not applied to state directly. */
+  npcs_to_create?: NPCToCreate[];
 }
 
 export function applyStateChanges(changes: StateChanges): void {
@@ -212,6 +259,39 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   if (changes.xp_gained && changes.xp_gained > 0) p.xp = (p.xp ?? 0) + changes.xp_gained;
+  if (changes.feature_choice_updates) {
+    for (const [featureName, choice] of Object.entries(changes.feature_choice_updates)) {
+      const feature = p.features.find(
+        (f) => f.name.toLowerCase() === featureName.toLowerCase(),
+      );
+      if (feature) feature.chosenOption = choice;
+    }
+  }
+  if (changes.spell_slots_used) {
+    if (!p.spellSlotsUsed) p.spellSlotsUsed = {};
+    for (const [lvl, used] of Object.entries(changes.spell_slots_used)) {
+      p.spellSlotsUsed[lvl] = Math.max(0, used);
+    }
+  }
+  if (changes.spells_learned?.length) {
+    if (!p.knownSpells) p.knownSpells = [];
+    for (const spell of changes.spells_learned) {
+      if (!p.knownSpells.includes(spell)) p.knownSpells.push(spell);
+    }
+  }
+  if (changes.spells_removed?.length) {
+    if (p.knownSpells) {
+      p.knownSpells = p.knownSpells.filter(
+        (s) => !changes.spells_removed!.some((r) => r.toLowerCase() === s.toLowerCase()),
+      );
+    }
+  }
+  if (changes.cantrips_learned?.length) {
+    if (!p.cantrips) p.cantrips = [];
+    for (const cantrip of changes.cantrips_learned) {
+      if (!p.cantrips.includes(cantrip)) p.cantrips.push(cantrip);
+    }
+  }
   if (changes.weapon_damage) Object.assign(p.weaponDamage, changes.weapon_damage);
   // Remove weaponDamage entries for items that were lost
   if (changes.items_lost?.length) {
@@ -309,7 +389,6 @@ function levelForXP(xp: number): number {
 
 /**
  * Load a character from Firestore and hydrate the in-memory singleton.
- * activeNPCs are ephemeral and always start empty.
  */
 export async function loadGameState(characterId: string): Promise<GameState> {
   const stored = await loadCharacter(characterId);
@@ -317,24 +396,18 @@ export async function loadGameState(characterId: string): Promise<GameState> {
 
   state = {
     player: stored.player,
-    story: {
-      ...stored.story,
-      activeNPCs: [], // ephemeral — never persisted
-    },
+    story: stored.story,
     conversationHistory: stored.conversationHistory,
   };
 
   return state;
 }
 
-/** Persist current in-memory state to Firestore (strips ephemeral activeNPCs). */
+/** Persist current in-memory state to Firestore. */
 async function persistState(characterId: string): Promise<void> {
   await saveCharacterState(characterId, {
     player: state.player,
-    story: {
-      ...state.story,
-      activeNPCs: [],
-    },
+    story: state.story,
     // Keep last 40 conversation entries (20 user+assistant pairs)
     conversationHistory: state.conversationHistory.slice(-40),
   });
@@ -380,15 +453,33 @@ export async function awardXPAsync(characterId: string, amount: number): Promise
     state.player.maxHP += hpGain;
     state.player.currentHP = Math.min(state.player.currentHP + hpGain, state.player.maxHP);
 
-    // Append new features from Firestore (deduplicate by name)
+    // Append new features from Firestore (deduplicate by name).
+    // Only store name + level — descriptions bloat Firestore and API responses.
+    // The DM can use query_srd to look up full descriptions on demand.
     for (const feat of levelData?.features ?? []) {
       if (!state.player.features.some((f) => f.name === feat.name)) {
         state.player.features.push({
           name: feat.name,
-          description: feat.description,
           level: lvl,
         });
       }
+    }
+
+    // Spellcasting updates on level-up
+    if (levelData?.spellSlots && Object.keys(levelData.spellSlots).length > 0) {
+      state.player.spellSlots = levelData.spellSlots;
+      state.player.spellSlotsUsed = {}; // level-up grants full slots
+    }
+    if (levelData?.cantripsKnown != null) {
+      state.player.maxCantrips = levelData.cantripsKnown;
+    }
+    if (levelData?.spellsKnown != null) {
+      // Known casters (Bard, Sorcerer, Ranger, Warlock)
+      state.player.maxKnownSpells = levelData.spellsKnown;
+    } else if (state.player.spellcastingAbility) {
+      // Prepared casters (Cleric, Druid, Paladin) — ability_mod + level
+      const abilityMod = getModifier(state.player.stats[state.player.spellcastingAbility]);
+      state.player.maxKnownSpells = Math.max(1, abilityMod + lvl);
     }
 
     state.player.level = lvl;

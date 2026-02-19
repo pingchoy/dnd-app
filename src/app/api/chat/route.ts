@@ -14,14 +14,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDMResponse } from "../../agents/dmAgent";
+import { getNPCStats } from "../../agents/npcAgent";
 import { getRulesOutcome, isContestedAction } from "../../agents/rulesAgent";
 import {
   addConversationTurn,
   applyStateChangesAndPersist,
-  awardXPAsync,
+  createNPC,
   getGameState,
   loadGameState,
+  NPCToCreate,
 } from "../../lib/gameState";
+import { querySRD } from "../../lib/characterStore";
 import { HISTORY_WINDOW, MODELS, calculateCost } from "../../lib/anthropic";
 import { RulesOutcome } from "../../agents/rulesAgent";
 
@@ -29,6 +32,8 @@ interface PrecomputedRules {
   raw: string;
   roll: number;
   rulesCost: number;
+  damageTotal?: number;
+  damageBreakdown?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,32 +53,100 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "characterId is required" }, { status: 400 });
     }
 
+    console.log("[/api/chat] Loading game state for character:", characterId);
     const gameState = await loadGameState(characterId);
     let rulesOutcome: RulesOutcome | null = null;
     let rulesCost = 0;
 
     if (precomputedRules) {
-      // Rules were already run in /api/roll — reuse, don't re-call the agent
+      console.log("[Rules Agent] Using precomputed rules from /api/roll:", {
+        roll: precomputedRules.roll,
+        cost: `$${precomputedRules.rulesCost.toFixed(4)}`,
+      });
+      let raw = precomputedRules.raw;
+      if (precomputedRules.damageTotal != null && precomputedRules.damageBreakdown) {
+        raw += `\n[Pre-rolled player damage: ${precomputedRules.damageTotal} total (${precomputedRules.damageBreakdown})]`;
+      }
       rulesOutcome = {
-        raw: precomputedRules.raw,
+        raw,
         roll: precomputedRules.roll,
         inputTokens: 0,
         outputTokens: 0,
       };
       rulesCost = precomputedRules.rulesCost;
     } else if (isContestedAction(playerInput)) {
-      // Fallback: run rules inline if the client skipped /api/roll
+      console.log("[Rules Agent] Contested action detected, calling rules agent inline...");
       rulesOutcome = await getRulesOutcome(playerInput, gameState.player);
       rulesCost = calculateCost(MODELS.UTILITY, rulesOutcome.inputTokens, rulesOutcome.outputTokens);
+      console.log("[Rules Agent] Done:", {
+        roll: rulesOutcome.roll,
+        tokens: { input: rulesOutcome.inputTokens, output: rulesOutcome.outputTokens },
+        cost: `$${rulesCost.toFixed(4)}`,
+      });
+    } else {
+      console.log("[Rules Agent] Skipped — not a contested action");
     }
 
+    console.log("[DM Agent] Calling with player input:", playerInput.slice(0, 100));
     const dmResult = await getDMResponse(playerInput, gameState, rulesOutcome);
     const dmCost = calculateCost(MODELS.NARRATIVE, dmResult.inputTokens, dmResult.outputTokens);
+    console.log("[DM Agent] Done:", {
+      narrativeLength: dmResult.narrative.length,
+      hasStateChanges: !!dmResult.stateChanges,
+      tokens: { input: dmResult.inputTokens, output: dmResult.outputTokens },
+      cost: `$${dmCost.toFixed(4)}`,
+    });
+    if (dmResult.stateChanges) {
+      console.log("[DM Agent] State changes:", JSON.stringify(dmResult.stateChanges, null, 2));
+    }
 
     addConversationTurn("user", playerInput, HISTORY_WINDOW);
     addConversationTurn("assistant", dmResult.narrative, HISTORY_WINDOW);
 
+    // Orchestrate NPC creation via the dedicated NPC agent
+    let npcAgentCost = 0;
+    if (dmResult.stateChanges?.npcs_to_create?.length) {
+      const npcRequests = dmResult.stateChanges.npcs_to_create;
+      console.log("[NPC Agent] DM requested NPC creation:", npcRequests);
+
+      await Promise.all(
+        npcRequests.map(async (npcReq: NPCToCreate) => {
+          console.log(`[NPC Agent] Fetching SRD data for slug: "${npcReq.slug}"`);
+          const srdData = npcReq.slug
+            ? await querySRD("monster", npcReq.slug)
+            : null;
+          console.log(`[NPC Agent] SRD data for "${npcReq.name}":`, srdData ? "found" : "null (custom creature)");
+
+          console.log(`[NPC Agent] Calling NPC agent for: ${npcReq.count || 1}x ${npcReq.name} (${npcReq.disposition})`);
+          const result = await getNPCStats(
+            { ...npcReq, count: npcReq.count || 1 },
+            srdData,
+          );
+
+          npcAgentCost += calculateCost(
+            MODELS.UTILITY,
+            result.inputTokens,
+            result.outputTokens,
+          );
+
+          console.log(`[NPC Agent] Created ${result.npcs.length} NPC(s):`, result.npcs.map(n => ({
+            name: n.name, ac: n.ac, hp: n.max_hp, atk: n.attack_bonus,
+          })));
+          console.log(`[NPC Agent] Tokens: { input: ${result.inputTokens}, output: ${result.outputTokens} }`);
+
+          for (const npc of result.npcs) {
+            createNPC(npc);
+          }
+        }),
+      );
+
+      console.log(`[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`);
+      // Strip npcs_to_create before persisting — it's not a player state field
+      delete dmResult.stateChanges.npcs_to_create;
+    }
+
     // Apply state changes (HP, inventory, conditions, gold, XP) and persist to Firestore
+    console.log("[Persist] Applying state changes and saving to Firestore...");
     if (dmResult.stateChanges) {
       await applyStateChangesAndPersist(dmResult.stateChanges, characterId);
     } else {
@@ -81,9 +154,11 @@ export async function POST(req: NextRequest) {
       await applyStateChangesAndPersist({}, characterId);
     }
 
-    // Standalone XP awards (e.g. from route-level logic, future quest rewards)
-    // awardXPAsync is also called inside applyStateChangesAndPersist when xp_gained is set.
-    // This block is a hook for future use.
+    const totalCost = dmCost + rulesCost + npcAgentCost;
+    console.log("[/api/chat] Turn complete:", {
+      totalCost: `$${totalCost.toFixed(4)}`,
+      breakdown: { dm: `$${dmCost.toFixed(4)}`, rules: `$${rulesCost.toFixed(4)}`, npc: `$${npcAgentCost.toFixed(4)}` },
+    });
 
     return NextResponse.json({
       narrative: dmResult.narrative,
@@ -93,7 +168,7 @@ export async function POST(req: NextRequest) {
         dmOutput: dmResult.outputTokens,
         total: dmResult.inputTokens + dmResult.outputTokens,
       },
-      estimatedCostUsd: dmCost + rulesCost,
+      estimatedCostUsd: totalCost,
     });
   } catch (err: unknown) {
     console.error("[/api/chat]", err);

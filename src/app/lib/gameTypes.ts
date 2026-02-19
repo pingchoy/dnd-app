@@ -20,12 +20,14 @@ export interface CharacterStats {
 
 export interface CharacterFeature {
   name: string;
-  description: string;
+  description?: string;
   level: number;
   source?: string;
   type?: "active" | "passive" | "reaction";
   scalesWithLevel?: boolean;
   scalingFormula?: string;
+  /** Player's chosen option for features that require a choice (e.g. Favored Enemy). */
+  chosenOption?: string;
 }
 
 /** Stored separately from a flat string so modifiers stay live as stats change. */
@@ -37,6 +39,7 @@ export interface WeaponStat {
 
 export interface PlayerState {
   name: string;
+  gender: string;
   characterClass: string;
   race: string;
   level: number;
@@ -55,6 +58,14 @@ export interface PlayerState {
   gold: number;
   weaponDamage: Record<string, WeaponStat>;
   subclass?: string;
+  // ─── Spellcasting (optional — non-casters carry none of these) ───
+  spellcastingAbility?: keyof CharacterStats;
+  cantrips?: string[];
+  maxCantrips?: number;
+  knownSpells?: string[];
+  maxKnownSpells?: number;
+  spellSlots?: Record<string, number>;
+  spellSlotsUsed?: Record<string, number>;
 }
 
 export interface NPC {
@@ -124,6 +135,30 @@ export const XP_THRESHOLDS = [
 
 export function xpForLevel(level: number): number {
   return XP_THRESHOLDS[Math.max(0, level - 1)] ?? 0;
+}
+
+// ─── Dice rolling ─────────────────────────────────────────────────────────────
+
+export interface DiceRollResult {
+  expression: string;  // "2d6"
+  rolls: number[];     // [3, 5]
+  total: number;       // 8
+}
+
+/**
+ * Roll dice from a standard NdS expression (e.g. "2d6", "1d8").
+ * Returns individual rolls and the total.
+ */
+export function rollDice(expression: string): DiceRollResult {
+  const match = expression.match(/^(\d+)d(\d+)$/i);
+  if (!match) return { expression, rolls: [], total: 0 };
+  const count = parseInt(match[1]);
+  const sides = parseInt(match[2]);
+  const rolls: number[] = [];
+  for (let i = 0; i < count; i++) {
+    rolls.push(Math.floor(Math.random() * sides) + 1);
+  }
+  return { expression, rolls, total: rolls.reduce((a, b) => a + b, 0) };
 }
 
 // ─── UI constants ─────────────────────────────────────────────────────────────

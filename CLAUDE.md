@@ -57,6 +57,11 @@ npm run lint   # ESLint
 ## Adding More Players
 Update `src/app/lib/gameState.ts` — the `GameState` interface can be extended to support multiple players when needed.
 
+## Architecture Principle: No Ephemeral Game State
+**All game state must be persisted to Firestore — nothing game-related should live only in memory.** The in-memory singleton in `gameState.ts` exists only as a per-request working copy. It is hydrated from Firestore at the start of each request (`loadGameState`) and flushed back at the end (`applyStateChangesAndPersist`). If a player refreshes the page, all state (player, story, activeNPCs, conversation history) must survive.
+
+Never strip or zero out fields during persistence. If data is part of `GameState`, it gets saved.
+
 ## Architecture Principle: Class-Agnostic Design
 **Every system must be generic across all D&D 5e classes — never hardcoded for a specific class or campaign.**
 
@@ -68,6 +73,9 @@ Common violations to avoid:
 - **Proficiency assumptions** — don't assume saving throw or skill proficiencies based on class; always read from the character data.
 - **Weapon/damage assumptions** — don't infer damage from weapon names; always use `weaponDamage` in state (set by the DM or character creation).
 - **Feature progression tables** — Sneak Attack, Rage uses, Spell Slots, Ki Points etc. should not be computed from class name. Either store the current value in state and let the DM/level-up flow update it, or maintain a class progression table keyed by class name.
+
+## UI Design Rules
+- **Minimum description text size: 16px** — No description or body text should be smaller than 16px (`text-sm` in Tailwind, overridden to 16px). Labels and navigation chrome may use smaller sizes, but any text the player reads for content must be at least `text-sm`.
 
 **Current known violations to fix:**
 - `awardXP` / `updateFeaturesOnLevelUp` in `gameState.ts` — Sneak Attack update logic is Rogue-specific. Should scan `features` array for a `scalesWithLevel` flag rather than knowing about Sneak Attack by name.

@@ -246,6 +246,21 @@ function transformClass(c: any): Record<string, unknown> {
     }
   }
 
+  // Derive spellcasting type from the class table:
+  //   "known"    = has "Spells Known" column (Bard, Sorcerer, Ranger, Warlock)
+  //   "prepared" = has spell slot columns but no "Spells Known" (Cleric, Druid, Paladin, Wizard)
+  //   "none"     = no spell slot columns at all (Fighter, Rogue, Barbarian, Monk)
+  const levelMap = parseClassTable(c.table ?? "");
+  const level1 = levelMap.get(1);
+  const tableHeaders = (c.table ?? "").split("\n")[0]?.toLowerCase() ?? "";
+  const hasSpellsKnownCol = tableHeaders.includes("spells known");
+  const hasSpellSlots = level1 ? Object.keys(level1.spellSlots).length > 0 : false;
+  const hasCantrips = (level1?.cantripsKnown ?? 0) > 0;
+  const spellcastingType: "known" | "prepared" | "none" =
+    hasSpellsKnownCol ? "known"
+    : (hasSpellSlots || hasCantrips) ? "prepared"
+    : "none";
+
   return {
     slug: c.slug,
     name: c.name,
@@ -256,6 +271,8 @@ function transformClass(c: any): Record<string, unknown> {
     primaryAbility: c.primary_ability ?? "",
     archetypes,
     archetypeLevel,
+    spellcastingType,
+    spellcastingAbility: c.spellcasting_ability ?? "",
   };
 }
 
@@ -264,6 +281,8 @@ function transformClass(c: any): Record<string, unknown> {
 interface LevelInfo {
   features: Array<{ name: string; description: string; level: number }>;
   spellSlots: Record<string, number>;
+  cantripsKnown?: number;
+  spellsKnown?: number;
 }
 
 function parseClassTable(table: string): Map<number, LevelInfo> {
@@ -284,6 +303,10 @@ function parseClassTable(table: string): Map<number, LevelInfo> {
     const m = h.match(/^(\d+)(st|nd|rd|th)$/);
     if (m) spellSlotCols.set(i, m[1]);
   });
+
+  // Cantrips Known / Spells Known columns
+  const cantripsIdx = headers.findIndex((h) => h.includes("cantrips"));
+  const spellsKnownIdx = headers.findIndex((h) => h.includes("spells known"));
 
   for (let i = 1; i < lines.length; i++) {
     if (isSeparator(lines[i])) continue;
@@ -310,7 +333,18 @@ function parseClassTable(table: string): Map<number, LevelInfo> {
       if (!isNaN(num) && num > 0) spellSlots[slotLevel] = num;
     });
 
-    result.set(level, { features, spellSlots });
+    const info: LevelInfo = { features, spellSlots };
+
+    if (cantripsIdx >= 0) {
+      const val = parseInt(cells[cantripsIdx] ?? "", 10);
+      if (!isNaN(val) && val > 0) info.cantripsKnown = val;
+    }
+    if (spellsKnownIdx >= 0) {
+      const val = parseInt(cells[spellsKnownIdx] ?? "", 10);
+      if (!isNaN(val) && val > 0) info.spellsKnown = val;
+    }
+
+    result.set(level, info);
   }
 
   return result;
@@ -341,25 +375,62 @@ async function seedClasses(): Promise<Array<Record<string, unknown>>> {
   return raw;
 }
 
+/** Parse feature descriptions from a single class's `desc` markdown field.
+ *  The desc field uses `### Feature Name` headers followed by description text.
+ *  Returns a map of lowercase feature name → description string. */
+function parseFeatureDescriptionsForClass(classData: Record<string, unknown>): Map<string, string> {
+  const descMap = new Map<string, string>();
+  const desc = (classData.desc as string) ?? "";
+  // Split on ### headers, keeping the header text
+  const sections = desc.split(/^###\s+/m);
+
+  for (const section of sections) {
+    if (!section.trim()) continue;
+    const newlineIdx = section.indexOf("\n");
+    if (newlineIdx === -1) continue;
+
+    const name = section.slice(0, newlineIdx).trim();
+    const body = section.slice(newlineIdx + 1).trim();
+    if (name && body) {
+      descMap.set(name.toLowerCase(), body);
+    }
+  }
+
+  return descMap;
+}
+
 async function seedClassLevels(classData: Array<Record<string, unknown>>): Promise<void> {
-  console.log("\n── Seeding srdClassLevels (parsed from class tables) ──");
+  console.log("\n── Seeding srdClassLevels (with feature descriptions from class data) ──");
+
   const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
 
   for (const c of classData) {
     const classSlug = c.slug as string;
     const levelMap = parseClassTable((c.table as string) ?? "");
+    // Parse descriptions from THIS class only — avoids cross-class name collisions
+    // (e.g. "Spellcasting" appears in 6 classes with different text)
+    const featureDescs = parseFeatureDescriptionsForClass(c);
 
     for (let level = 1; level <= 20; level++) {
       const proficiencyBonus = Math.ceil(level / 4) + 1;
       const info = levelMap.get(level) ?? { features: [], spellSlots: {} };
+
+      // Attach descriptions looked up by feature name (case-insensitive)
+      const features = info.features.map((f) => ({
+        ...f,
+        description: featureDescs.get(f.name.toLowerCase()) ?? "",
+      }));
+
       docs.push({
         id: `${classSlug}_${level}`,
         data: {
           classSlug,
           level,
           proficiencyBonus,
-          features: info.features,
+          features,
           ...(Object.keys(info.spellSlots).length > 0 ? { spellSlots: info.spellSlots } : {}),
+          ...(info.cantripsKnown != null ? { cantripsKnown: info.cantripsKnown } : {}),
+          ...(info.spellsKnown != null ? { spellsKnown: info.spellsKnown } : {}),
         },
       });
     }

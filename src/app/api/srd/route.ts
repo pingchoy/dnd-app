@@ -3,6 +3,8 @@ import {
   getAllSRDClasses,
   getAllSRDRaces,
   getSRDClassLevel,
+  getSRDSpellsByClassAndLevel,
+  querySRD,
 } from "../../lib/characterStore";
 
 export async function GET(request: NextRequest) {
@@ -46,8 +48,58 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(data, { headers: srdHeaders });
     }
 
+    if (type === "spell") {
+      const slug = searchParams.get("slug");
+      if (!slug) {
+        return NextResponse.json(
+          { error: "slug is required for type=spell" },
+          { status: 400 },
+        );
+      }
+      const data = await querySRD("spell", slug);
+      if (!data) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(data, { headers: srdHeaders });
+    }
+
+    if (type === "spell-list") {
+      const classSlug = searchParams.get("classSlug");
+      if (!classSlug) {
+        return NextResponse.json(
+          { error: "classSlug is required for type=spell-list" },
+          { status: 400 },
+        );
+      }
+      const data = await querySRD("spell_list", classSlug);
+      if (!data) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(data, { headers: srdHeaders });
+    }
+
+    if (type === "class-spells") {
+      const classSlug = searchParams.get("classSlug");
+      const levelParam = searchParams.get("level");
+
+      if (!classSlug || levelParam == null) {
+        return NextResponse.json(
+          { error: "classSlug and level are required for type=class-spells" },
+          { status: 400 },
+        );
+      }
+
+      const spellLevel = parseInt(levelParam, 10);
+      if (isNaN(spellLevel)) {
+        return NextResponse.json({ error: "level must be a number" }, { status: 400 });
+      }
+
+      const spells = await getSRDSpellsByClassAndLevel(classSlug, spellLevel);
+      return NextResponse.json(spells, { headers: srdHeaders });
+    }
+
     return NextResponse.json(
-      { error: "type must be classes, races, or class-level" },
+      { error: "type must be classes, races, class-level, spell, spell-list, or class-spells" },
       { status: 400 },
     );
   } catch (err) {
