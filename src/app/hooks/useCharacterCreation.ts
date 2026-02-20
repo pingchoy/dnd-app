@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
 import { getModifier, xpForLevel } from "../lib/gameTypes";
 import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameTypes";
-import { CHARACTER_ID_KEY } from "./useChat";
+import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
 
 // ─── Point Buy ────────────────────────────────────────────────────────────────
 
@@ -27,8 +27,21 @@ function totalPointsSpent(stats: CharacterStats): number {
 
 // ─── Wizard steps ────────────────────────────────────────────────────────────
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
-// 1 = Race, 2 = Class, 3 = Point Buy, 4 = Skills, 5 = Spells, 6 = Review
+export type WizardStepId =
+  | "race" | "class" | "archetype" | "features"
+  | "abilities" | "skills" | "cantrips" | "spells" | "review";
+
+export const STEP_LABELS: Record<WizardStepId, string> = {
+  race: "Race",
+  class: "Class",
+  archetype: "Origin",
+  features: "Features",
+  abilities: "Abilities",
+  skills: "Skills",
+  cantrips: "Cantrips",
+  spells: "Spells",
+  review: "Review",
+};
 
 const EMPTY_STATS: CharacterStats = {
   strength: 8,
@@ -61,19 +74,19 @@ const CREATION_TIME_CHOICES: Record<string, {
   options: string[];
   picks?: number; // default 1
 }> = {
-  "Fighting Style": {
+  "fighting style": {
     prompt: "Choose a fighting style",
     options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
   },
-  "Favored Enemy": {
+  "favored enemy": {
     prompt: "Choose a favored enemy type",
     options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
   },
-  "Natural Explorer": {
+  "natural explorer": {
     prompt: "Choose a favored terrain",
     options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
   },
-  "Expertise": {
+  "expertise": {
     prompt: "Choose two proficiencies to double",
     options: [
       "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
@@ -95,17 +108,15 @@ export interface SpellOption {
 }
 
 export interface CharacterCreationState {
-  step: WizardStep;
+  step: WizardStepId;
   races: SRDRace[];
   classes: SRDClass[];
   isLoadingSRD: boolean;
   selectedRace: SRDRace | null;
   selectedClass: SRDClass | null;
   selectedArchetype: SRDArchetype | null;
-  showingArchetypeStep: boolean;
   /** Features that require the player to pick an option (e.g. Favored Enemy). */
   choiceFeatures: ChoiceFeature[];
-  showingFeatureChoicesStep: boolean;
   featureChoices: Record<string, string>;
   characterName: string;
   selectedGender: string;
@@ -126,13 +137,32 @@ export interface CharacterCreationState {
   error: string | null;
 }
 
+/**
+ * Compute which wizard steps are active based on current state.
+ * Recomputed each render — the step indicator grows as we learn more
+ * (e.g. "cantrips"/"spells" appear after loadSpellData resolves).
+ */
+function computeActiveSteps(state: CharacterCreationState): WizardStepId[] {
+  const steps: WizardStepId[] = ["race", "class"];
+  if (state.selectedClass?.archetypeLevel === 1 && (state.selectedClass.archetypes?.length ?? 0) > 0)
+    steps.push("archetype");
+  if (state.choiceFeatures.length > 0)
+    steps.push("features");
+  steps.push("abilities", "skills");
+  if (state.cantripsToChoose > 0) steps.push("cantrips");
+  if (state.spellsToChoose > 0) steps.push("spells");
+  steps.push("review");
+  return steps;
+}
+
 export interface UseCharacterCreationReturn extends CharacterCreationState {
   loadSRD: () => Promise<void>;
   selectRace: (race: SRDRace) => void;
   selectClass: (cls: SRDClass) => void;
+  advanceFromClass: () => void;
   selectArchetype: (archetype: SRDArchetype) => void;
+  advanceFromArchetype: () => void;
   setFeatureChoice: (featureName: string, choice: string) => void;
-  confirmFeatureChoices: () => void;
   setCharacterName: (name: string) => void;
   setGender: (gender: string) => void;
   adjustStat: (stat: keyof CharacterStats, delta: 1 | -1) => void;
@@ -140,13 +170,13 @@ export interface UseCharacterCreationReturn extends CharacterCreationState {
   toggleCantrip: (name: string) => void;
   toggleSpell: (name: string) => void;
   loadSpellData: () => Promise<void>;
-  goToStep: (step: WizardStep) => void;
+  goToStep: (step: WizardStepId) => void;
   /** Computed stats including racial ASI */
   finalStats: CharacterStats;
-  /** Total wizard steps (5 for non-casters, 6 for casters) */
-  totalSteps: number;
-  /** The step number that is "Review" (5 or 6) */
-  reviewStep: WizardStep;
+  /** Ordered list of active step IDs for the current class selection */
+  activeSteps: WizardStepId[];
+  /** Display labels for each active step */
+  stepLabels: string[];
   confirm: () => Promise<void>;
 }
 
@@ -171,16 +201,14 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
   const router = useRouter();
 
   const [state, setState] = useState<CharacterCreationState>({
-    step: 1,
+    step: "race",
     races: [],
     classes: [],
     isLoadingSRD: false,
     selectedRace: null,
     selectedClass: null,
     selectedArchetype: null,
-    showingArchetypeStep: false,
     choiceFeatures: [],
-    showingFeatureChoicesStep: false,
     featureChoices: {},
     characterName: "",
     selectedGender: "",
@@ -234,19 +262,19 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
   }, [patch]);
 
   const selectRace = useCallback((race: SRDRace) => {
-    patch({ selectedRace: race, step: 2 });
+    patch({ selectedRace: race });
   }, [patch]);
 
   /** Check level-1 features against the creation-time choice allowlist. */
   const checkForFeatureChoices = useCallback(async (classSlug: string) => {
     try {
       const res = await fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`);
-      if (!res.ok) { patch({ choiceFeatures: [], showingFeatureChoicesStep: false, step: 3 }); return; }
+      if (!res.ok) { patch({ choiceFeatures: [], step: "abilities" }); return; }
       const data = await res.json() as { features?: Array<{ name: string; description: string }> };
       const choiceFeatures: ChoiceFeature[] = (data.features ?? [])
-        .filter((f) => f.name in CREATION_TIME_CHOICES)
+        .filter((f) => f.name.toLowerCase() in CREATION_TIME_CHOICES)
         .map((f) => {
-          const meta = CREATION_TIME_CHOICES[f.name];
+          const meta = CREATION_TIME_CHOICES[f.name.toLowerCase()];
           return {
             ...f,
             description: f.description || meta.prompt,
@@ -255,33 +283,46 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           };
         });
       if (choiceFeatures.length > 0) {
-        patch({ choiceFeatures, showingFeatureChoicesStep: true, featureChoices: {} });
+        patch({ choiceFeatures, featureChoices: {}, step: "features" });
       } else {
-        patch({ choiceFeatures: [], showingFeatureChoicesStep: false, step: 3 });
+        patch({ choiceFeatures: [], step: "abilities" });
       }
     } catch {
-      patch({ choiceFeatures: [], showingFeatureChoicesStep: false, step: 3 });
+      patch({ choiceFeatures: [], step: "abilities" });
     }
   }, [patch]);
 
   const selectClass = useCallback((cls: SRDClass) => {
     const isCaster = cls.spellcastingType !== "none";
-    if (cls.archetypeLevel === 1 && cls.archetypes.length > 0) {
-      patch({ selectedClass: cls, selectedArchetype: null, selectedSkills: [], isSpellcaster: isCaster, showingArchetypeStep: true, showingFeatureChoicesStep: false });
-    } else {
-      patch({ selectedClass: cls, selectedArchetype: null, selectedSkills: [], isSpellcaster: isCaster, showingArchetypeStep: false });
-      checkForFeatureChoices(cls.slug);
-    }
-  }, [patch, checkForFeatureChoices]);
+    patch({ selectedClass: cls, selectedArchetype: null, selectedSkills: [], isSpellcaster: isCaster });
+  }, [patch]);
 
+  /** Advance from the class selection step — navigates to archetype, features, or abilities. */
+  const advanceFromClass = useCallback(() => {
+    setState((prev) => {
+      const cls = prev.selectedClass;
+      if (!cls) return prev;
+      if (cls.archetypeLevel === 1 && cls.archetypes.length > 0) {
+        return { ...prev, step: "archetype" as WizardStepId };
+      }
+      // checkForFeatureChoices will navigate to "features" or "abilities"
+      checkForFeatureChoices(cls.slug);
+      return prev;
+    });
+  }, [checkForFeatureChoices]);
+
+  /** Select an archetype (click-to-highlight only, no navigation). */
   const selectArchetype = useCallback((archetype: SRDArchetype) => {
-    patch({ selectedArchetype: archetype, showingArchetypeStep: false });
-    // Check for feature choices after archetype is confirmed
+    patch({ selectedArchetype: archetype });
+  }, [patch]);
+
+  /** Advance from the archetype step — checks for feature choices or goes to abilities. */
+  const advanceFromArchetype = useCallback(() => {
     setState((prev) => {
       if (prev.selectedClass) checkForFeatureChoices(prev.selectedClass.slug);
       return prev;
     });
-  }, [patch, checkForFeatureChoices]);
+  }, [checkForFeatureChoices]);
 
   const setFeatureChoice = useCallback((featureName: string, choice: string) => {
     setState((prev) => ({
@@ -289,10 +330,6 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       featureChoices: { ...prev.featureChoices, [featureName]: choice },
     }));
   }, []);
-
-  const confirmFeatureChoices = useCallback(() => {
-    patch({ showingFeatureChoicesStep: false, step: 3 });
-  }, [patch]);
 
   const setCharacterName = useCallback((name: string) => {
     patch({ characterName: name });
@@ -370,11 +407,21 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     });
   }, []);
 
-  /** Load spell data after class + stats are known. */
+  /**
+   * Load available cantrips and spells from the SRD for the selected class.
+   *
+   * Flow:
+   * 1. Fetch level-1 class data (slot counts, cantrips known, spells known)
+   * 2. Early-exit if the class has no slots or cantrips at level 1
+   * 3. Fetch cantrip and spell lists from the class's spell list in parallel
+   * 4. Compute spellsToChoose: fixed count for known-casters (Bard, Sorcerer),
+   *    ability_mod + level for prepared-casters (Cleric, Wizard)
+   * 5. Navigate to the right step (cantrips, spells, or review)
+   */
   const loadSpellData = useCallback(async () => {
     const cls = state.selectedClass;
     if (!cls || cls.spellcastingType === "none") {
-      patch({ isSpellcaster: false, isLoadingSpells: false });
+      patch({ isSpellcaster: false, isLoadingSpells: false, step: "review" });
       return;
     }
 
@@ -383,7 +430,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     try {
       // Fetch level-1 class data for slot/cantrip counts
       const levelRes = await fetch(`/api/srd?type=class-level&classSlug=${cls.slug}&level=1`);
-      if (!levelRes.ok) { patch({ isSpellcaster: false, isLoadingSpells: false }); return; }
+      if (!levelRes.ok) { patch({ isSpellcaster: false, isLoadingSpells: false, step: "review" }); return; }
       const levelData = await levelRes.json() as {
         spellSlots?: Record<string, number>;
         cantripsKnown?: number;
@@ -394,7 +441,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       const hasCantrips = (levelData.cantripsKnown ?? 0) > 0;
 
       if (!hasSpellSlots && !hasCantrips) {
-        patch({ isSpellcaster: false, isLoadingSpells: false });
+        patch({ isSpellcaster: false, isLoadingSpells: false, step: "review" });
         return;
       }
 
@@ -440,8 +487,13 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         }
       }
 
+      // Navigate to the right spell step after loading
+      const nextStep: WizardStepId = cantripsToChoose > 0 ? "cantrips"
+        : spellsToChoose > 0 ? "spells"
+        : "review";
+
       patch({
-        isSpellcaster: true,
+        isSpellcaster: cantripsToChoose > 0 || spellsToChoose > 0,
         availableCantrips,
         availableSpells,
         cantripsToChoose,
@@ -449,17 +501,26 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         selectedCantrips: [],
         selectedSpells: [],
         isLoadingSpells: false,
+        step: nextStep,
       });
     } catch {
-      patch({ isSpellcaster: false, isLoadingSpells: false });
+      patch({ isSpellcaster: false, isLoadingSpells: false, step: "review" });
     }
   }, [state.selectedClass, finalStats, patch]);
 
-  const goToStep = useCallback((step: WizardStep) => {
-    patch({ step, error: null, showingArchetypeStep: false, showingFeatureChoicesStep: false });
+  const goToStep = useCallback((step: WizardStepId) => {
+    patch({ step, error: null });
   }, [patch]);
 
-  /** Build and save the character via API, then redirect to /dashboard. */
+  /**
+   * Finalize character creation: assemble the full PlayerState from wizard
+   * selections, POST to /api/characters, store the character ID in localStorage,
+   * and redirect to /dashboard.
+   *
+   * Assembles: racial traits + class features + archetype into features[],
+   * computes HP (hitDie + CON mod), AC (10 + DEX mod), skill proficiencies,
+   * and spellcasting fields for casters.
+   */
   const confirm = useCallback(async () => {
     const { selectedRace, selectedClass, characterName, selectedSkills } = state;
 
@@ -471,10 +532,14 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     patch({ isSaving: true, error: null });
 
     try {
-      // Fetch level-1 features from API
+      // Fetch level-1 features and starting equipment from API in parallel
       const classSlug = selectedClass.slug;
-      const levelRes = await fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`);
+      const [levelRes, gearRes] = await Promise.all([
+        fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`),
+        fetch(`/api/srd?type=starting-equipment&classSlug=${classSlug}`),
+      ]);
       const levelData = levelRes.ok ? await levelRes.json() : null;
+      const gear = gearRes.ok ? await gearRes.json() : null;
 
       // Collect race traits + class features + archetype into CharacterFeature[]
       const features: CharacterFeature[] = [
@@ -510,6 +575,16 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       const racialSkills = selectedRace.skillProficiencies ?? [];
       const skillProficiencies = Array.from(new Set([...selectedSkills, ...racialSkills]));
 
+      // Weapon + armor proficiencies: class data from Firestore + racial grants
+      const weaponProficiencies = Array.from(new Set([
+        ...(selectedClass.weaponProficiencies ?? []),
+        ...(selectedRace.weaponProficiencies ?? []),
+      ]));
+      const armorProficiencies = Array.from(new Set([
+        ...(selectedClass.armorProficiencies ?? []),
+        ...(selectedRace.armorProficiencies ?? []),
+      ]));
+
       // AC: 10 + DEX modifier (unarmored default — DM will set proper AC after equipping)
       const armorClass = 10 + getModifier(finalStats.dexterity);
 
@@ -533,11 +608,13 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         stats: finalStats,
         savingThrowProficiencies,
         skillProficiencies,
+        weaponProficiencies,
+        armorProficiencies,
         features,
-        inventory: [],
+        inventory: gear?.inventory ?? [],
         conditions: [],
-        gold: 0,
-        weaponDamage: {},
+        gold: gear?.gold ?? 0,
+        weaponDamage: gear?.weaponDamage ?? {},
         ...(state.selectedArchetype ? { subclass: state.selectedArchetype.name } : {}),
         // Spellcasting (only for casters)
         ...(state.isSpellcaster && spellcastingAbility ? {
@@ -564,6 +641,13 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       }
 
       const { id } = await res.json() as { id: string };
+
+      // Append to the character IDs array
+      let ids: string[] = [];
+      try { ids = JSON.parse(localStorage.getItem(CHARACTER_IDS_KEY) ?? "[]"); } catch { ids = []; }
+      if (!ids.includes(id)) ids.push(id);
+      localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(ids));
+
       localStorage.setItem(CHARACTER_ID_KEY, id);
       router.replace("/dashboard");
     } catch (err) {
@@ -575,17 +659,18 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     }
   }, [state, finalStats, patch, router]);
 
-  const totalSteps = state.isSpellcaster ? 6 : 5;
-  const reviewStep: WizardStep = state.isSpellcaster ? 6 : 5;
+  const activeSteps = computeActiveSteps(state);
+  const stepLabels = activeSteps.map((s) => STEP_LABELS[s]);
 
   return {
     ...state,
     loadSRD,
     selectRace,
     selectClass,
+    advanceFromClass,
     selectArchetype,
+    advanceFromArchetype,
     setFeatureChoice,
-    confirmFeatureChoices,
     setCharacterName,
     setGender,
     adjustStat,
@@ -595,8 +680,8 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     loadSpellData,
     goToStep,
     finalStats,
-    totalSteps,
-    reviewStep,
+    activeSteps,
+    stepLabels,
     confirm,
   };
 }

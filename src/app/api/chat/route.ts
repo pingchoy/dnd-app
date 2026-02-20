@@ -14,8 +14,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDMResponse } from "../../agents/dmAgent";
+import { getCombatResponse } from "../../agents/combatAgent";
 import { getNPCStats } from "../../agents/npcAgent";
 import { getRulesOutcome, isContestedAction } from "../../agents/rulesAgent";
+import type { RulesOutcome, ParsedRollResult } from "../../agents/rulesAgent";
 import {
   addConversationTurn,
   applyStateChangesAndPersist,
@@ -26,9 +28,9 @@ import {
 } from "../../lib/gameState";
 import { querySRD } from "../../lib/characterStore";
 import { HISTORY_WINDOW, MODELS, calculateCost } from "../../lib/anthropic";
-import { RulesOutcome } from "../../agents/rulesAgent";
 
 interface PrecomputedRules {
+  parsed: ParsedRollResult;
   raw: string;
   roll: number;
   rulesCost: number;
@@ -38,11 +40,13 @@ interface PrecomputedRules {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as {
+    interface ChatRequestBody {
       characterId: string;
       playerInput: string;
       precomputedRules?: PrecomputedRules;
-    };
+    }
+
+    const body = (await req.json()) as ChatRequestBody;
 
     const { characterId, playerInput, precomputedRules } = body;
 
@@ -55,6 +59,15 @@ export async function POST(req: NextRequest) {
 
     console.log("[/api/chat] Loading game state for character:", characterId);
     const gameState = await loadGameState(characterId);
+
+    // Block chat while a level-up wizard is pending
+    if (gameState.player.pendingLevelUp) {
+      return NextResponse.json(
+        { error: "Level up pending", pendingLevelUp: true },
+        { status: 409 },
+      );
+    }
+
     let rulesOutcome: RulesOutcome | null = null;
     let rulesCost = 0;
 
@@ -68,6 +81,7 @@ export async function POST(req: NextRequest) {
         raw += `\n[Pre-rolled player damage: ${precomputedRules.damageTotal} total (${precomputedRules.damageBreakdown})]`;
       }
       rulesOutcome = {
+        parsed: precomputedRules.parsed,
         raw,
         roll: precomputedRules.roll,
         inputTokens: 0,
@@ -87,10 +101,19 @@ export async function POST(req: NextRequest) {
       console.log("[Rules Agent] Skipped — not a contested action");
     }
 
-    console.log("[DM Agent] Calling with player input:", playerInput.slice(0, 100));
-    const dmResult = await getDMResponse(playerInput, gameState, rulesOutcome);
-    const dmCost = calculateCost(MODELS.NARRATIVE, dmResult.inputTokens, dmResult.outputTokens);
-    console.log("[DM Agent] Done:", {
+    // Deterministic routing: combat agent for active hostile NPCs, DM agent otherwise
+    const inCombat = gameState.story.activeNPCs.some(
+      (n) => n.disposition === "hostile" && n.currentHp > 0,
+    );
+    const agentLabel = inCombat ? "Combat Agent" : "DM Agent";
+    const agentModel = inCombat ? MODELS.UTILITY : MODELS.NARRATIVE;
+
+    console.log(`[${agentLabel}] Calling with player input:`, playerInput.slice(0, 100));
+    const dmResult = inCombat
+      ? await getCombatResponse(playerInput, gameState, rulesOutcome)
+      : await getDMResponse(playerInput, gameState, rulesOutcome);
+    const dmCost = calculateCost(agentModel, dmResult.inputTokens, dmResult.outputTokens);
+    console.log(`[${agentLabel}] Done:`, {
       narrativeLength: dmResult.narrative.length,
       hasStateChanges: !!dmResult.stateChanges,
       tokens: { input: dmResult.inputTokens, output: dmResult.outputTokens },
@@ -103,7 +126,12 @@ export async function POST(req: NextRequest) {
     addConversationTurn("user", playerInput, HISTORY_WINDOW);
     addConversationTurn("assistant", dmResult.narrative, HISTORY_WINDOW);
 
-    // Orchestrate NPC creation via the dedicated NPC agent
+    // NPC orchestration: when the DM's update_game_state includes npcs_to_create,
+    // we fan out to the NPC agent for each creature. Each request:
+    //   1. Fetches the SRD monster stat block (if the slug is non-empty)
+    //   2. Calls the NPC agent (Haiku) to produce a compact combat stat block
+    //   3. Registers the NPC in the in-memory game state
+    // All creatures are processed in parallel for speed.
     let npcAgentCost = 0;
     if (dmResult.stateChanges?.npcs_to_create?.length) {
       const npcRequests = dmResult.stateChanges.npcs_to_create;
@@ -145,6 +173,16 @@ export async function POST(req: NextRequest) {
       delete dmResult.stateChanges.npcs_to_create;
     }
 
+    // Safety net: auto-apply pre-rolled NPC damage if the DM forgot to set hp_delta
+    if (dmResult.npcDamagePreRolled > 0) {
+      const changes = dmResult.stateChanges ?? {};
+      if (changes.hp_delta == null) {
+        console.log(`[Safety Net] DM omitted hp_delta — auto-applying ${dmResult.npcDamagePreRolled} pre-rolled NPC damage`);
+        changes.hp_delta = -dmResult.npcDamagePreRolled;
+        if (!dmResult.stateChanges) dmResult.stateChanges = changes;
+      }
+    }
+
     // Apply state changes (HP, inventory, conditions, gold, XP) and persist to Firestore
     console.log("[Persist] Applying state changes and saving to Firestore...");
     if (dmResult.stateChanges) {
@@ -155,9 +193,17 @@ export async function POST(req: NextRequest) {
     }
 
     const totalCost = dmCost + rulesCost + npcAgentCost;
+    const costBreakdown: Record<string, string> = {};
+    if (inCombat) {
+      costBreakdown.combat = `$${dmCost.toFixed(4)}`;
+    } else {
+      costBreakdown.dm = `$${dmCost.toFixed(4)}`;
+    }
+    if (rulesCost > 0) costBreakdown.rules = `$${rulesCost.toFixed(4)}`;
+    if (npcAgentCost > 0) costBreakdown.npc = `$${npcAgentCost.toFixed(4)}`;
     console.log("[/api/chat] Turn complete:", {
       totalCost: `$${totalCost.toFixed(4)}`,
-      breakdown: { dm: `$${dmCost.toFixed(4)}`, rules: `$${rulesCost.toFixed(4)}`, npc: `$${npcAgentCost.toFixed(4)}` },
+      breakdown: costBreakdown,
     });
 
     return NextResponse.json({
@@ -169,6 +215,7 @@ export async function POST(req: NextRequest) {
         total: dmResult.inputTokens + dmResult.outputTokens,
       },
       estimatedCostUsd: totalCost,
+      costBreakdown: costBreakdown,
     });
   } catch (err: unknown) {
     console.error("[/api/chat]", err);

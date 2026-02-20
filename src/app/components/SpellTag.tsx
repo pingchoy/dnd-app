@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { toDisplayCase } from "../lib/gameTypes";
 
 /** Module-level cache so re-renders and sibling tags share fetched data. */
 const spellCache = new Map<string, SpellData | null>();
@@ -26,13 +27,12 @@ function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
-function SpellModal({
-  name,
-  onClose,
-}: {
+interface SpellModalProps {
   name: string;
   onClose: () => void;
-}) {
+}
+
+function SpellModal({ name, onClose }: SpellModalProps) {
   const [spell, setSpell] = useState<SpellData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -106,7 +106,7 @@ function SpellModal({
 
         {!loading && !spell && (
           <div className="p-5 text-center">
-            <p className="font-cinzel text-sm text-gold mb-1">{name}</p>
+            <p className="font-cinzel text-sm text-gold mb-1">{toDisplayCase(name)}</p>
             <p className="font-crimson text-sm text-parchment/40 italic">
               No description available.
             </p>
@@ -117,7 +117,7 @@ function SpellModal({
           <div className="p-5 space-y-3">
             {/* Header */}
             <div className="flex items-start justify-between gap-3">
-              <h2 className="font-cinzel text-lg text-gold">{spell.name}</h2>
+              <h2 className="font-cinzel text-lg text-gold">{toDisplayCase(spell.name)}</h2>
               <button
                 onClick={onClose}
                 className="text-parchment/40 hover:text-parchment text-lg leading-none flex-shrink-0 mt-0.5"
@@ -129,7 +129,7 @@ function SpellModal({
             {/* Meta line */}
             {(levelLabel || spell.school) && (
               <p className="font-crimson text-sm text-parchment/50 italic">
-                {[levelLabel, spell.school].filter(Boolean).join(" · ")}
+                {[levelLabel, spell.school ? toDisplayCase(spell.school) : null].filter(Boolean).join(" · ")}
               </p>
             )}
 
@@ -198,7 +198,7 @@ export default function SpellTag({ name, className }: Props) {
         className={`cursor-pointer hover:brightness-110 transition-all ${className}`}
         onClick={handleClick}
       >
-        {name}
+        {toDisplayCase(name)}
       </span>
 
       {open && <SpellModal name={name} onClose={handleClose} />}

@@ -4,13 +4,12 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChoiceFeature } from "../hooks/useCharacterCreation";
+import { toDisplayCase } from "../lib/gameTypes";
 
 interface Props {
   choiceFeatures: ChoiceFeature[];
   featureChoices: Record<string, string>;
   onSetChoice: (featureName: string, choice: string) => void;
-  onConfirm: () => void;
-  onBack: () => void;
 }
 
 const markdownClasses = `prose prose-invert prose-sm max-w-none
@@ -23,23 +22,21 @@ function parseSelected(value: string | undefined): string[] {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function OptionPicker({
-  feature,
-  selected,
-  onSetChoice,
-}: {
+interface OptionPickerProps {
   feature: ChoiceFeature;
   selected: string;
   onSetChoice: (value: string) => void;
-}) {
+}
+
+function OptionPicker({ feature, selected, onSetChoice }: OptionPickerProps) {
   const options = feature.options ?? [];
   const picks = feature.picks ?? 1;
   const current = parseSelected(selected);
 
   function toggle(option: string) {
     if (picks === 1) {
-      // Single-select: just set it
-      onSetChoice(option);
+      // Single-select: toggle — clicking the same option deselects it
+      onSetChoice(current.includes(option) ? "" : option);
       return;
     }
     // Multi-select
@@ -59,7 +56,7 @@ function OptionPicker({
         {picks > 1 && (
           <span
             className={`font-cinzel text-xs ${
-              current.length === picks ? "text-green-400" : "text-parchment/40"
+              current.length === picks ? "text-success" : "text-parchment/40"
             }`}
           >
             {current.length} / {picks}
@@ -96,17 +93,7 @@ export default function StepFeatureChoices({
   choiceFeatures,
   featureChoices,
   onSetChoice,
-  onConfirm,
-  onBack,
 }: Props) {
-  const allChosen = choiceFeatures.every((f) => {
-    const val = featureChoices[f.name]?.trim();
-    if (!val) return false;
-    if (f.picks && f.picks > 1) {
-      return parseSelected(val).length === f.picks;
-    }
-    return true;
-  });
   const [expandedFeature, setExpandedFeature] = useState<ChoiceFeature | null>(null);
 
   return (
@@ -128,7 +115,7 @@ export default function StepFeatureChoices({
           >
             <div>
               <div className="font-cinzel text-base text-parchment tracking-wide">
-                {f.name}
+                {toDisplayCase(f.name)}
               </div>
               {f.description && (
                 <>
@@ -174,25 +161,6 @@ export default function StepFeatureChoices({
         ))}
       </div>
 
-      <div className="flex justify-between items-center pt-2 border-t border-gold/10">
-        <button
-          onClick={onBack}
-          className="font-cinzel text-xs text-parchment/40 tracking-widest uppercase
-                     hover:text-parchment transition-colors"
-        >
-          ← Back
-        </button>
-        <button
-          onClick={onConfirm}
-          disabled={!allChosen}
-          className="font-cinzel text-xs text-gold border border-gold/40 rounded px-4 py-2
-                     tracking-widest uppercase hover:border-gold hover:bg-dungeon-mid
-                     disabled:opacity-30 transition-colors"
-        >
-          Next → Abilities
-        </button>
-      </div>
-
       {/* Full description modal */}
       {expandedFeature && (
         <div
@@ -206,7 +174,7 @@ export default function StepFeatureChoices({
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-3 border-b border-gold/15">
               <h3 className="font-cinzel text-gold text-base tracking-wide">
-                {expandedFeature.name}
+                {toDisplayCase(expandedFeature.name)}
               </h3>
               <button
                 onClick={() => setExpandedFeature(null)}

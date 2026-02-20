@@ -52,6 +52,8 @@ export interface PlayerState {
   stats: CharacterStats;
   savingThrowProficiencies: string[];
   skillProficiencies: string[];
+  weaponProficiencies: string[];
+  armorProficiencies: string[];
   features: CharacterFeature[];
   inventory: string[];
   conditions: string[];
@@ -66,6 +68,33 @@ export interface PlayerState {
   maxKnownSpells?: number;
   spellSlots?: Record<string, number>;
   spellSlotsUsed?: Record<string, number>;
+  // ─── Level-up wizard (set when XP crosses a threshold) ───
+  pendingLevelUp?: PendingLevelUp;
+}
+
+// ─── Level-Up Types ──────────────────────────────────────────────────────────
+
+export interface PendingLevelUp {
+  fromLevel: number;
+  toLevel: number;
+  levels: PendingLevelData[];
+}
+
+export interface PendingLevelData {
+  level: number;
+  hpGain: number;
+  proficiencyBonus: number;
+  newFeatures: Array<{ name: string; description: string }>;
+  newSubclassFeatures: Array<{ name: string; description: string }>;
+  spellSlots?: Record<string, number>;
+  maxCantrips?: number;
+  maxKnownSpells?: number;
+  isASILevel: boolean;
+  requiresSubclass: boolean;
+  featureChoices: Array<{ name: string; description: string; options: string[]; picks?: number }>;
+  newCantripSlots: number;
+  newSpellSlots: number;
+  maxNewSpellLevel: number;
 }
 
 export interface NPC {
@@ -107,7 +136,46 @@ export interface GameState {
   conversationHistory: ConversationTurn[];
 }
 
+// ─── Firestore V2 Storage Types ───────────────────────────────────────────────
+
+/** Character document (characters/{id}) — player data only. */
+export interface StoredCharacterV2 {
+  id?: string;
+  player: PlayerState;
+  sessionId: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** Session document (sessions/{id}) — story + conversation history. */
+export interface StoredSession {
+  id?: string;
+  story: StoryState;
+  conversationHistory: ConversationTurn[];
+  characterIds: string[];
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** Lightweight summary for the character select page. */
+export interface CharacterSummary {
+  id: string;
+  name: string;
+  race: string;
+  characterClass: string;
+  level: number;
+  currentHP: number;
+  maxHP: number;
+  campaignTitle: string;
+  updatedAt: number;
+}
+
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
+
+/** Format a signed modifier for display (e.g. 3 → "+3", -1 → "-1"). */
+export function formatModifier(n: number): string {
+  return n >= 0 ? `+${n}` : `${n}`;
+}
 
 export function getModifier(stat: number): number {
   return Math.floor((stat - 10) / 2);
@@ -137,6 +205,26 @@ export function xpForLevel(level: number): number {
   return XP_THRESHOLDS[Math.max(0, level - 1)] ?? 0;
 }
 
+/** Title-case a lowercase D&D term for display. Handles hyphens and minor words. */
+export function toDisplayCase(s: string): string {
+  if (!s) return s;
+  const MINOR_WORDS = new Set(["of", "the", "and", "or", "in", "a", "an", "at", "to", "for", "on", "by", "with"]);
+  const words = s.split(" ");
+  return words
+    .map((word, i) => {
+      const parts = word.split("-");
+      return parts
+        .map((part, j) => {
+          if (i === 0 && j === 0) return part.charAt(0).toUpperCase() + part.slice(1);
+          if (i === words.length - 1 && j === parts.length - 1) return part.charAt(0).toUpperCase() + part.slice(1);
+          if (MINOR_WORDS.has(part.toLowerCase())) return part.toLowerCase();
+          return part.charAt(0).toUpperCase() + part.slice(1);
+        })
+        .join("-");
+    })
+    .join(" ");
+}
+
 // ─── Dice rolling ─────────────────────────────────────────────────────────────
 
 export interface DiceRollResult {
@@ -159,6 +247,66 @@ export function rollDice(expression: string): DiceRollResult {
     rolls.push(Math.floor(Math.random() * sides) + 1);
   }
   return { expression, rolls, total: rolls.reduce((a, b) => a + b, 0) };
+}
+
+// ─── CR → XP table ───────────────────────────────────────────────────────────
+
+/** Standard D&D 5e Challenge Rating to XP mapping. */
+const CR_TO_XP: Record<string, number> = {
+  "0": 10, "0.125": 25, "0.25": 50, "0.5": 100,
+  "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
+  "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
+  "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
+  "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
+  "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000,
+  "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
+};
+
+/** Convert a challenge rating (number or string like "1/4") to XP. */
+export function crToXP(cr: number | string): number {
+  let num: number;
+  if (typeof cr === "string") {
+    if (cr.includes("/")) {
+      const [a, b] = cr.split("/").map(Number);
+      num = b ? a / b : 0;
+    } else {
+      num = parseFloat(cr);
+    }
+  } else {
+    num = cr;
+  }
+  return CR_TO_XP[String(num)] ?? 0;
+}
+
+// ─── Rules / Roll result types ────────────────────────────────────────────────
+
+export interface DamageBreakdown {
+  label: string; // "Shortsword", "Sneak Attack"
+  dice: string; // "1d6", "3d6"
+  rolls: number[]; // individual die results
+  flatBonus: number; // stat mod + magic bonus
+  subtotal: number; // rolls total + flatBonus
+  damageType?: string; // "piercing"
+}
+
+export interface ParsedRollResult {
+  checkType: string;
+  components: string; // e.g. "DEX +3, Proficiency +3, Expertise +3 = +9"
+  dieResult: number;
+  totalModifier: string; // e.g. "+9"
+  total: number;
+  dcOrAc: string;
+  success: boolean;
+  notes: string;
+  /** True when the action is impossible for this character (e.g. spell too high level). */
+  impossible?: boolean;
+  /** True when the action is purely narrative and no mechanical check is needed. */
+  noCheck?: boolean;
+  damage?: {
+    breakdown: DamageBreakdown[];
+    totalDamage: number;
+    isCrit: boolean;
+  };
 }
 
 // ─── UI constants ─────────────────────────────────────────────────────────────

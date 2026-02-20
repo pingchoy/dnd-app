@@ -3,7 +3,12 @@ import remarkGfm from "remark-gfm";
 import { ChatMessage } from "../hooks/useChat";
 import DiceRoll from "./DiceRoll";
 
-export default function ChatCard({ message }: { message: ChatMessage }) {
+interface Props {
+  message: ChatMessage;
+  playerName?: string;
+}
+
+export default function ChatCard({ message, playerName = "You" }: Props) {
   // Historical dice-roll card — no avatar, just the compact roll result
   if (message.rollResult) {
     return <DiceRoll result={message.rollResult} isHistorical />;
@@ -32,7 +37,7 @@ export default function ChatCard({ message }: { message: ChatMessage }) {
       <div className={`flex-1 min-w-0 rounded-md overflow-hidden border-l-4 ${isDM ? "card-parchment border-gold-dark" : "card-parchment-player border-[#6b7280]"}`}>
         <div className={`px-4 pt-3 pb-1 border-b ${isDM ? "border-gold-dark/30" : "border-gray-300/60"}`}>
           <span className={`font-cinzel text-xs tracking-widest uppercase ${isDM ? "text-gold-dark" : "text-[#5a5a5a]"}`}>
-            {isDM ? "✦ Dungeon Master ✦" : "Xavier"}
+            {isDM ? "✦ Dungeon Master ✦" : playerName}
           </span>
         </div>
         <div className="px-4 py-3 text-ink text-[1.05rem] leading-relaxed prose prose-stone max-w-none

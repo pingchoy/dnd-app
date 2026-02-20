@@ -1,20 +1,20 @@
 "use client";
 
 import type { SRDArchetype, SRDClass } from "../lib/characterStore";
+import { toDisplayCase } from "../lib/gameTypes";
 
 interface Props {
   selectedClass: SRDClass;
   selectedArchetype: SRDArchetype | null;
   onSelect: (archetype: SRDArchetype) => void;
-  onBack: () => void;
 }
 
-export default function StepArchetype({ selectedClass, selectedArchetype, onSelect, onBack }: Props) {
+export default function StepArchetype({ selectedClass, selectedArchetype, onSelect }: Props) {
   return (
     <div className="space-y-4">
       <div className="text-center">
         <h2 className="font-cinzel text-gold text-lg tracking-widest uppercase">
-          Choose Your {selectedClass.name} Origin
+          Choose Your {toDisplayCase(selectedClass.name)} Origin
         </h2>
         <p className="font-crimson text-parchment/50 italic text-sm mt-1">
           Your origin shapes your powers and defines who you are at level 1.
@@ -35,7 +35,7 @@ export default function StepArchetype({ selectedClass, selectedArchetype, onSele
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="font-cinzel text-sm text-parchment tracking-wide">{arch.name}</span>
+                <span className="font-cinzel text-sm text-parchment tracking-wide">{toDisplayCase(arch.name)}</span>
                 {isSelected && (
                   <span className="font-cinzel text-gold text-xs flex-shrink-0">✦</span>
                 )}
@@ -50,15 +50,6 @@ export default function StepArchetype({ selectedClass, selectedArchetype, onSele
         })}
       </div>
 
-      <div className="pt-2">
-        <button
-          onClick={onBack}
-          className="font-cinzel text-xs text-parchment/40 tracking-widest uppercase
-                     hover:text-parchment transition-colors"
-        >
-          ← Back to Class
-        </button>
-      </div>
     </div>
   );
 }

@@ -10,7 +10,9 @@
  */
 
 import {
+  getSRDClass,
   getSRDClassLevel,
+  getSRDSubclassLevel,
   loadCharacter,
   saveCharacterState,
 } from "./characterStore";
@@ -24,12 +26,18 @@ export type {
   StoryState,
   ConversationTurn,
   GameState,
+  PendingLevelUp,
+  PendingLevelData,
+  ParsedRollResult,
+  DamageBreakdown,
 } from "./gameTypes";
 
 export {
+  formatModifier,
   getModifier,
   getProficiencyBonus,
   formatWeaponDamage,
+  toDisplayCase,
   XP_THRESHOLDS,
   xpForLevel,
   OPENING_NARRATIVE,
@@ -42,6 +50,9 @@ import {
   StoryState,
   GameState,
   WeaponStat,
+  PendingLevelUp,
+  PendingLevelData,
+  formatModifier,
   getModifier,
   getProficiencyBonus,
   formatWeaponDamage,
@@ -49,20 +60,18 @@ import {
   XP_THRESHOLDS,
 } from "./gameTypes";
 
-function fmt(mod: number): string {
-  return mod >= 0 ? `+${mod}` : `${mod}`;
-}
-
 /** Compact single-string summary of the player for injection into prompts. */
 export function serializePlayerState(p: PlayerState): string {
   const m = p.stats;
   const lines = [
     `${p.name} | ${p.gender} ${p.race} ${p.characterClass} Lv${p.level}`,
     `HP ${p.currentHP}/${p.maxHP} | AC ${p.armorClass}`,
-    `STR ${m.strength}(${fmt(getModifier(m.strength))}) DEX ${m.dexterity}(${fmt(getModifier(m.dexterity))}) CON ${m.constitution}(${fmt(getModifier(m.constitution))}) INT ${m.intelligence}(${fmt(getModifier(m.intelligence))}) WIS ${m.wisdom}(${fmt(getModifier(m.wisdom))}) CHA ${m.charisma}(${fmt(getModifier(m.charisma))})`,
-    `Proficiency bonus: ${fmt(getProficiencyBonus(p.level))}`,
+    `STR ${m.strength}(${formatModifier(getModifier(m.strength))}) DEX ${m.dexterity}(${formatModifier(getModifier(m.dexterity))}) CON ${m.constitution}(${formatModifier(getModifier(m.constitution))}) INT ${m.intelligence}(${formatModifier(getModifier(m.intelligence))}) WIS ${m.wisdom}(${formatModifier(getModifier(m.wisdom))}) CHA ${m.charisma}(${formatModifier(getModifier(m.charisma))})`,
+    `Proficiency bonus: ${formatModifier(getProficiencyBonus(p.level))}`,
     `Saving throws: ${p.savingThrowProficiencies.join(", ")}`,
     `Skills (proficient): ${p.skillProficiencies.join(", ")}`,
+    `Weapon proficiencies: ${(p.weaponProficiencies ?? []).length ? (p.weaponProficiencies ?? []).join(", ") : "None"}`,
+    `Armor proficiencies: ${(p.armorProficiencies ?? []).length ? (p.armorProficiencies ?? []).join(", ") : "None"}`,
     `Inventory: ${p.inventory.join(", ")}`,
     ...Object.entries(p.weaponDamage).map(
       ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
@@ -79,7 +88,7 @@ export function serializePlayerState(p: PlayerState): string {
     const prof = getProficiencyBonus(p.level);
     const saveDC = 8 + prof + abilityMod;
     const spellAttack = prof + abilityMod;
-    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${fmt(spellAttack)})`);
+    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
 
     if (p.cantrips?.length) {
       lines.push(`Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.join(", ")}`);
@@ -108,7 +117,7 @@ export function serializeActiveNPCs(npcs: NPC[]): string {
     npcs
       .map(
         (n) =>
-          `  ${n.name}: AC ${n.ac}, HP ${n.currentHp}/${n.maxHp}, ATK ${fmt(n.attackBonus)} (${n.damageDice}${n.damageBonus ? fmt(n.damageBonus) : ""}) [${n.disposition}]${n.conditions.length ? ` — ${n.conditions.join(", ")}` : ""}${n.notes ? ` — ${n.notes}` : ""}`,
+          `  ${n.name}: AC ${n.ac}, HP ${n.currentHp}/${n.maxHp}, ATK ${formatModifier(n.attackBonus)} (${n.damageDice}${n.damageBonus ? formatModifier(n.damageBonus) : ""}) [${n.disposition}]${n.conditions.length ? ` — ${n.conditions.join(", ")}` : ""}${n.notes ? ` — ${n.notes}` : ""}`,
       )
       .join("\n")
   );
@@ -130,6 +139,52 @@ export function serializeStoryState(s: StoryState): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Compact combat-focused player summary for the combat agent.
+ * Includes only stats relevant to combat resolution — omits inventory
+ * (non-weapon), quests, gold, XP, skill proficiencies, and full features.
+ */
+export function serializeCombatPlayerState(p: PlayerState): string {
+  const m = p.stats;
+  const lines = [
+    `${p.name} | ${p.race} ${p.characterClass} Lv${p.level}`,
+    `HP ${p.currentHP}/${p.maxHP} | AC ${p.armorClass}`,
+    `STR ${m.strength}(${formatModifier(getModifier(m.strength))}) DEX ${m.dexterity}(${formatModifier(getModifier(m.dexterity))}) CON ${m.constitution}(${formatModifier(getModifier(m.constitution))}) INT ${m.intelligence}(${formatModifier(getModifier(m.intelligence))}) WIS ${m.wisdom}(${formatModifier(getModifier(m.wisdom))}) CHA ${m.charisma}(${formatModifier(getModifier(m.charisma))})`,
+    `Proficiency bonus: ${formatModifier(getProficiencyBonus(p.level))}`,
+    `Saving throws: ${p.savingThrowProficiencies.join(", ")}`,
+    ...Object.entries(p.weaponDamage).map(
+      ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
+    ),
+    `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
+  ];
+
+  // Spell block (only for casters)
+  if (p.spellcastingAbility) {
+    const abilityMod = getModifier(m[p.spellcastingAbility]);
+    const prof = getProficiencyBonus(p.level);
+    const saveDC = 8 + prof + abilityMod;
+    const spellAttack = prof + abilityMod;
+    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
+
+    if (p.cantrips?.length) {
+      lines.push(`Cantrips: ${p.cantrips.join(", ")}`);
+    }
+    if (p.knownSpells?.length) {
+      lines.push(`Spells: ${p.knownSpells.join(", ")}`);
+    }
+    if (p.spellSlots && Object.keys(p.spellSlots).length > 0) {
+      const used = p.spellSlotsUsed ?? {};
+      const slotStr = Object.entries(p.spellSlots)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([lvl, total]) => `Lv${lvl}: ${total - (used[lvl] ?? 0)}/${total} remaining`)
+        .join(" ");
+      lines.push(`Spell Slots: ${slotStr}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
@@ -155,6 +210,8 @@ let state: GameState = {
     stats: { strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8 },
     savingThrowProficiencies: [],
     skillProficiencies: [],
+    weaponProficiencies: [],
+    armorProficiencies: [],
     features: [],
     inventory: [],
     conditions: [],
@@ -223,6 +280,17 @@ export interface StateChanges {
   npcs_to_create?: NPCToCreate[];
 }
 
+/**
+ * Apply a bag of state mutations to the in-memory singleton.
+ *
+ * Each field in `StateChanges` maps to a specific mutation — HP delta,
+ * inventory adds/removes, condition toggles, spell slot tracking, etc.
+ * Only non-nullish fields are applied, so callers can pass a sparse object.
+ *
+ * Item removal uses case-insensitive substring matching so the DM doesn't
+ * need to specify exact item names. Weapon damage entries are cleaned up
+ * when their associated items are lost.
+ */
 export function applyStateChanges(changes: StateChanges): void {
   const p = state.player;
   const s = state.story;
@@ -335,6 +403,7 @@ export function createNPC(input: CreateNPCInput): NPC {
     notes: input.notes ?? "",
   };
   state.story.activeNPCs.push(npc);
+  console.log(`[createNPC] Created "${npc.name}" — HP:${npc.maxHp}, AC:${npc.ac}, XP:${npc.xpValue}, disposition:${npc.disposition}`);
   return npc;
 }
 
@@ -346,14 +415,27 @@ export interface UpdateNPCInput {
   remove_from_scene?: boolean;
 }
 
-export function updateNPC(input: UpdateNPCInput): void {
+export interface UpdateNPCResult {
+  found: boolean;
+  name: string;
+  died: boolean;
+  removed: boolean;
+  newHp: number;
+  xpAwarded: number;
+}
+
+export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   const npc = state.story.activeNPCs.find(
     (n) => n.name.toLowerCase() === input.name.toLowerCase(),
   );
-  if (!npc) return;
+  if (!npc) return { found: false, name: input.name, died: false, removed: false, newHp: 0, xpAwarded: 0 };
 
   if (input.hp_delta) {
     npc.currentHp = Math.max(0, Math.min(npc.maxHp, npc.currentHp + input.hp_delta));
+    // Auto-remove NPCs that hit 0 HP (safety net if DM forgets remove_from_scene)
+    if (npc.currentHp <= 0) {
+      input.remove_from_scene = true;
+    }
   }
   if (input.conditions_added?.length) {
     for (const c of input.conditions_added) {
@@ -365,13 +447,28 @@ export function updateNPC(input: UpdateNPCInput): void {
       (c) => !input.conditions_removed!.some((r) => r.toLowerCase() === c.toLowerCase()),
     );
   }
+
+  const died = npc.currentHp <= 0;
+  let xpAwarded = 0;
+
   if (input.remove_from_scene) {
     // Auto-award XP for defeating hostile NPCs; level-up is checked in applyStateChangesAndPersist
     if (npc.disposition === "hostile" && npc.xpValue > 0) {
-      state.player.xp = (state.player.xp ?? 0) + npc.xpValue;
+      xpAwarded = npc.xpValue;
+      state.player.xp = (state.player.xp ?? 0) + xpAwarded;
+      console.log(`[updateNPC] Awarded ${xpAwarded} XP for defeating "${npc.name}" (total XP: ${state.player.xp})`);
+    } else {
+      console.log(`[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`);
+    }
+    // Record the kill in recentEvents so the DM agent has context on future turns
+    if (died) {
+      state.story.recentEvents.push(`Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`);
+      if (state.story.recentEvents.length > 10) state.story.recentEvents = state.story.recentEvents.slice(-10);
     }
     state.story.activeNPCs = state.story.activeNPCs.filter((n) => n.id !== npc.id);
   }
+
+  return { found: true, name: npc.name, died, removed: !!input.remove_from_scene, newHp: npc.currentHp, xpAwarded };
 }
 
 // ─── XP / Level-up ────────────────────────────────────────────────────────────
@@ -383,6 +480,159 @@ function levelForXP(xp: number): number {
     else break;
   }
   return Math.min(level, 20);
+}
+
+/** ASI levels per D&D 5e rules (shared across all classes). */
+const ASI_LEVELS = [4, 8, 12, 16, 19];
+
+/**
+ * Map of features that require player choices at level-up time.
+ * Keyed by exact feature name from SRD. Each entry provides options and pick count.
+ */
+const LEVELUP_CHOICE_FEATURES: Record<string, { options: string[]; picks?: number }> = {
+  "fighting style": {
+    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
+  },
+  "favored enemy": {
+    options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
+  },
+  "natural explorer": {
+    options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
+  },
+  "expertise": {
+    options: [
+      "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
+      "History", "Insight", "Intimidation", "Investigation", "Medicine",
+      "Nature", "Perception", "Performance", "Persuasion", "Religion",
+      "Sleight of Hand", "Stealth", "Survival", "Thieves' Tools",
+    ],
+    picks: 2,
+  },
+  "additional fighting style": {
+    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
+  },
+};
+
+/**
+ * Compute what the player gains at each level between fromLevel+1 and toLevel.
+ * Returns a PendingLevelUp object with per-level data.
+ */
+async function computePendingLevelUp(
+  player: PlayerState,
+  fromLevel: number,
+  toLevel: number,
+): Promise<PendingLevelUp> {
+  const classSlug = player.characterClass.toLowerCase();
+  const classData = await getSRDClass(classSlug);
+  const conMod = getModifier(player.stats.constitution);
+  const levels: PendingLevelData[] = [];
+
+  // Track running cantrip/spell maxes to compute deltas
+  let runningCantrips = player.maxCantrips ?? 0;
+  let runningKnownSpells = player.maxKnownSpells ?? 0;
+
+  for (let lvl = fromLevel + 1; lvl <= toLevel; lvl++) {
+    const levelData = await getSRDClassLevel(classSlug, lvl);
+
+    // HP gain: floor(hitDie/2) + 1 + CON mod
+    const hpGain = Math.floor(player.hitDie / 2) + 1 + conMod;
+
+    // Check ASI
+    const isASILevel = ASI_LEVELS.includes(lvl);
+
+    // Check subclass required: player has no subclass and this is the archetype level
+    const requiresSubclass = !player.subclass && classData?.archetypeLevel === lvl;
+
+    // Subclass features (if player already has a subclass)
+    let newSubclassFeatures: Array<{ name: string; description: string }> = [];
+    if (player.subclass) {
+      const subclassSlug = player.subclass.toLowerCase().replace(/\s+/g, "-");
+      const subclassLevel = await getSRDSubclassLevel(subclassSlug, lvl);
+      if (subclassLevel?.features) {
+        newSubclassFeatures = subclassLevel.features.map((f) => ({
+          name: f.name,
+          description: f.description ?? "",
+        }));
+      }
+    }
+
+    // Class features — filter out "Ability Score Improvement" (handled by ASI step)
+    // and subclass archetype feature names (handled by subclass step)
+    const rawFeatures = (levelData?.features ?? []).filter(
+      (f) => f.name !== "Ability Score Improvement",
+    );
+    const newFeatures = rawFeatures.map((f) => ({
+      name: f.name,
+      description: f.description ?? "",
+    }));
+
+    // Feature choices from the LEVELUP_CHOICE_FEATURES map
+    const featureChoices = rawFeatures
+      .filter((f) => LEVELUP_CHOICE_FEATURES[f.name.toLowerCase()])
+      .map((f) => {
+        const choice = LEVELUP_CHOICE_FEATURES[f.name.toLowerCase()];
+        return {
+          name: f.name,
+          description: f.description ?? "",
+          options: choice.options,
+          picks: choice.picks,
+        };
+      });
+
+    // Spell slot data
+    const spellSlots = levelData?.spellSlots;
+
+    // Cantrip/spell deltas
+    let newCantripSlots = 0;
+    let maxCantrips: number | undefined;
+    if (levelData?.cantripsKnown != null) {
+      newCantripSlots = Math.max(0, levelData.cantripsKnown - runningCantrips);
+      runningCantrips = levelData.cantripsKnown;
+      maxCantrips = levelData.cantripsKnown;
+    }
+
+    let newSpellSlots = 0;
+    let maxKnownSpells: number | undefined;
+    if (levelData?.spellsKnown != null) {
+      // Known casters (Bard, Sorcerer, Ranger, Warlock)
+      newSpellSlots = Math.max(0, levelData.spellsKnown - runningKnownSpells);
+      runningKnownSpells = levelData.spellsKnown;
+      maxKnownSpells = levelData.spellsKnown;
+    } else if (player.spellcastingAbility) {
+      // Prepared casters — ability_mod + level
+      const abilityMod = getModifier(player.stats[player.spellcastingAbility]);
+      const prepared = Math.max(1, abilityMod + lvl);
+      newSpellSlots = Math.max(0, prepared - runningKnownSpells);
+      runningKnownSpells = prepared;
+      maxKnownSpells = prepared;
+    }
+
+    // Highest spell level the player can cast at this level
+    let maxNewSpellLevel = 0;
+    if (spellSlots) {
+      const slotLevels = Object.keys(spellSlots).map(Number).filter((n) => spellSlots[String(n)] > 0);
+      if (slotLevels.length > 0) maxNewSpellLevel = Math.max(...slotLevels);
+    }
+
+    levels.push({
+      level: lvl,
+      hpGain,
+      proficiencyBonus: getProficiencyBonus(lvl),
+      newFeatures,
+      newSubclassFeatures,
+      spellSlots,
+      maxCantrips,
+      maxKnownSpells,
+      isASILevel,
+      requiresSubclass,
+      featureChoices,
+      newCantripSlots,
+      newSpellSlots,
+      maxNewSpellLevel,
+    });
+  }
+
+  return { fromLevel, toLevel, levels };
 }
 
 // ─── Firestore-backed async functions ─────────────────────────────────────────
@@ -428,9 +678,10 @@ export async function applyStateChangesAndPersist(
 }
 
 /**
- * Award XP to the player and handle level-up if a threshold is crossed.
- * Fetches new features from srdClassLevels in Firestore (class-agnostic).
- * HP gain = floor(hitDie / 2) + 1 + CON modifier.
+ * Award XP to the player. If a level threshold is crossed, compute
+ * pending level-up data and store it on the player — but do NOT apply
+ * any changes. The frontend wizard collects player choices, then
+ * POST /api/levelup calls applyLevelUp() to finalize.
  *
  * @param characterId  Firestore character document ID
  * @param amount       XP to award (0 = just check if current xp triggers level-up)
@@ -443,48 +694,146 @@ export async function awardXPAsync(characterId: string, amount: number): Promise
 
   if (targetLevel <= currentLevel) return; // no level-up needed
 
-  for (let lvl = currentLevel + 1; lvl <= targetLevel; lvl++) {
-    const classSlug = state.player.characterClass.toLowerCase();
-    const levelData = await getSRDClassLevel(classSlug, lvl);
+  // If pending already exists but the target increased, recompute with extended range
+  const fromLevel = state.player.pendingLevelUp?.fromLevel ?? currentLevel;
 
-    // Class-agnostic HP: floor(hitDie/2) + 1 + CON modifier
-    const conMod = getModifier(state.player.stats.constitution);
-    const hpGain = Math.floor(state.player.hitDie / 2) + 1 + conMod;
-    state.player.maxHP += hpGain;
-    state.player.currentHP = Math.min(state.player.currentHP + hpGain, state.player.maxHP);
+  state.player.pendingLevelUp = await computePendingLevelUp(
+    state.player,
+    fromLevel,
+    targetLevel,
+  );
 
-    // Append new features from Firestore (deduplicate by name).
-    // Only store name + level — descriptions bloat Firestore and API responses.
-    // The DM can use query_srd to look up full descriptions on demand.
-    for (const feat of levelData?.features ?? []) {
+  await persistState(characterId);
+}
+
+// ─── Level-up Application ─────────────────────────────────────────────────────
+
+export interface LevelChoices {
+  level: number;
+  asiChoices?: Partial<Record<keyof CharacterStats, number>>;
+  featChoice?: string;
+  subclassChoice?: string;
+  featureChoices?: Record<string, string>;
+  newCantrips?: string[];
+  newSpells?: string[];
+}
+
+/**
+ * Apply all pending level-up changes using the player's choices.
+ * Walks each level in order, applying HP, features, ASI/feat, subclass,
+ * spell slots, and new spells. Clears pendingLevelUp and persists.
+ */
+export async function applyLevelUp(
+  characterId: string,
+  choices: LevelChoices[],
+): Promise<GameState> {
+  const pending = state.player.pendingLevelUp;
+  if (!pending) throw new Error("No pending level-up to apply");
+
+  const choicesByLevel = new Map(choices.map((c) => [c.level, c]));
+
+  for (const levelData of pending.levels) {
+    const lvl = levelData.level;
+    const choice = choicesByLevel.get(lvl);
+
+    // HP gain
+    state.player.maxHP += levelData.hpGain;
+    state.player.currentHP = Math.min(
+      state.player.currentHP + levelData.hpGain,
+      state.player.maxHP,
+    );
+
+    // Add class features (deduplicate by name)
+    for (const feat of levelData.newFeatures) {
+      if (feat.name === "Ability Score Improvement") continue;
       if (!state.player.features.some((f) => f.name === feat.name)) {
+        const chosenOption = choice?.featureChoices?.[feat.name];
         state.player.features.push({
           name: feat.name,
           level: lvl,
+          ...(chosenOption ? { chosenOption } : {}),
         });
       }
     }
 
-    // Spellcasting updates on level-up
-    if (levelData?.spellSlots && Object.keys(levelData.spellSlots).length > 0) {
+    // Add subclass features
+    for (const feat of levelData.newSubclassFeatures) {
+      if (!state.player.features.some((f) => f.name === feat.name)) {
+        state.player.features.push({
+          name: feat.name,
+          level: lvl,
+          source: state.player.subclass ?? undefined,
+        });
+      }
+    }
+
+    // Subclass selection
+    if (levelData.requiresSubclass && choice?.subclassChoice) {
+      state.player.subclass = choice.subclassChoice;
+    }
+
+    // ASI or Feat
+    if (levelData.isASILevel && choice) {
+      if (choice.featChoice) {
+        // Add feat as a feature
+        state.player.features.push({
+          name: choice.featChoice,
+          level: lvl,
+          source: "Feat",
+        });
+      } else if (choice.asiChoices) {
+        // Apply ability score increases (capped at 20)
+        for (const [stat, bonus] of Object.entries(choice.asiChoices)) {
+          if (bonus && bonus > 0) {
+            const key = stat as keyof CharacterStats;
+            state.player.stats[key] = Math.min(20, state.player.stats[key] + bonus);
+          }
+        }
+      }
+    }
+
+    // Spell slots
+    if (levelData.spellSlots && Object.keys(levelData.spellSlots).length > 0) {
       state.player.spellSlots = levelData.spellSlots;
       state.player.spellSlotsUsed = {}; // level-up grants full slots
     }
-    if (levelData?.cantripsKnown != null) {
-      state.player.maxCantrips = levelData.cantripsKnown;
+
+    // Cantrip/spell maxes
+    if (levelData.maxCantrips != null) {
+      state.player.maxCantrips = levelData.maxCantrips;
     }
-    if (levelData?.spellsKnown != null) {
-      // Known casters (Bard, Sorcerer, Ranger, Warlock)
-      state.player.maxKnownSpells = levelData.spellsKnown;
-    } else if (state.player.spellcastingAbility) {
-      // Prepared casters (Cleric, Druid, Paladin) — ability_mod + level
-      const abilityMod = getModifier(state.player.stats[state.player.spellcastingAbility]);
-      state.player.maxKnownSpells = Math.max(1, abilityMod + lvl);
+    if (levelData.maxKnownSpells != null) {
+      state.player.maxKnownSpells = levelData.maxKnownSpells;
     }
 
+    // New cantrips
+    if (choice?.newCantrips?.length) {
+      if (!state.player.cantrips) state.player.cantrips = [];
+      for (const cantrip of choice.newCantrips) {
+        if (!state.player.cantrips.includes(cantrip)) {
+          state.player.cantrips.push(cantrip);
+        }
+      }
+    }
+
+    // New spells
+    if (choice?.newSpells?.length) {
+      if (!state.player.knownSpells) state.player.knownSpells = [];
+      for (const spell of choice.newSpells) {
+        if (!state.player.knownSpells.includes(spell)) {
+          state.player.knownSpells.push(spell);
+        }
+      }
+    }
+
+    // Update level
     state.player.level = lvl;
     state.player.xpToNextLevel = xpForLevel(lvl + 1);
   }
 
+  // Clear pending level-up
+  delete state.player.pendingLevelUp;
+
   await persistState(characterId);
+  return state;
 }

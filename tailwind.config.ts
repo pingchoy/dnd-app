@@ -18,7 +18,7 @@ const config: Config = {
       colors: {
         dungeon: {
           DEFAULT: "#0d0a08",
-          light: "#1a1410",
+          light: "#130f0b",
           mid: "#241c16",
         },
         parchment: {
@@ -37,6 +37,10 @@ const config: Config = {
           DEFAULT: "#2c1810",
           light: "#4a2e1e",
         },
+        success: {
+          DEFAULT: "#6ec477",
+          dark: "#3a7a42",
+        },
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
@@ -44,7 +48,7 @@ const config: Config = {
           "radial-gradient(ellipse at 20% 50%, rgba(70,40,20,0.12) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(50,20,10,0.08) 0%, transparent 60%)",
       },
       boxShadow: {
-        parchment: "0 2px 12px rgba(0,0,0,0.4)",
+        parchment: "0 2px 12px rgba(30,18,10,0.5)",
         "gold-glow": "0 0 12px rgba(201,168,76,0.3)",
       },
       keyframes: {

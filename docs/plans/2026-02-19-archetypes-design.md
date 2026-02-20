@@ -13,11 +13,17 @@ Add subclass/archetype support to character creation. Seed archetype data from t
 ### `SRDClass` — two new fields
 
 ```ts
-archetypes: { slug: string; name: string; description: string }[]
-archetypeLevel: number  // level at which the player chooses their archetype
+archetypes: {
+  slug: string;
+  name: string;
+  description: string;
+}
+[];
+archetypeLevel: number; // level at which the player chooses their archetype
 ```
 
 Populated in `seedFirestore.ts` → `transformClass`:
+
 - `archetypes`: mapped from Open5e `c.archetypes` array (name, slug, desc)
 - `archetypeLevel`: auto-detected by scanning the parsed class level table for the first level where a feature name is a case-insensitive substring of `c.subtypes_name` (e.g. `"divine domain"` ⊂ `"divine domains"`). Defaults to `3` if no match.
 
@@ -36,8 +42,8 @@ subclass?: string  // e.g. "Path of the Berserker", set at character creation fo
 ### New state fields
 
 ```ts
-selectedArchetype: SRDArchetype | null
-showingArchetypeStep: boolean
+selectedArchetype: SRDArchetype | null;
+showingArchetypeStep: boolean;
 ```
 
 ### Behaviour changes
@@ -70,11 +76,11 @@ Card grid matching the style of `StepClass`/`StepRace`. Displays each archetype 
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `scripts/seedFirestore.ts` | `transformClass` adds `archetypes` + `archetypeLevel` |
-| `src/app/lib/characterStore.ts` | `SRDClass` type gets `archetypes` + `archetypeLevel` |
-| `src/app/lib/gameState.ts` | `PlayerState` gets `subclass?: string` |
-| `src/app/hooks/useCharacterCreation.ts` | New state fields + `selectArchetype` action |
-| `src/app/character-creation/StepArchetype.tsx` | New component |
-| `src/app/character-creation/page.tsx` | Conditional render of `StepArchetype` on step 2 |
+| File                                           | Change                                                |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| `scripts/seedFirestore.ts`                     | `transformClass` adds `archetypes` + `archetypeLevel` |
+| `src/app/lib/characterStore.ts`                | `SRDClass` type gets `archetypes` + `archetypeLevel`  |
+| `src/app/lib/gameState.ts`                     | `PlayerState` gets `subclass?: string`                |
+| `src/app/hooks/useCharacterCreation.ts`        | New state fields + `selectArchetype` action           |
+| `src/app/character-creation/StepArchetype.tsx` | New component                                         |
+| `src/app/character-creation/page.tsx`          | Conditional render of `StepArchetype` on step 2       |

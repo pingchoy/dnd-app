@@ -2,9 +2,11 @@
 
 import {
   PlayerState,
+  formatModifier,
   getModifier,
   getProficiencyBonus,
   formatWeaponDamage,
+  toDisplayCase,
 } from "../lib/gameTypes";
 
 interface Props {
@@ -12,11 +14,12 @@ interface Props {
   onOpenFullSheet: () => void;
 }
 
-function fmt(n: number) {
-  return n >= 0 ? `+${n}` : `${n}`;
+interface StatBlockProps {
+  label: string;
+  value: number;
 }
 
-function StatBlock({ label, value }: { label: string; value: number }) {
+function StatBlock({ label, value }: StatBlockProps) {
   const mod = getModifier(value);
   return (
     <div className="flex flex-col items-center bg-dungeon-mid border border-gold/20 rounded p-1.5">
@@ -25,9 +28,9 @@ function StatBlock({ label, value }: { label: string; value: number }) {
       </span>
       {/* Modifier is the hero — large and color-coded */}
       <span
-        className={`font-cinzel text-2xl font-bold ${mod >= 0 ? "text-green-400" : "text-red-400"}`}
+        className={`font-cinzel text-2xl font-bold ${mod >= 0 ? "text-success" : "text-red-400"}`}
       >
-        {fmt(mod)}
+        {formatModifier(mod)}
       </span>
       {/* Raw score is secondary */}
       <span className="font-cinzel text-xs text-parchment/40">{value}</span>
@@ -55,11 +58,11 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
         <div className="text-center border-b border-gold-dark/20 pb-3">
           <div className="font-cinzel text-xl text-ink">{player.name}</div>
           <div className="font-crimson text-ink/60 italic text-lg mt-0.5">
-            {player.race} · {player.characterClass} · Lv.{player.level}
+            {toDisplayCase(player.race)} · {toDisplayCase(player.characterClass)} · Lv.{player.level}
           </div>
           {player.subclass && (
             <div className="font-crimson text-ink/50 italic text-base mt-0.5">
-              {player.subclass}
+              {toDisplayCase(player.subclass)}
             </div>
           )}
         </div>
@@ -96,7 +99,7 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
         <div className="grid grid-cols-3 gap-1.5">
           {[
             { label: "AC", value: String(player.armorClass) },
-            { label: "Prof", value: fmt(prof) },
+            { label: "Prof", value: formatModifier(prof) },
             { label: "Gold", value: `${player.gold}gp` },
           ].map(({ label, value }) => (
             <div
@@ -130,7 +133,7 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
                       key={lvl}
                       className="flex items-center justify-start gap-2"
                     >
-                      <span className="font-cinzel text-xs text-gold-dark w-7">
+                      <span className="font-cinzel text-xs text-gold-dark w-9">
                         Lvl {lvl}
                       </span>
                       <div className="flex gap-1">
@@ -184,7 +187,7 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
                   key={c}
                   className="font-cinzel text-xs bg-red-100 text-red-700 border border-red-300 rounded px-1.5 py-0.5 uppercase tracking-wide"
                 >
-                  {c}
+                  {toDisplayCase(c)}
                 </span>
               ))}
             </div>
@@ -228,7 +231,7 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
                     className="font-crimson text-base text-ink/80 flex items-center gap-1.5"
                   >
                     <span className="text-gold/50 flex-shrink-0">◆</span>
-                    <span className="truncate">{item}</span>
+                    <span className="truncate">{toDisplayCase(item)}</span>
                     {damage && (
                       <span className="ml-auto flex-shrink-0 font-cinzel text-[11px] text-amber-700 bg-amber-50 border border-amber-300/60 rounded px-1.5 py-0.5">
                         {damage}

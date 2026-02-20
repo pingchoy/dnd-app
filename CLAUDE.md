@@ -7,44 +7,63 @@ An AI-powered Dungeon Master for D&D 5e, built with Next.js 14 and the Anthropic
 - **Framework**: Next.js 14 (App Router), React 18, TypeScript
 - **AI**: Anthropic Claude SDK (`@anthropic-ai/sdk`)
 - **Styling**: Tailwind CSS, HeadlessUI, HeroIcons
-- **Storage**: Firebase Firestore (configured, not yet integrated into game flow)
+- **Storage**: Firebase Firestore (all game state, SRD data, character data)
 
 ## Multi-Agent Architecture
 
 ```
 Player Input
     ↓
-/api/chat
+Two-phase turn flow:
+  Phase 1: /api/roll (contested actions only)
     ├── [Free]  Keyword detection → contested action?
     ├── [Free]  Dice roll simulation (Math.random)
-    ├── [Haiku] Rules Agent   — only for contested actions (attacks, checks, saves)
-    └── [Sonnet] DM Agent     — narrative generation + tool_use to update game state
+    └── [Haiku] Rules Agent — validates roll, parses damage
+
+  Phase 2: /api/chat
+    ├── [Haiku/Sonnet] DM Agent — narrative + tool_use (update_game_state, update_npc, query_srd)
+    ├── [Haiku] NPC Agent — generates stat blocks for new creatures (triggered by DM's npcs_to_create)
+    └── [Safety Net] Auto-apply pre-rolled NPC damage if DM omits hp_delta
          ↓
-    Returns: { dmResponse, gameState, tokensUsed }
+    Returns: { narrative, gameState, tokensUsed, estimatedCostUsd }
 ```
 
-**Cost optimization**: Haiku for rules checks (~$0.001/call), Sonnet only for DM narrative. The DM uses `update_game_state` tool_use so state changes require zero extra API calls. Rolling 10-turn conversation window keeps input tokens bounded.
+**Cost optimization**: Haiku for rules checks and NPC stat generation (~$0.001/call), Sonnet/Haiku for DM narrative. The DM uses `update_game_state` tool_use so state changes require zero extra API calls. Rolling 10-turn conversation window keeps input tokens bounded.
 
 ## Key Files
 
 | Path | Purpose |
 |------|---------|
-| `src/app/lib/anthropic.ts` | Anthropic client + model/token constants |
-| `src/app/lib/gameState.ts` | In-memory singleton game state (player, story, history) |
-| `src/app/agents/dmAgent.ts` | Main DM narrative agent (claude-sonnet-4-6) |
-| `src/app/agents/rulesAgent.ts` | D&D rules validator + dice interpreter (claude-3-5-haiku) |
-| `src/app/api/chat/route.ts` | Orchestrates the agent pipeline |
-| `src/app/hooks/useChat.tsx` | React hook for frontend chat state |
-| `src/app/dashboard/page.tsx` | Main chat UI |
-| `src/app/components/ChatCard.tsx` | Renders individual messages |
-| `Sample_JSON/` | Character sheets and campaign data (Xavier, Glombus, campaign) |
+| **Agents** | |
+| `src/app/agents/dmAgent.ts` | DM narrative agent with tool_use loop (update_game_state, update_npc, query_srd) |
+| `src/app/agents/rulesAgent.ts` | D&D rules validator, dice interpreter, damage parser |
+| `src/app/agents/npcAgent.ts` | Generates NPC combat stat blocks from SRD data |
+| **Lib** | |
+| `src/app/lib/anthropic.ts` | Anthropic client, model constants, token/cost helpers |
+| `src/app/lib/gameTypes.ts` | Shared types (PlayerState, GameState, NPC, etc.) and pure utility functions (formatModifier, getModifier, rollDice) |
+| `src/app/lib/gameState.ts` | In-memory singleton, state mutation, XP/level-up, Firestore persistence |
+| `src/app/lib/characterStore.ts` | Firestore CRUD for characters and SRD data queries |
+| `src/app/lib/actionKeywords.ts` | Keyword detection for contested actions |
+| **API Routes** | |
+| `src/app/api/chat/route.ts` | Phase 2: orchestrates DM + NPC agents, persists state |
+| `src/app/api/roll/route.ts` | Phase 1: rules check for contested actions |
+| `src/app/api/characters/route.ts` | POST: create new character |
+| `src/app/api/srd/route.ts` | GET: SRD data lookups (races, classes, spells, monsters) |
+| `src/app/api/debug/route.ts` | Demigod debug actions (force_combat, force_level_up) |
+| **Frontend** | |
+| `src/app/hooks/useChat.tsx` | React hook for chat state, roll flow, game state |
+| `src/app/hooks/useCharacterCreation.ts` | Character creation wizard state machine |
+| `src/app/dashboard/page.tsx` | Main chat UI with character sidebar |
+| `src/app/character-creation/page.tsx` | Character creation wizard |
+| `src/app/components/` | UI components (ChatCard, DiceRoll, CharacterSheet, CharacterSidebar, SpellTag, DemigodMenu, etc.) |
 
 ## Player Character
-Currently assumes one player: **Xavier** (Half-Elf Rogue 5). Campaign: *The Shadows of Evershade*.
+Characters are created via the character creation wizard (`/character-creation`). The wizard supports all D&D 5e SRD races and classes with point-buy ability scores, skill selection, archetype selection, feature choices, and spellcasting setup. Character data is persisted to Firestore.
 
 ## Environment Variables
 ```
-ANTHROPIC_API_KEY=your-key-here   # Required for AI agents
+ANTHROPIC_API_KEY=your-key-here            # Required for AI agents
+NEXT_PUBLIC_DEMIGOD_MODE=true              # Optional: enables debug menu (floating button, bottom-right)
 ```
 
 ## Development
@@ -52,10 +71,8 @@ ANTHROPIC_API_KEY=your-key-here   # Required for AI agents
 npm run dev    # Start dev server at localhost:3000
 npm run build  # Production build
 npm run lint   # ESLint
+npx tsc --noEmit  # Type-check without emitting
 ```
-
-## Adding More Players
-Update `src/app/lib/gameState.ts` — the `GameState` interface can be extended to support multiple players when needed.
 
 ## Architecture Principle: No Ephemeral Game State
 **All game state must be persisted to Firestore — nothing game-related should live only in memory.** The in-memory singleton in `gameState.ts` exists only as a per-request working copy. It is hydrated from Firestore at the start of each request (`loadGameState`) and flushed back at the end (`applyStateChangesAndPersist`). If a player refreshes the page, all state (player, story, activeNPCs, conversation history) must survive.
@@ -77,6 +94,11 @@ Common violations to avoid:
 ## UI Design Rules
 - **Minimum description text size: 16px** — No description or body text should be smaller than 16px (`text-sm` in Tailwind, overridden to 16px). Labels and navigation chrome may use smaller sizes, but any text the player reads for content must be at least `text-sm`.
 
-**Current known violations to fix:**
-- `awardXP` / `updateFeaturesOnLevelUp` in `gameState.ts` — Sneak Attack update logic is Rogue-specific. Should scan `features` array for a `scalesWithLevel` flag rather than knowing about Sneak Attack by name.
-- `awardXP` HP gain uses a hardcoded `5` (average of d8). Should use a `hitDie` field on `PlayerState`.
+## Data Storage Rules
+- **Lowercase all string data persisted to Firestore** — When storing string values (proficiency names, skill names, item names, slugs, etc.) in Firestore, always normalize to lowercase. Display-layer code can capitalize for presentation, but the canonical stored form is lowercase.
+
+## Codebase Conventions
+- **Named interfaces for all component props** — Every React component uses a named `Props` (or `XxxProps`) interface. No inline prop type annotations on function signatures.
+- **Shared utility functions in `gameTypes.ts`** — Pure functions like `formatModifier`, `getModifier`, `getProficiencyBonus`, `rollDice`, `formatWeaponDamage` live in `gameTypes.ts`. Server-side code imports them via re-exports from `gameState.ts`. Never duplicate these locally.
+- **Named interfaces for request bodies** — API route handlers define a named interface for `req.json()` casts (e.g. `ChatRequestBody`, `DebugRequestBody`).
+- **Comments on complex logic** — Non-obvious algorithms, multi-phase animations, and multi-step orchestration flows should have a doc comment explaining the high-level approach.

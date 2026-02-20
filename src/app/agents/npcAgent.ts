@@ -12,6 +12,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropic, MODELS, MAX_TOKENS } from "../lib/anthropic";
 import { CreateNPCInput } from "../lib/gameState";
+import { crToXP } from "../lib/gameTypes";
 
 interface NPCRequest {
   name: string;
@@ -31,7 +32,7 @@ If SRD data is provided, extract stats from it accurately:
 - damage_dice: derive from the first action's damage_dice expression
 - damage_bonus: derive from the first action's damage_bonus field
 - saving_throw_bonus: use the highest save bonus from the data, or estimate as floor(CR/2)+2
-- xp_value: use the xp field directly
+- xp_value: use the xp field directly (if 0 or missing, compute from challengeRating using CR-to-XP: CR 0.25=50, CR 1=200, CR 2=450, etc.)
 - notes: summarize 1-2 key special abilities (or equipment) in a short sentence
 
 If SRD data is null (custom creature), generate reasonable D&D 5e stats appropriate for the creature name using standard 5e monster design.
@@ -80,17 +81,21 @@ export async function getNPCStats(
   }
 
   // Validate and sanitize each NPC
-  npcs = npcs.map((npc) => ({
-    name: npc.name || request.name,
-    ac: npc.ac || 10,
-    max_hp: npc.max_hp || 1,
-    attack_bonus: npc.attack_bonus ?? 0,
-    damage_dice: npc.damage_dice || "1d4",
-    damage_bonus: npc.damage_bonus ?? 0,
-    saving_throw_bonus: npc.saving_throw_bonus ?? 0,
-    xp_value: npc.xp_value ?? 0,
+  // The AI may use "xp_value", "xp", or omit it — derive from CR as fallback.
+  const srdCR = srdData?.challengeRating as number | string | undefined;
+  const xpFromCR = srdCR != null ? crToXP(srdCR) : 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  npcs = npcs.map((npc: any) => ({
+    name: (npc.name as string) || request.name,
+    ac: (npc.ac as number) || 10,
+    max_hp: (npc.max_hp as number) || 1,
+    attack_bonus: (npc.attack_bonus as number) ?? 0,
+    damage_dice: (npc.damage_dice as string) || "1d4",
+    damage_bonus: (npc.damage_bonus as number) ?? 0,
+    saving_throw_bonus: (npc.saving_throw_bonus as number) ?? 0,
+    xp_value: (npc.xp_value as number) || (npc.xp as number) || xpFromCR,
     disposition: request.disposition,
-    notes: npc.notes || "",
+    notes: (npc.notes as string) || "",
   }));
 
   return {
@@ -115,7 +120,7 @@ function buildFallbackNPCs(
         damage_dice: extractDamageDice(srdData),
         damage_bonus: extractDamageBonus(srdData),
         saving_throw_bonus: 0,
-        xp_value: (srdData.xp as number) ?? 0,
+        xp_value: crToXP(srdData.challengeRating as number | string),
         disposition: request.disposition,
         notes: "",
       }

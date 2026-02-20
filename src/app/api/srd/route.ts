@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getAllSRDClasses,
   getAllSRDRaces,
+  getAllSRDFeats,
   getSRDClassLevel,
+  getSRDSubclassLevel,
   getSRDSpellsByClassAndLevel,
+  getSRDStartingEquipment,
   querySRD,
 } from "../../lib/characterStore";
 
@@ -98,8 +101,51 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(spells, { headers: srdHeaders });
     }
 
+    if (type === "feats") {
+      const feats = await getAllSRDFeats();
+      return NextResponse.json(feats, { headers: srdHeaders });
+    }
+
+    if (type === "starting-equipment") {
+      const slug = searchParams.get("classSlug");
+      if (!slug) {
+        return NextResponse.json(
+          { error: "classSlug is required for type=starting-equipment" },
+          { status: 400 },
+        );
+      }
+      const data = await getSRDStartingEquipment(slug);
+      if (!data) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(data, { headers: srdHeaders });
+    }
+
+    if (type === "subclass-level") {
+      const subclassSlug = searchParams.get("subclassSlug");
+      const levelParam = searchParams.get("level");
+
+      if (!subclassSlug || !levelParam) {
+        return NextResponse.json(
+          { error: "subclassSlug and level are required for type=subclass-level" },
+          { status: 400 },
+        );
+      }
+
+      const level = parseInt(levelParam, 10);
+      if (isNaN(level)) {
+        return NextResponse.json({ error: "level must be a number" }, { status: 400 });
+      }
+
+      const data = await getSRDSubclassLevel(subclassSlug, level);
+      if (!data) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(data, { headers: srdHeaders });
+    }
+
     return NextResponse.json(
-      { error: "type must be classes, races, class-level, spell, spell-list, or class-spells" },
+      { error: "type must be classes, races, class-level, spell, spell-list, class-spells, feats, subclass-level, or starting-equipment" },
       { status: 400 },
     );
   } catch (err) {

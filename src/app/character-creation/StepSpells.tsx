@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import type { SpellOption } from "../hooks/useCharacterCreation";
+import { toDisplayCase } from "../lib/gameTypes";
 
 interface Props {
+  title?: string;
   availableCantrips: SpellOption[];
   availableSpells: SpellOption[];
   cantripsToChoose: number;
@@ -26,19 +28,15 @@ const SCHOOL_COLORS: Record<string, string> = {
   transmutation: "bg-green-900/40 text-green-300 border-green-500/30",
 };
 
-function SpellCard({
-  spell,
-  isSelected,
-  disabled,
-  onToggle,
-  onExpand,
-}: {
+interface SpellCardProps {
   spell: SpellOption;
   isSelected: boolean;
   disabled: boolean;
   onToggle: () => void;
   onExpand: () => void;
-}) {
+}
+
+function SpellCard({ spell, isSelected, disabled, onToggle, onExpand }: SpellCardProps) {
   const schoolClass = SCHOOL_COLORS[spell.school] ?? "bg-ink/20 text-parchment/60 border-ink/30";
 
   return (
@@ -57,12 +55,12 @@ function SpellCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-cinzel text-sm text-parchment font-semibold">
-              {spell.name}
+              {toDisplayCase(spell.name)}
             </span>
             <span
               className={`font-cinzel text-[10px] tracking-wider uppercase px-1.5 py-0.5 rounded border ${schoolClass}`}
             >
-              {spell.school}
+              {toDisplayCase(spell.school)}
             </span>
           </div>
           <div className="flex gap-3 mt-1 font-crimson text-sm text-parchment/50">
@@ -104,7 +102,52 @@ function SpellCard({
   );
 }
 
+interface PageControlsProps {
+  current: number;
+  total: number;
+  onChange: (page: number) => void;
+}
+
+function PageControls({ current, total, onChange }: PageControlsProps) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-4">
+      <button
+        onClick={() => onChange(current - 1)}
+        disabled={current === 0}
+        className="font-cinzel text-xs text-parchment/40 hover:text-parchment disabled:opacity-20 transition-colors"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="inline-block">
+          <path d="M6.5 2L3.5 5L6.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {Array.from({ length: total }).map((_, i) => (
+        <button
+          key={i}
+          onClick={() => onChange(i)}
+          className={`w-6 h-6 rounded-full font-cinzel text-[10px] leading-none border transition-all ${
+            i === current
+              ? "border-gold text-gold"
+              : "border-gold/20 text-parchment/30 hover:border-gold/50 hover:text-parchment/60"
+          }`}
+        >
+          {i + 1}
+        </button>
+      ))}
+      <button
+        onClick={() => onChange(current + 1)}
+        disabled={current === total - 1}
+        className="font-cinzel text-xs text-parchment/40 hover:text-parchment disabled:opacity-20 transition-colors"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="inline-block">
+          <path d="M3.5 2L6.5 5L3.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 export default function StepSpells({
+  title,
   availableCantrips,
   availableSpells,
   cantripsToChoose,
@@ -116,6 +159,9 @@ export default function StepSpells({
   isLoading,
 }: Props) {
   const [expandedSpell, setExpandedSpell] = useState<SpellOption | null>(null);
+  const [cantripPage, setCantripPage] = useState(0);
+  const [spellPage, setSpellPage] = useState(0);
+  const PAGE_SIZE = 6;
 
   if (isLoading) {
     return (
@@ -134,7 +180,7 @@ export default function StepSpells({
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="font-cinzel text-gold text-lg tracking-widest uppercase">
-          Choose Your Spells
+          {title ?? "Choose Your Spells"}
         </h2>
         <p className="font-crimson text-parchment/50 italic text-base mt-1">
           Select the spells you will know at level 1.
@@ -142,68 +188,82 @@ export default function StepSpells({
       </div>
 
       {/* Cantrips section */}
-      {cantripsToChoose > 0 && availableCantrips.length > 0 && (
-        <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <h3 className="font-cinzel text-sm text-gold/80 tracking-widest uppercase">
-              Cantrips
-            </h3>
-            <span
-              className={`font-cinzel text-sm ${
-                selectedCantrips.length === cantripsToChoose
-                  ? "text-green-400"
-                  : "text-parchment/40"
-              }`}
-            >
-              {selectedCantrips.length} / {cantripsToChoose}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {availableCantrips.map((spell) => (
-              <SpellCard
-                key={spell.slug}
-                spell={spell}
-                isSelected={selectedCantrips.includes(spell.name)}
-                disabled={selectedCantrips.length >= cantripsToChoose}
-                onToggle={() => onToggleCantrip(spell.name)}
-                onExpand={() => setExpandedSpell(spell)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      {cantripsToChoose > 0 && availableCantrips.length > 0 && (() => {
+        const totalPages = Math.ceil(availableCantrips.length / PAGE_SIZE);
+        const pageSpells = availableCantrips.slice(cantripPage * PAGE_SIZE, (cantripPage + 1) * PAGE_SIZE);
+        return (
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="font-cinzel text-sm text-gold/80 tracking-widest uppercase">
+                Cantrips
+              </h3>
+              <span
+                className={`font-cinzel text-sm ${
+                  selectedCantrips.length === cantripsToChoose
+                    ? "text-success"
+                    : "text-parchment/40"
+                }`}
+              >
+                {selectedCantrips.length} / {cantripsToChoose}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {pageSpells.map((spell) => (
+                <SpellCard
+                  key={spell.slug}
+                  spell={spell}
+                  isSelected={selectedCantrips.includes(spell.name)}
+                  disabled={selectedCantrips.length >= cantripsToChoose}
+                  onToggle={() => onToggleCantrip(spell.name)}
+                  onExpand={() => setExpandedSpell(spell)}
+                />
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <PageControls current={cantripPage} total={totalPages} onChange={setCantripPage} />
+            )}
+          </section>
+        );
+      })()}
 
       {/* Spells section */}
-      {spellsToChoose > 0 && availableSpells.length > 0 && (
-        <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <h3 className="font-cinzel text-sm text-gold/80 tracking-widest uppercase">
-              1st-Level Spells
-            </h3>
-            <span
-              className={`font-cinzel text-sm ${
-                selectedSpells.length === spellsToChoose
-                  ? "text-green-400"
-                  : "text-parchment/40"
-              }`}
-            >
-              {selectedSpells.length} / {spellsToChoose}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {availableSpells.map((spell) => (
-              <SpellCard
-                key={spell.slug}
-                spell={spell}
-                isSelected={selectedSpells.includes(spell.name)}
-                disabled={selectedSpells.length >= spellsToChoose}
-                onToggle={() => onToggleSpell(spell.name)}
-                onExpand={() => setExpandedSpell(spell)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      {spellsToChoose > 0 && availableSpells.length > 0 && (() => {
+        const totalPages = Math.ceil(availableSpells.length / PAGE_SIZE);
+        const pageSpells = availableSpells.slice(spellPage * PAGE_SIZE, (spellPage + 1) * PAGE_SIZE);
+        return (
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="font-cinzel text-sm text-gold/80 tracking-widest uppercase">
+                1st-Level Spells
+              </h3>
+              <span
+                className={`font-cinzel text-sm ${
+                  selectedSpells.length === spellsToChoose
+                    ? "text-success"
+                    : "text-parchment/40"
+                }`}
+              >
+                {selectedSpells.length} / {spellsToChoose}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {pageSpells.map((spell) => (
+                <SpellCard
+                  key={spell.slug}
+                  spell={spell}
+                  isSelected={selectedSpells.includes(spell.name)}
+                  disabled={selectedSpells.length >= spellsToChoose}
+                  onToggle={() => onToggleSpell(spell.name)}
+                  onExpand={() => setExpandedSpell(spell)}
+                />
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <PageControls current={spellPage} total={totalPages} onChange={setSpellPage} />
+            )}
+          </section>
+        );
+      })()}
 
       {/* Full description modal */}
       {expandedSpell && (
@@ -219,10 +279,10 @@ export default function StepSpells({
             <div className="flex justify-between items-center px-5 pt-5 pb-3 border-b border-gold/15">
               <div>
                 <h3 className="font-cinzel text-gold text-base tracking-wide">
-                  {expandedSpell.name}
+                  {toDisplayCase(expandedSpell.name)}
                 </h3>
                 <div className="flex gap-3 mt-1 font-crimson text-sm text-parchment/50">
-                  <span className="capitalize">{expandedSpell.school}</span>
+                  <span className="capitalize">{toDisplayCase(expandedSpell.school)}</span>
                   <span>·</span>
                   <span>{expandedSpell.castingTime}</span>
                   <span>·</span>

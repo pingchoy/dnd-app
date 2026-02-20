@@ -1,6 +1,7 @@
 "use client";
 
 import type { SRDClass, SRDRace } from "../lib/characterStore";
+import { toDisplayCase } from "../lib/gameTypes";
 
 interface Props {
   selectedClass: SRDClass;
@@ -55,7 +56,7 @@ export default function StepSkills({ selectedClass, selectedRace, selectedSkills
       {classPool.length > 0 && (
         <div>
           <div className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase mb-2">
-            {selectedClass.name} Skills (choose {classChoices + racialChoices})
+            {toDisplayCase(selectedClass.name)} Skills (choose {classChoices + racialChoices})
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {classPool.map((skill) => {
@@ -87,7 +88,7 @@ export default function StepSkills({ selectedClass, selectedRace, selectedSkills
                         : "border-gold/30"
                     }`}
                   />
-                  <span className="font-crimson text-sm text-parchment/80">{skill}</span>
+                  <span className="font-crimson text-sm text-parchment/80">{toDisplayCase(skill)}</span>
                   {isFixed && (
                     <span className="font-cinzel text-[9px] text-gold/60 ml-auto uppercase tracking-wide">
                       racial
@@ -115,7 +116,7 @@ export default function StepSkills({ selectedClass, selectedRace, selectedSkills
                   className="flex items-center gap-2.5 px-3 py-2 rounded border border-gold/40 bg-dungeon-mid"
                 >
                   <span className="w-3 h-3 rounded-full bg-gold/50 border border-gold/60 flex-shrink-0" />
-                  <span className="font-crimson text-sm text-parchment/80">{skill}</span>
+                  <span className="font-crimson text-sm text-parchment/80">{toDisplayCase(skill)}</span>
                   <span className="font-cinzel text-[9px] text-gold/60 ml-auto uppercase tracking-wide">
                     racial
                   </span>

@@ -23,9 +23,11 @@ export const MODELS = {
 } as const;
 
 export const MAX_TOKENS = {
-  NARRATIVE: 4096, // DM responses + tool_use blocks
-  UTILITY: 300,    // Sub-agent answers should be concise
-  NPC_AGENT: 512,  // NPC stat block generation
+  NARRATIVE: 4096,        // DM responses + tool_use blocks
+  COMBAT: 2048,           // Combat responses are shorter than narrative
+  UTILITY: 300,           // Sub-agent answers should be concise
+  NPC_AGENT: 512,         // NPC stat block generation
+  RULES_CLASSIFIER: 256,  // Tool call JSON from rules classifier (~40-80 tokens)
 } as const;
 
 /** Max conversation turns kept in context to bound input-token growth. */

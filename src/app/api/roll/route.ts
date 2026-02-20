@@ -13,17 +13,18 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getRulesOutcome,
   isContestedAction,
-  parseRulesOutcome,
 } from "../../agents/rulesAgent";
 import { loadGameState } from "../../lib/gameState";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { characterId, playerInput } = (await req.json()) as {
+    interface RollRequestBody {
       characterId: string;
       playerInput: string;
-    };
+    }
+
+    const { characterId, playerInput } = (await req.json()) as RollRequestBody;
 
     if (!playerInput?.trim()) {
       return NextResponse.json({ error: "playerInput is required" }, { status: 400 });
@@ -38,7 +39,6 @@ export async function POST(req: NextRequest) {
 
     const gameState = await loadGameState(characterId);
     const outcome = await getRulesOutcome(playerInput, gameState.player, gameState.story.activeNPCs);
-    const parsed = parseRulesOutcome(outcome.raw, outcome.roll);
     const rulesCost = calculateCost(
       MODELS.UTILITY,
       outcome.inputTokens,
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       isContested: true,
       roll: outcome.roll,
-      parsed,
+      parsed: outcome.parsed,
       raw: outcome.raw,       // passed back to /api/chat so the DM sees the result
       rulesCost,
       tokensUsed: {

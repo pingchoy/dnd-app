@@ -24,19 +24,26 @@ body {
     radial-gradient(ellipse at 50% 85%, rgba(40, 20, 5, 0.10) 0%, transparent 50%);
 }
 
-/* ── Custom scrollbar ──────────────────────────────────────── */
-.scroll-pane::-webkit-scrollbar {
+/* ── Global scrollbar (gold-themed, all elements) ─────────── */
+*::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
-.scroll-pane::-webkit-scrollbar-track {
-  background: #1a1410;
-}
-.scroll-pane::-webkit-scrollbar-thumb {
-  background: #8b6914;
+*::-webkit-scrollbar-track {
+  background: rgba(26, 20, 16, 0.6);
   border-radius: 3px;
 }
-.scroll-pane::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb {
+  background: rgba(139, 105, 20, 0.7);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
   background: #c9a84c;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 105, 20, 0.7) rgba(26, 20, 16, 0.6);
 }
 
 /* ── Parchment card ────────────────────────────────────────── */

@@ -29,7 +29,8 @@ export default function DiceRoll({
     isHistorical && hasDamage ? result.damage!.totalDamage : 0,
   );
 
-  // d20 animation
+  // Phase 1: d20 tumble animation — rapidly cycle random values for ~1.3s,
+  // then snap to the actual roll result and mark as settled.
   useEffect(() => {
     if (isHistorical) return;
     setSettled(false);
@@ -48,7 +49,9 @@ export default function DiceRoll({
     return () => clearInterval(interval);
   }, [result.dieResult, isHistorical]);
 
-  // Damage animation — triggers after d20 settles on a hit with damage
+  // Phase 2: Damage tumble animation — waits 600ms after d20 settles,
+  // then cycles random damage values for ~0.8s before revealing the real total.
+  // Only runs when the d20 phase is done and the attack hit with damage.
   useEffect(() => {
     if (isHistorical || !settled || !hasDamage) return;
     const pauseTimer = setTimeout(() => {
@@ -77,7 +80,7 @@ export default function DiceRoll({
     : isFumble
     ? "text-red-400"
     : settled
-    ? result.success ? "text-green-400" : "text-red-400"
+    ? result.success ? "text-success" : "text-red-400"
     : "text-parchment/60";
 
   const resultLabel = isCrit ? "✦ Critical Hit!"
@@ -85,7 +88,7 @@ export default function DiceRoll({
     : result.success ? "✦ Success"
     :                  "✦ Failure";
 
-  const resultColour = (isCrit || result.success) ? "text-green-400" : "text-red-400";
+  const resultColour = (isCrit || result.success) ? "text-success" : "text-red-400";
 
   // Continue enabled when all phases are done
   const allPhasesComplete = settled && (damagePhase === "settled" || damagePhase === "hidden");
@@ -117,7 +120,7 @@ export default function DiceRoll({
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {hasDamage && (
-                <span className="font-cinzel text-[11px] text-red-400 bg-red-900/30 border border-red-700/30 rounded px-1.5 py-0.5">
+                <span className="font-cinzel text-[11px] text-white bg-red-800/80 border border-red-600/40 rounded px-1.5 py-0.5">
                   {result.damage!.totalDamage} dmg
                 </span>
               )}

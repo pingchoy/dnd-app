@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CHARACTER_ID_KEY } from "./hooks/useChat";
 
 /**
  * Root page — redirects immediately based on localStorage.
@@ -13,8 +12,7 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const id = localStorage.getItem(CHARACTER_ID_KEY);
-    router.replace(id ? "/dashboard" : "/character-creation");
+    router.replace("/characters");
   }, [router]);
 
   return (

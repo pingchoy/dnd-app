@@ -6,6 +6,7 @@ import { ParsedRollResult } from "../agents/rulesAgent";
 import { GameState, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
+export const CHARACTER_IDS_KEY = "dnd_character_ids";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -37,8 +38,12 @@ export interface UseChatReturn {
   isRolling: boolean;
   totalTokens: number;
   estimatedCostUsd: number;
+  /** The Firestore character ID (null until loaded from localStorage). */
+  characterId: string | null;
   sendMessage: (input: string) => Promise<void>;
   confirmRoll: () => Promise<void>;
+  /** Apply a debug action result: update game state and append a system message. */
+  applyDebugResult: (gameState: GameState, message: string) => void;
 }
 
 export function useChat(): UseChatReturn {
@@ -57,7 +62,7 @@ export function useChat(): UseChatReturn {
   useEffect(() => {
     const id = localStorage.getItem(CHARACTER_ID_KEY);
     if (!id) {
-      router.replace("/character-creation");
+      router.replace("/characters");
       return;
     }
 
@@ -88,8 +93,8 @@ export function useChat(): UseChatReturn {
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
-        // Character not found or error — send back to creation
-        router.replace("/character-creation");
+        // Character not found or error — send back to character select
+        router.replace("/characters");
       })
       .finally(() => setIsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,6 +201,7 @@ export function useChat(): UseChatReturn {
           playerInput,
           precomputedRules: roll
             ? {
+                parsed: roll.parsed,
                 raw: roll.raw,
                 roll: roll.roll,
                 rulesCost: roll.rulesCost,
@@ -207,6 +213,16 @@ export function useChat(): UseChatReturn {
             : undefined,
         }),
       });
+
+      if (res.status === 409) {
+        // Level-up pending — refresh game state to trigger the wizard
+        const refreshRes = await fetch(`/api/chat?characterId=${encodeURIComponent(characterId)}`);
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          setGameState(refreshData.gameState);
+        }
+        return;
+      }
 
       if (!res.ok) throw new Error((await res.json()).error ?? "Chat failed");
 
@@ -238,6 +254,14 @@ export function useChat(): UseChatReturn {
     ]);
   }
 
+  function applyDebugResult(newState: GameState, message: string): void {
+    setGameState(newState);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: message, timestamp: Date.now() },
+    ]);
+  }
+
   return {
     messages,
     gameState,
@@ -247,7 +271,9 @@ export function useChat(): UseChatReturn {
     isNarrating,
     totalTokens,
     estimatedCostUsd,
+    characterId,
     sendMessage,
     confirmRoll,
+    applyDebugResult,
   };
 }

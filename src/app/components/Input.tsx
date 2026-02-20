@@ -3,17 +3,19 @@
 import { useMemo } from "react";
 import { detectRollHints } from "../lib/actionKeywords";
 
+interface Props {
+  userInput: string;
+  setUserInput: React.Dispatch<React.SetStateAction<string>>;
+  handleSubmit: () => void;
+  disabled?: boolean;
+}
+
 export default function Input({
   userInput,
   setUserInput,
   handleSubmit,
   disabled = false,
-}: {
-  userInput: string;
-  setUserInput: React.Dispatch<React.SetStateAction<string>>;
-  handleSubmit: () => void;
-  disabled?: boolean;
-}) {
+}: Props) {
   const hints = useMemo(() => detectRollHints(userInput), [userInput]);
 
   return (

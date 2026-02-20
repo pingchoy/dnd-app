@@ -3,7 +3,7 @@
 import { useState } from "react";
 import MarkdownProse from "./MarkdownProse";
 import SpellTag from "./SpellTag";
-import { PlayerState, getModifier, getProficiencyBonus, formatWeaponDamage } from "../lib/gameTypes";
+import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatWeaponDamage, toDisplayCase } from "../lib/gameTypes";
 
 
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
@@ -28,11 +28,12 @@ const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
   "Thieves' Tools":  "dexterity",
 };
 
-function fmt(n: number) {
-  return n >= 0 ? `+${n}` : `${n}`;
+
+interface SectionHeadingProps {
+  children: React.ReactNode;
 }
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ children }: SectionHeadingProps) {
   return (
     <h3 className="font-cinzel text-gold-dark text-sm tracking-widest uppercase mb-2 border-b border-gold-dark/20 pb-1">
       {children}
@@ -40,14 +41,19 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function StatBlock({ label, value }: { label: string; value: number }) {
+interface StatBlockProps {
+  label: string;
+  value: number;
+}
+
+function StatBlock({ label, value }: StatBlockProps) {
   const mod = getModifier(value);
   return (
     <div className="flex flex-col items-center bg-dungeon-mid border border-gold/20 rounded p-2">
       <span className="font-cinzel text-sm tracking-widest text-gold uppercase">{label}</span>
       <span className="font-cinzel text-2xl text-parchment mt-0.5">{value}</span>
-      <span className={`font-cinzel text-sm font-bold ${mod >= 0 ? "text-green-400" : "text-red-400"}`}>
-        {fmt(mod)}
+      <span className={`font-cinzel text-sm font-bold ${mod >= 0 ? "text-success" : "text-red-400"}`}>
+        {formatModifier(mod)}
       </span>
     </div>
   );
@@ -55,38 +61,37 @@ function StatBlock({ label, value }: { label: string; value: number }) {
 
 type Feature = PlayerState["features"][number];
 
-function RacialTraits({ features }: { features: Feature[] }) {
+interface FeatureListProps {
+  features: Feature[];
+}
+
+function RacialTraits({ features }: FeatureListProps) {
   if (features.length === 0) return null;
   return (
     <section>
       <SectionHeading>Racial Traits</SectionHeading>
       <div className="space-y-4">
-        {features.map((f) => {
-          const isBlob = f.name.toLowerCase() === "racial traits";
-          return (
-            <div key={f.name}>
-              {!isBlob && (
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                    f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/40"
-                  }`} />
-                  <span className="font-cinzel text-sm text-ink font-semibold">{f.name}</span>
-                </div>
-              )}
-              {f.description && (
-                <MarkdownProse className={`font-crimson text-sm text-ink/80 prose-strong:text-ink prose-em:text-ink/90 prose-p:my-0.5 leading-snug ${isBlob ? "" : "pl-4"}`}>
-                  {f.description}
-                </MarkdownProse>
-              )}
+        {features.map((f) => (
+          <div key={f.name}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/40"
+              }`} />
+              <span className="font-cinzel text-sm text-ink font-semibold">{toDisplayCase(f.name)}</span>
             </div>
-          );
-        })}
+            {f.description && (
+              <MarkdownProse className="font-crimson text-sm text-ink/80 prose-strong:text-ink prose-em:text-ink/90 prose-p:my-0.5 leading-snug pl-4">
+                {f.description}
+              </MarkdownProse>
+            )}
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
-function ClassFeatures({ features }: { features: Feature[] }) {
+function ClassFeatures({ features }: FeatureListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   if (features.length === 0) return null;
 
@@ -114,9 +119,9 @@ function ClassFeatures({ features }: { features: Feature[] }) {
                 <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
                   f.type === "active" ? "bg-gold" : f.type === "reaction" ? "bg-amber-500" : "bg-ink/40"
                 }`} />
-                <span className="font-cinzel text-sm text-ink font-semibold">{f.name}</span>
+                <span className="font-cinzel text-sm text-ink font-semibold">{toDisplayCase(f.name)}</span>
                 {f.chosenOption && (
-                  <span className="font-crimson text-sm text-gold-dark italic ml-1">— {f.chosenOption}</span>
+                  <span className="font-crimson text-sm text-gold-dark italic ml-1">— {toDisplayCase(f.chosenOption)}</span>
                 )}
                 {f.description && (
                   <span className={`ml-auto mr-2 text-ink/40 text-xs flex-shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}>
@@ -159,14 +164,14 @@ export default function CharacterSheet({ player }: Props) {
         <div className="text-center">
           <div className="font-cinzel text-xl text-parchment">{player.name}</div>
           <div className="font-crimson text-parchment/70 italic text-base mt-0.5">
-            {player.race} • {player.characterClass} • Level {player.level}
+            {toDisplayCase(player.race)} • {toDisplayCase(player.characterClass)} • Level {player.level}
           </div>
         </div>
         <div className="flex justify-center gap-5 mt-2 font-cinzel text-sm tracking-wide text-parchment flex-wrap">
           <span>
             HP{" "}
             <span className={`font-bold ${
-              player.currentHP / player.maxHP > 0.5 ? "text-green-400"
+              player.currentHP / player.maxHP > 0.5 ? "text-success"
               : player.currentHP / player.maxHP > 0.25 ? "text-yellow-400"
               : "text-red-400"
             }`}>
@@ -174,7 +179,7 @@ export default function CharacterSheet({ player }: Props) {
             </span>
           </span>
           <span>AC <strong className="text-gold-light">{player.armorClass}</strong></span>
-          <span>Prof <strong className="text-gold-light">{fmt(prof)}</strong></span>
+          <span>Prof <strong className="text-gold-light">{formatModifier(prof)}</strong></span>
           <span>Gold <strong className="text-gold-light">{player.gold}gp</strong></span>
         </div>
         {/* XP bar */}
@@ -194,7 +199,7 @@ export default function CharacterSheet({ player }: Props) {
           <div className="mt-2 flex flex-wrap justify-center gap-1">
             {player.conditions.map((c) => (
               <span key={c} className="font-cinzel text-sm bg-red-100 text-red-700 border border-red-300 rounded px-2 py-0.5 uppercase tracking-wide">
-                {c}
+                {toDisplayCase(c)}
               </span>
             ))}
           </div>
@@ -233,7 +238,7 @@ export default function CharacterSheet({ player }: Props) {
                   <div key={ability} className="flex items-center gap-2 font-crimson text-sm text-ink/90">
                     <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
                     <span className="capitalize">{ability}</span>
-                    <span className={`ml-auto font-bold ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
+                    <span className={`ml-auto font-bold ${mod >= 0 ? "text-success-dark" : "text-red-700"}`}>{formatModifier(mod)}</span>
                   </div>
                 );
               })}
@@ -253,7 +258,7 @@ export default function CharacterSheet({ player }: Props) {
                   return (
                     <li key={i} className="font-crimson text-sm text-ink/90 flex items-center gap-1.5">
                       <span className="text-gold-dark flex-shrink-0">◆</span>
-                      <span className="truncate">{item}</span>
+                      <span className="truncate">{toDisplayCase(item)}</span>
                       {damage && (
                         <span className="ml-auto flex-shrink-0 font-cinzel text-sm text-amber-800 bg-amber-50 border border-amber-300/60 rounded px-1.5 py-0.5">
                           {damage}
@@ -284,10 +289,33 @@ export default function CharacterSheet({ player }: Props) {
                     <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
                     <span className="truncate">{skill}</span>
                     <span className="text-ink/50 text-sm ml-0.5 flex-shrink-0">({ability.slice(0, 3).toUpperCase()})</span>
-                    <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(mod)}</span>
+                    <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-success-dark" : "text-red-700"}`}>{formatModifier(mod)}</span>
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          {/* Proficiencies */}
+          <section>
+            <SectionHeading>Proficiencies</SectionHeading>
+            <div className="space-y-2">
+              <div>
+                <span className="font-cinzel text-sm text-ink/50 tracking-wide">Weapons: </span>
+                <span className="font-crimson text-sm text-ink/90">
+                  {(player.weaponProficiencies ?? []).length > 0
+                    ? (player.weaponProficiencies ?? []).map(toDisplayCase).join(", ")
+                    : "None"}
+                </span>
+              </div>
+              <div>
+                <span className="font-cinzel text-sm text-ink/50 tracking-wide">Armor: </span>
+                <span className="font-crimson text-sm text-ink/90">
+                  {(player.armorProficiencies ?? []).length > 0
+                    ? (player.armorProficiencies ?? []).map(toDisplayCase).join(", ")
+                    : "None"}
+                </span>
+              </div>
             </div>
           </section>
 
@@ -312,7 +340,7 @@ export default function CharacterSheet({ player }: Props) {
                 <div className="flex gap-4 font-crimson text-sm text-ink/90">
                   <span>
                     Ability:{" "}
-                    <strong className="capitalize">{player.spellcastingAbility}</strong>
+                    <strong className="capitalize">{toDisplayCase(player.spellcastingAbility)}</strong>
                   </span>
                   <span>
                     Save DC:{" "}
@@ -323,7 +351,7 @@ export default function CharacterSheet({ player }: Props) {
                   <span>
                     Spell Attack:{" "}
                     <strong>
-                      {fmt(prof + getModifier(player.stats[player.spellcastingAbility]))}
+                      {formatModifier(prof + getModifier(player.stats[player.spellcastingAbility]))}
                     </strong>
                   </span>
                 </div>

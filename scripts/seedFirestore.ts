@@ -23,6 +23,7 @@
  *   srdMonsters/{slug}          (v1, wotc-srd)
  *   srdMagicItems/{slug}        (v1, wotc-srd)
  *   srdSpellLists/{classSlug}   (v1, all — wotc-srd filter only returns 3/7 classes)
+ *   srdStartingEquipment/{slug} (hardcoded SRD defaults, one per class)
  *
  * Firestore security rules must allow writes during seeding.
  * Set: allow read, write: if true;  (change before public deploy!)
@@ -33,6 +34,7 @@ dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { crToXP } from "../src/app/lib/gameTypes";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ async function fetchAll<T>(path: string): Promise<T[]> {
 
   while (url) {
     console.log(`  GET ${url}`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const page: Open5ePage<T> = await res.json();
     results.push(...page.results);
@@ -81,7 +83,7 @@ async function fetchAllV1Unfiltered<T>(path: string): Promise<T[]> {
 
   while (url) {
     console.log(`  GET ${url}`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const page: Open5ePage<T> = await res.json();
     results.push(...page.results);
@@ -98,7 +100,7 @@ async function fetchAllV2<T>(path: string): Promise<T[]> {
 
   while (url) {
     console.log(`  GET ${url}`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const page: Open5ePage<T> = await res.json();
     results.push(...page.results);
@@ -106,6 +108,33 @@ async function fetchAllV2<T>(path: string): Promise<T[]> {
   }
 
   return results;
+}
+
+// ─── Lowercase normalizer ─────────────────────────────────────────────────────
+
+/**
+ * Recursively lowercase all string values in an object tree.
+ * Keys listed in PRESERVE_CASE_KEYS are left untouched — these hold markdown
+ * or prose descriptions whose formatting depends on original casing.
+ */
+const PRESERVE_CASE_KEYS = new Set([
+  "description", "desc", "higherLevel",
+  // Race lore sub-fields (all markdown prose)
+  "age", "alignment", "sizeDescription", "speedDescription", "languageDescription",
+]);
+
+function lowercaseStrings(value: unknown, key?: string): unknown {
+  if (key && PRESERVE_CASE_KEYS.has(key)) return value;
+  if (typeof value === "string") return value.toLowerCase();
+  if (Array.isArray(value)) return value.map((item) => lowercaseStrings(item));
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      result[k] = lowercaseStrings(v, k);
+    }
+    return result;
+  }
+  return value;
 }
 
 // ─── Batch writer ─────────────────────────────────────────────────────────────
@@ -121,7 +150,7 @@ async function batchWrite(
   let opCount = 0;
 
   for (const { id, data } of docs) {
-    batch.set(db.collection(colPath).doc(id), data);
+    batch.set(db.collection(colPath).doc(id), lowercaseStrings(data) as Record<string, unknown>);
     opCount++;
 
     if (opCount >= BATCH_SIZE) {
@@ -135,6 +164,52 @@ async function batchWrite(
 }
 
 // ─── Open5e data transformers ─────────────────────────────────────────────────
+
+/**
+ * Parse a single markdown blob into individual {name, description} pairs.
+ * wotc-srd trait format uses italic inside bold: **_Trait Name._** description
+ * Bare bold headings like **Draconic Ancestry** (table labels) are skipped.
+ */
+function parseTraitsMarkdown(
+  markdown: string,
+): Array<{ name: string; description: string }> {
+  const paragraphs = markdown.split(/\n\n+/);
+  const traits: Array<{ name: string; description: string }> = [];
+
+  for (const p of paragraphs) {
+    // Only match the **_Name._** pattern (underscores required) — skips bare **Heading** labels
+    const m = p.trim().match(/^\*\*_([^*_\n]{1,60})\.?_\*\*\s*([\s\S]*)/);
+    if (m) {
+      const name = m[1].replace(/\.*$/, "").trim();
+      const description = m[2].trim();
+      if (name) {
+        traits.push({ name, description });
+      }
+    }
+  }
+
+  return traits;
+}
+
+/** Strip leading **_Name._** markdown wrapper, returning just the description body. */
+function stripTraitHeader(md: string): string {
+  return md.replace(/^\*\*_?[^*]+_?\*\*\s*/, "").trim();
+}
+
+/**
+ * Racial weapon/armor proficiencies from the SRD, keyed by base race slug.
+ * Sourced from Open5e API trait text (Dwarven Combat Training, Elf Weapon Training).
+ * Elf proficiencies are from the High Elf subrace but applied to the base race
+ * since the seed script doesn't expand subraces into separate documents.
+ */
+const RACIAL_WEAPON_PROFICIENCIES: Record<string, string[]> = {
+  dwarf: ["battleaxe", "handaxe", "light hammer", "warhammer"],
+  elf:   ["longsword", "shortsword", "shortbow", "longbow"],
+};
+
+const RACIAL_ARMOR_PROFICIENCIES: Record<string, string[]> = {
+  // No SRD races grant armor proficiencies (Mountain Dwarf is PHB-only)
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformRace(r: any): Record<string, unknown> {
@@ -155,15 +230,18 @@ function transformRace(r: any): Record<string, unknown> {
     }
   }
 
-  // traits is a markdown string in wotc-srd; was an array in old format
-  const traits = Array.isArray(r.traits)
-    ? r.traits.map((t: { name: string; description?: string }) => ({
-        name: t.name,
-        description: t.description ?? "",
-      }))
-    : r.traits
-      ? [{ name: "Racial Traits", description: r.traits as string }]
-      : [];
+  // traits: parse the markdown blob into individual traits at seed time
+  let traits: Array<{ name: string; description: string }>;
+  if (Array.isArray(r.traits)) {
+    traits = r.traits.map((t: { name: string; description?: string }) => ({
+      name: t.name,
+      description: t.description ?? "",
+    }));
+  } else if (typeof r.traits === "string" && r.traits) {
+    traits = parseTraitsMarkdown(r.traits);
+  } else {
+    traits = [];
+  }
 
   // speed is {walk: 30} in wotc-srd; was a number in old format
   const speed =
@@ -175,6 +253,17 @@ function transformRace(r: any): Record<string, unknown> {
   const sizeMatch = rawSize.match(/\b(Tiny|Small|Medium|Large|Huge|Gargantuan)\b/i);
   const size = sizeMatch ? sizeMatch[0] : rawSize;
 
+  // Lore sections from dedicated Open5e fields (each is a markdown string)
+  const lore: Record<string, string> = {};
+  if (r.desc) lore.description = (r.desc as string).replace(/^##?\s+.*\n+/, "").trim();
+  if (r.age) lore.age = stripTraitHeader(r.age as string);
+  if (r.alignment) lore.alignment = stripTraitHeader(r.alignment as string);
+  if (r.size && typeof r.size === "string" && r.size.length > 20)
+    lore.sizeDescription = stripTraitHeader(r.size as string);
+  if (r.speed_desc) lore.speedDescription = stripTraitHeader(r.speed_desc as string);
+  if (r.languages && typeof r.languages === "string")
+    lore.languageDescription = stripTraitHeader(r.languages as string);
+
   return {
     slug: r.slug,
     name: r.name,
@@ -185,6 +274,9 @@ function transformRace(r: any): Record<string, unknown> {
     languages: [],
     skillProficiencies: [],
     extraSkillChoices: r.slug === "half-elf" ? 2 : 0,
+    weaponProficiencies: RACIAL_WEAPON_PROFICIENCIES[r.slug] ?? [],
+    armorProficiencies: RACIAL_ARMOR_PROFICIENCIES[r.slug] ?? [],
+    lore,
   };
 }
 
@@ -261,6 +353,24 @@ function transformClass(c: any): Record<string, unknown> {
     : (hasSpellSlots || hasCantrips) ? "prepared"
     : "none";
 
+  // Weapon and armor proficiencies — comma-separated strings from Open5e
+  const weaponProficiencies: string[] = (c.prof_weapons ?? "")
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 0 && s.toLowerCase() !== "none");
+  const armorProficiencies: string[] = (c.prof_armor ?? "")
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 0 && s.toLowerCase() !== "none");
+
+  // Extract class description: strip the ### feature headings, keep only the
+  // opening flavour paragraphs before the first ### section.
+  const rawDesc: string = (c.desc as string) ?? "";
+  const firstHeading = rawDesc.indexOf("###");
+  const description = firstHeading > 0
+    ? rawDesc.slice(0, firstHeading).trim()
+    : rawDesc.trim();
+
   return {
     slug: c.slug,
     name: c.name,
@@ -273,6 +383,9 @@ function transformClass(c: any): Record<string, unknown> {
     archetypeLevel,
     spellcastingType,
     spellcastingAbility: c.spellcasting_ability ?? "",
+    weaponProficiencies,
+    armorProficiencies,
+    description,
   };
 }
 
@@ -611,7 +724,7 @@ async function seedMonsters(): Promise<void> {
       wisdom: m.wisdom,
       charisma: m.charisma,
       challengeRating: m.cr,
-      xp: m.xp ?? 0,
+      xp: crToXP(m.cr as number | string),
       senses: m.senses ?? "",
       languages: m.languages ?? "",
       specialAbilities: m.special_abilities ?? [],
@@ -658,6 +771,161 @@ async function seedMagicItems(): Promise<void> {
   console.log(`  ✓ ${docs.length} magic items seeded`);
 }
 
+// ─── Starting Equipment ───────────────────────────────────────────────────────
+
+async function seedStartingEquipment(): Promise<void> {
+  console.log("\n── Seeding srdStartingEquipment ──");
+
+  const docs = [
+    {
+      id: "barbarian",
+      data: {
+        slug: "barbarian",
+        inventory: ["greataxe", "handaxe", "handaxe", "explorer's pack"],
+        weaponDamage: {
+          greataxe: { dice: "1d12", stat: "str", bonus: 0 },
+          handaxe: { dice: "1d6", stat: "str", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "bard",
+      data: {
+        slug: "bard",
+        inventory: ["rapier", "dagger", "lute", "leather armor", "entertainer's pack"],
+        weaponDamage: {
+          rapier: { dice: "1d8", stat: "finesse", bonus: 0 },
+          dagger: { dice: "1d4", stat: "finesse", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "cleric",
+      data: {
+        slug: "cleric",
+        inventory: ["mace", "scale mail", "shield", "light crossbow", "bolts (20)", "priest's pack", "holy symbol"],
+        weaponDamage: {
+          mace: { dice: "1d6", stat: "str", bonus: 0 },
+          "light crossbow": { dice: "1d8", stat: "dex", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "druid",
+      data: {
+        slug: "druid",
+        inventory: ["wooden shield", "scimitar", "leather armor", "explorer's pack", "druidic focus"],
+        weaponDamage: {
+          scimitar: { dice: "1d6", stat: "finesse", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "fighter",
+      data: {
+        slug: "fighter",
+        inventory: ["chain mail", "longsword", "shield", "light crossbow", "bolts (20)", "dungeoneer's pack"],
+        weaponDamage: {
+          longsword: { dice: "1d8", stat: "str", bonus: 0 },
+          "light crossbow": { dice: "1d8", stat: "dex", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "monk",
+      data: {
+        slug: "monk",
+        inventory: ["shortsword", "dart x10", "explorer's pack"],
+        weaponDamage: {
+          shortsword: { dice: "1d6", stat: "finesse", bonus: 0 },
+          dart: { dice: "1d4", stat: "finesse", bonus: 0 },
+        },
+        gold: 5,
+      },
+    },
+    {
+      id: "paladin",
+      data: {
+        slug: "paladin",
+        inventory: ["longsword", "shield", "chain mail", "javelin x5", "priest's pack", "holy symbol"],
+        weaponDamage: {
+          longsword: { dice: "1d8", stat: "str", bonus: 0 },
+          javelin: { dice: "1d6", stat: "str", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "ranger",
+      data: {
+        slug: "ranger",
+        inventory: ["scale mail", "shortsword", "shortsword", "longbow", "arrows (20)", "dungeoneer's pack"],
+        weaponDamage: {
+          shortsword: { dice: "1d6", stat: "finesse", bonus: 0 },
+          longbow: { dice: "1d8", stat: "dex", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "rogue",
+      data: {
+        slug: "rogue",
+        inventory: ["rapier", "shortbow", "arrows (20)", "leather armor", "dagger", "dagger", "thieves' tools", "burglar's pack"],
+        weaponDamage: {
+          rapier: { dice: "1d8", stat: "finesse", bonus: 0 },
+          shortbow: { dice: "1d6", stat: "dex", bonus: 0 },
+          dagger: { dice: "1d4", stat: "finesse", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "sorcerer",
+      data: {
+        slug: "sorcerer",
+        inventory: ["light crossbow", "bolts (20)", "arcane focus", "dungeoneer's pack", "dagger", "dagger"],
+        weaponDamage: {
+          "light crossbow": { dice: "1d8", stat: "dex", bonus: 0 },
+          dagger: { dice: "1d4", stat: "finesse", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "warlock",
+      data: {
+        slug: "warlock",
+        inventory: ["light crossbow", "bolts (20)", "arcane focus", "dungeoneer's pack", "leather armor", "dagger", "dagger"],
+        weaponDamage: {
+          "light crossbow": { dice: "1d8", stat: "dex", bonus: 0 },
+          dagger: { dice: "1d4", stat: "finesse", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+    {
+      id: "wizard",
+      data: {
+        slug: "wizard",
+        inventory: ["quarterstaff", "arcane focus", "scholar's pack", "spellbook"],
+        weaponDamage: {
+          quarterstaff: { dice: "1d6", stat: "str", bonus: 0 },
+        },
+        gold: 10,
+      },
+    },
+  ];
+
+  await batchWrite("srdStartingEquipment", docs);
+  console.log(`  ✓ ${docs.length} starting equipment sets seeded`);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -676,6 +944,7 @@ async function main(): Promise<void> {
   await seedMonsters();
   await seedMagicItems();
   await seedSpellLists();
+  await seedStartingEquipment();
 
   console.log("\n✅ Seeding complete. Check your Firestore console.");
   process.exit(0);

@@ -1,9 +1,8 @@
 "use client";
 
-import MarkdownProse from "../components/MarkdownProse";
 import type { SRDRace, SRDClass } from "../lib/characterStore";
 import type { CharacterStats } from "../lib/gameTypes";
-import { getModifier, getProficiencyBonus } from "../lib/gameTypes";
+import { formatModifier, getModifier, getProficiencyBonus, toDisplayCase } from "../lib/gameTypes";
 
 interface Props {
   characterName: string;
@@ -16,18 +15,19 @@ interface Props {
   onBack: () => void;
 }
 
-function fmt(n: number) {
-  return n >= 0 ? `+${n}` : `${n}`;
+interface StatBoxProps {
+  label: string;
+  value: number;
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+function StatBox({ label, value }: StatBoxProps) {
   const mod = getModifier(value);
   return (
     <div className="flex flex-col items-center bg-dungeon border border-gold/20 rounded p-2 min-w-[60px]">
       <span className="font-cinzel text-[9px] tracking-widest text-gold/60 uppercase">{label}</span>
       <span className="font-cinzel text-xl text-parchment mt-0.5">{value}</span>
-      <span className={`font-cinzel text-xs font-bold ${mod >= 0 ? "text-green-400" : "text-red-400"}`}>
-        {fmt(mod)}
+      <span className={`font-cinzel text-xs font-bold ${mod >= 0 ? "text-success" : "text-red-400"}`}>
+        {formatModifier(mod)}
       </span>
     </div>
   );
@@ -63,12 +63,12 @@ export default function StepReview({
       <div className="bg-dungeon-mid border border-gold/30 rounded p-4 text-center">
         <div className="font-cinzel text-xl text-parchment tracking-wide">{characterName}</div>
         <div className="font-crimson text-parchment/60 italic mt-0.5">
-          {selectedRace.name} · {selectedClass.name} · Level 1
+          {toDisplayCase(selectedRace.name)} · {toDisplayCase(selectedClass.name)} · Level 1
         </div>
         <div className="flex justify-center gap-6 mt-3 font-cinzel text-xs tracking-wide">
           <div className="text-center">
             <div className="text-parchment/40 uppercase text-[9px]">HP</div>
-            <div className="text-green-400 font-bold">{maxHP}</div>
+            <div className="text-success font-bold">{maxHP}</div>
           </div>
           <div className="text-center">
             <div className="text-parchment/40 uppercase text-[9px]">AC</div>
@@ -80,7 +80,7 @@ export default function StepReview({
           </div>
           <div className="text-center">
             <div className="text-parchment/40 uppercase text-[9px]">Proficiency</div>
-            <div className="text-gold font-bold">{fmt(profBonus)}</div>
+            <div className="text-gold font-bold">{formatModifier(profBonus)}</div>
           </div>
         </div>
       </div>
@@ -106,7 +106,7 @@ export default function StepReview({
           Saving Throw Proficiencies
         </div>
         <div className="font-crimson text-sm text-parchment/70">
-          {selectedClass.savingThrows.join(", ") || "None"}
+          {selectedClass.savingThrows.map(toDisplayCase).join(", ") || "None"}
         </div>
       </div>
 
@@ -122,12 +122,42 @@ export default function StepReview({
                 key={skill}
                 className="font-crimson text-xs bg-dungeon-mid border border-gold/20 rounded px-2 py-0.5 text-parchment/70"
               >
-                {skill}
+                {toDisplayCase(skill)}
               </span>
             ))}
           </div>
         </div>
       )}
+
+      {/* Weapon & Armor proficiencies */}
+      <div>
+        <div className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase mb-1.5">
+          Weapon Proficiencies
+        </div>
+        <div className="font-crimson text-sm text-parchment/70">
+          {(() => {
+            const profs = Array.from(new Set([
+              ...(selectedClass.weaponProficiencies ?? []),
+              ...(selectedRace.weaponProficiencies ?? []),
+            ]));
+            return profs.length > 0 ? profs.map(toDisplayCase).join(", ") : "None";
+          })()}
+        </div>
+      </div>
+      <div>
+        <div className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase mb-1.5">
+          Armor Proficiencies
+        </div>
+        <div className="font-crimson text-sm text-parchment/70">
+          {(() => {
+            const profs = Array.from(new Set([
+              ...(selectedClass.armorProficiencies ?? []),
+              ...(selectedRace.armorProficiencies ?? []),
+            ]));
+            return profs.length > 0 ? profs.map(toDisplayCase).join(", ") : "None";
+          })()}
+        </div>
+      </div>
 
       {/* Racial traits preview */}
       {selectedRace.traits.length > 0 && (
@@ -135,18 +165,9 @@ export default function StepReview({
           <div className="font-cinzel text-[10px] text-parchment/40 tracking-widest uppercase mb-1.5">
             Racial Traits
           </div>
-          <MarkdownProse
-            className="font-crimson text-xs text-parchment/60
-                       prose-strong:text-parchment/85 prose-em:text-parchment/70"
-          >
-            {selectedRace.traits[0].description
-              .split(/\n\n+/)
-              .slice(0, 5)
-              .join("\n\n")}
-          </MarkdownProse>
-          {selectedRace.traits[0].description.split(/\n\n+/).length > 5 && (
-            <p className="font-crimson text-xs text-parchment/30 italic mt-1">…and more traits</p>
-          )}
+          <div className="font-crimson text-sm text-parchment/70">
+            {selectedRace.traits.map((t) => toDisplayCase(t.name)).join(", ")}
+          </div>
         </div>
       )}
 
@@ -159,6 +180,9 @@ export default function StepReview({
                      uppercase rounded py-2.5 hover:border-gold/60 hover:text-parchment
                      disabled:opacity-40 transition-colors"
         >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="inline-block mr-1 -mt-px flex-shrink-0">
+            <path d="M6.5 2L3.5 5L6.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           Back
         </button>
         <button
