@@ -1,8 +1,12 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import type { NPC, PlayerState } from "../lib/gameTypes";
-import type { GridPosition } from "../hooks/useCombatGrid";
+import type { NPC, PlayerState, GridPosition } from "../lib/gameTypes";
+import {
+  cellsInRange,
+  validateMovement,
+  DEFAULT_MELEE_REACH,
+} from "../lib/combatEnforcement";
 
 interface Props {
   player: PlayerState;
@@ -310,6 +314,21 @@ export default function CombatGrid({
         }
       }
 
+      // 1b) Melee reach overlay — faint gold on cells within melee reach of player
+      const pPos = s.positions.get("player");
+      if (pPos) {
+        const reachCells = cellsInRange(pPos, DEFAULT_MELEE_REACH, s.gridSize);
+        ctx!.fillStyle = "rgba(201, 168, 76, 0.08)";
+        for (const rc of reachCells) {
+          ctx!.fillRect(
+            rc.col * s.cellStep,
+            rc.row * s.cellStep,
+            s.cellSize,
+            s.cellSize,
+          );
+        }
+      }
+
       // 2) Grid border
       const totalDim = s.gridSize * s.cellStep - GAP;
       ctx!.strokeStyle = "rgba(139, 105, 20, 0.3)";
@@ -580,9 +599,9 @@ export default function CombatGrid({
 
         // Speed check — reject if destination exceeds movement range
         if (origin) {
-          const dist = Math.max(Math.abs(cell.row - origin.row), Math.abs(cell.col - origin.col));
           const speed = player.speed ?? DEFAULT_SPEED;
-          if (dist * FEET_PER_SQUARE > speed) return;
+          const { allowed } = validateMovement(origin, cell, speed);
+          if (!allowed) return;
         }
 
         // Collision check — don't drop on another token

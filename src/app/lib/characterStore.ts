@@ -25,6 +25,7 @@ import type {
   CharacterSummary,
   StoredCharacterV2,
   StoredSession,
+  SRDWeaponData,
 } from "./gameTypes";
 
 // ─── SRD Types ────────────────────────────────────────────────────────────────
@@ -124,6 +125,7 @@ export interface SRDStartingEquipment {
  */
 export interface StoredCharacter {
   id?: string;
+  sessionId: string;
   player: PlayerState;
   story: StoryState;
   conversationHistory: ConversationTurn[];
@@ -218,6 +220,7 @@ export async function loadCharacter(id: string): Promise<StoredCharacter | null>
 
   return {
     id,
+    sessionId: charData.sessionId,
     player: charData.player,
     story: session.story,
     conversationHistory: session.conversationHistory,
@@ -371,6 +374,7 @@ const SRD_COLLECTION_MAP: Record<string, string> = {
   armor:       "srdArmor",
   spell_list:  "srdSpellLists",
   class_level: "srdClassLevels",
+  equipment:   "srdEquipment",
 };
 
 /** Module-level cache — SRD data is static so we never need to invalidate. */
@@ -597,6 +601,20 @@ export async function getAllSRDFeats(): Promise<SRDFeat[]> {
   });
   collectionCache.set("srdFeats", data);
   return data;
+}
+
+/** Fetch a weapon's SRD data by slug. Returns parsed category + properties. */
+export async function getSRDWeapon(slug: string): Promise<SRDWeaponData | null> {
+  const doc = await querySRD("equipment", slug);
+  if (!doc) return null;
+  return {
+    slug: doc.slug as string,
+    name: doc.name as string,
+    category: doc.category as string,
+    damageDice: doc.damageDice as string,
+    damageType: doc.damageType as string,
+    properties: (doc.properties ?? []) as string[],
+  };
 }
 
 export async function getSRDStartingEquipment(classSlug: string): Promise<SRDStartingEquipment | null> {

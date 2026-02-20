@@ -8,8 +8,13 @@
  * If precomputedRules is provided the rules agent is skipped entirely —
  * no duplicate API call, no duplicate cost.
  *
+ * Combat encounters are persisted in the encounters collection.
+ * When hostile NPCs are introduced, an encounter is created (or added to).
+ * The combat agent reads from the encounter doc + character doc only.
+ *
  * GET /api/chat?characterId=xxx
  *   Returns the current game state for a character (used on initial load).
+ *   Includes encounter data if an active encounter exists.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,10 +27,15 @@ import {
   addConversationTurn,
   applyStateChangesAndPersist,
   createNPC,
+  getActiveNPCs,
+  getEncounter,
   getGameState,
+  getSessionId,
   loadGameState,
   NPCToCreate,
+  setEncounter,
 } from "../../lib/gameState";
+import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
 import { querySRD } from "../../lib/characterStore";
 import { HISTORY_WINDOW, MODELS, calculateCost } from "../../lib/anthropic";
 
@@ -90,7 +100,7 @@ export async function POST(req: NextRequest) {
       rulesCost = precomputedRules.rulesCost;
     } else if (isContestedAction(playerInput)) {
       console.log("[Rules Agent] Contested action detected, calling rules agent inline...");
-      rulesOutcome = await getRulesOutcome(playerInput, gameState.player);
+      rulesOutcome = await getRulesOutcome(playerInput, gameState.player, getActiveNPCs());
       rulesCost = calculateCost(MODELS.UTILITY, rulesOutcome.inputTokens, rulesOutcome.outputTokens);
       console.log("[Rules Agent] Done:", {
         roll: rulesOutcome.roll,
@@ -101,8 +111,9 @@ export async function POST(req: NextRequest) {
       console.log("[Rules Agent] Skipped — not a contested action");
     }
 
-    // Deterministic routing: combat agent for active hostile NPCs, DM agent otherwise
-    const inCombat = gameState.story.activeNPCs.some(
+    // Deterministic routing: combat agent for active encounter with hostiles, DM agent otherwise
+    const currentEncounter = getEncounter();
+    const inCombat = currentEncounter != null && currentEncounter.activeNPCs.some(
       (n) => n.disposition === "hostile" && n.currentHp > 0,
     );
     const agentLabel = inCombat ? "Combat Agent" : "DM Agent";
@@ -110,7 +121,11 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${agentLabel}] Calling with player input:`, playerInput.slice(0, 100));
     const dmResult = inCombat
-      ? await getCombatResponse(playerInput, gameState, rulesOutcome)
+      ? await getCombatResponse(playerInput, {
+          player: gameState.player,
+          encounter: currentEncounter!,
+          conversationHistory: gameState.conversationHistory,
+        }, rulesOutcome)
       : await getDMResponse(playerInput, gameState, rulesOutcome);
     const dmCost = calculateCost(agentModel, dmResult.inputTokens, dmResult.outputTokens);
     console.log(`[${agentLabel}] Done:`, {
@@ -127,15 +142,33 @@ export async function POST(req: NextRequest) {
     addConversationTurn("assistant", dmResult.narrative, HISTORY_WINDOW);
 
     // NPC orchestration: when the DM's update_game_state includes npcs_to_create,
-    // we fan out to the NPC agent for each creature. Each request:
-    //   1. Fetches the SRD monster stat block (if the slug is non-empty)
-    //   2. Calls the NPC agent (Haiku) to produce a compact combat stat block
-    //   3. Registers the NPC in the in-memory game state
-    // All creatures are processed in parallel for speed.
+    // we fan out to the NPC agent for each creature, then create an encounter
+    // if one doesn't exist yet.
     let npcAgentCost = 0;
     if (dmResult.stateChanges?.npcs_to_create?.length) {
       const npcRequests = dmResult.stateChanges.npcs_to_create;
       console.log("[NPC Agent] DM requested NPC creation:", npcRequests);
+
+      // Determine if we need to create an encounter for these NPCs
+      const hasHostile = npcRequests.some((r) => r.disposition === "hostile");
+      const needsEncounter = hasHostile && !getEncounter();
+
+      // If we need an encounter, create it BEFORE creating NPCs so createNPC()
+      // can add them to the encounter's activeNPCs list
+      if (needsEncounter) {
+        console.log("[Encounter] Creating new encounter for hostile NPCs...");
+        const sessionId = getSessionId();
+        const enc = await createEncounter(
+          sessionId,
+          characterId,
+          [], // NPCs will be added via createNPC() below
+          gameState.story.currentLocation,
+          gameState.story.currentScene,
+        );
+        setEncounter(enc);
+        gameState.story.activeEncounterId = enc.id;
+        console.log(`[Encounter] Created encounter ${enc.id}`);
+      }
 
       await Promise.all(
         npcRequests.map(async (npcReq: NPCToCreate) => {
@@ -168,6 +201,13 @@ export async function POST(req: NextRequest) {
         }),
       );
 
+      // If we just created an encounter with NPCs, compute initial grid positions
+      const enc = getEncounter();
+      if (needsEncounter && enc) {
+        enc.positions = computeInitialPositions(enc.activeNPCs);
+        console.log(`[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`);
+      }
+
       console.log(`[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`);
       // Strip npcs_to_create before persisting — it's not a player state field
       delete dmResult.stateChanges.npcs_to_create;
@@ -184,6 +224,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Apply state changes (HP, inventory, conditions, gold, XP) and persist to Firestore
+    // This also persists encounter state if one is active
     console.log("[Persist] Applying state changes and saving to Firestore...");
     if (dmResult.stateChanges) {
       await applyStateChangesAndPersist(dmResult.stateChanges, characterId);
@@ -209,6 +250,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       narrative: dmResult.narrative,
       gameState: getGameState(),
+      encounter: getEncounter(),
       tokensUsed: {
         dmInput: dmResult.inputTokens,
         dmOutput: dmResult.outputTokens,
@@ -231,7 +273,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "characterId query param is required" }, { status: 400 });
     }
     const gameState = await loadGameState(characterId);
-    return NextResponse.json({ gameState });
+    return NextResponse.json({
+      gameState,
+      encounter: getEncounter(),
+    });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);
     const message = err instanceof Error ? err.message : "Internal server error";

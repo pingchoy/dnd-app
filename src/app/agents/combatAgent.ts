@@ -25,8 +25,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropic, MAX_TOKENS, MODELS } from "../lib/anthropic";
+import type { PlayerState, NPC, ConversationTurn, StoredEncounter } from "../lib/gameTypes";
 import {
-  GameState,
   StateChanges,
   UpdateNPCInput,
   serializeCombatPlayerState,
@@ -43,6 +43,16 @@ import {
   buildNPCRollContext,
   NPCPreRollResult,
 } from "./tools";
+
+/**
+ * Minimal context the combat agent needs — no full GameState/session data.
+ * Player data comes from characters/{id}, everything else from the encounter.
+ */
+export interface CombatContext {
+  player: PlayerState;
+  encounter: StoredEncounter;
+  conversationHistory: ConversationTurn[];
+}
 
 // ─── Combat system prompt ─────────────────────────────────────────────────────
 
@@ -107,11 +117,13 @@ const COMBAT_HISTORY_ENTRIES = 2;
 
 export async function getCombatResponse(
   playerInput: string,
-  gameState: GameState,
+  context: CombatContext,
   rulesOutcome: RulesOutcome | null,
 ): Promise<DMResponse> {
+  const { player, encounter, conversationHistory } = context;
+
   // Early exit: player is already at 0 HP — no API call needed
-  if (gameState.player.currentHP <= 0) {
+  if (player.currentHP <= 0) {
     console.log("[Combat Agent] Player already at 0 HP — skipping API call");
     return {
       narrative:
@@ -123,17 +135,20 @@ export async function getCombatResponse(
     };
   }
 
+  const activeNPCs = encounter.activeNPCs;
+
   // Pre-roll NPC attacks BEFORE calling the agent so all dice are available upfront
   const npcRolls: NPCPreRollResult = buildNPCRollContext(
-    gameState.story.activeNPCs,
-    gameState.player.armorClass,
+    activeNPCs,
+    player.armorClass,
   );
   console.log(
     `[Combat Agent] Pre-rolled NPC attacks — total potential damage: ${npcRolls.totalDamage}`,
   );
 
   // Build user message: combat stats + pre-rolled NPC attacks + player input + player roll
-  let userContent = `PLAYER COMBAT STATS:\n${serializeCombatPlayerState(gameState.player)}\n\n${serializeActiveNPCs(gameState.story.activeNPCs)}`;
+  let userContent = `COMBAT LOCATION: ${encounter.location}\n\n`;
+  userContent += `PLAYER COMBAT STATS:\n${serializeCombatPlayerState(player)}\n\n${serializeActiveNPCs(activeNPCs)}`;
   userContent += `\n\n${npcRolls.contextString}`;
   userContent += `\n\n---\n\n${playerInput}`;
 
@@ -144,7 +159,7 @@ export async function getCombatResponse(
 
   // Minimal history: last 2 entries (1 user/assistant pair)
   const historyMessages: Anthropic.MessageParam[] =
-    gameState.conversationHistory
+    conversationHistory
       .slice(-COMBAT_HISTORY_ENTRIES)
       .map((turn) => ({ role: turn.role, content: turn.content }));
 
@@ -243,7 +258,7 @@ export async function getCombatResponse(
         if (result.died) {
           deadNPCIds.push(input.id);
           console.log(
-            `[Combat Agent] ☠ NPC "${result.name}" (${input.id}) DIED — xpAwarded=${result.xpAwarded}, playerXP=${gameState.player.xp}`,
+            `[Combat Agent] ☠ NPC "${result.name}" (${input.id}) DIED — xpAwarded=${result.xpAwarded}, playerXP=${player.xp}`,
           );
         } else if (result.found) {
           console.log(
@@ -251,7 +266,7 @@ export async function getCombatResponse(
           );
         } else {
           console.log(
-            `[Combat Agent] ⚠ NPC id="${input.id}" NOT FOUND in activeNPCs`,
+            `[Combat Agent] ⚠ NPC id="${input.id}" NOT FOUND in encounter activeNPCs`,
           );
         }
 
@@ -340,8 +355,8 @@ export async function getCombatResponse(
   }
 
   // If surviving NPC damage is lethal, ensure stateChanges reflects it
-  if (survivingNPCDamage > 0 && gameState.player.currentHP <= survivingNPCDamage) {
-    console.log(`[Combat Agent] NPC damage (${survivingNPCDamage}) is lethal — player HP ${gameState.player.currentHP} → 0`);
+  if (survivingNPCDamage > 0 && player.currentHP <= survivingNPCDamage) {
+    console.log(`[Combat Agent] NPC damage (${survivingNPCDamage}) is lethal — player HP ${player.currentHP} → 0`);
     if (!stateChanges) stateChanges = {};
     if (stateChanges.hp_delta == null) {
       stateChanges.hp_delta = -survivingNPCDamage;
@@ -349,12 +364,12 @@ export async function getCombatResponse(
   }
 
   // Summary log
-  const hostileRemaining = gameState.story.activeNPCs.filter(
+  const hostileRemaining = encounter.activeNPCs.filter(
     (n) => n.disposition === "hostile" && n.currentHp > 0,
   );
   console.log(`[Combat Agent] ── Turn summary ──`);
   console.log(
-    `[Combat Agent]   Player HP: ${gameState.player.currentHP}/${gameState.player.maxHP}, XP: ${gameState.player.xp}`,
+    `[Combat Agent]   Player HP: ${player.currentHP}/${player.maxHP}, XP: ${player.xp}`,
   );
   console.log(
     `[Combat Agent]   Hostile NPCs remaining: ${hostileRemaining.length}${hostileRemaining.length > 0 ? ` (${hostileRemaining.map((n) => `${n.name}:${n.currentHp}/${n.maxHp}`).join(", ")})` : ""}`,

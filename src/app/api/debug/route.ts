@@ -14,11 +14,15 @@ import {
   addConversationTurn,
   awardXPAsync,
   createNPC,
+  getEncounter,
   getGameState,
+  getSessionId,
   loadGameState,
+  setEncounter,
   xpForLevel,
 } from "../../lib/gameState";
 import { saveCharacterState, querySRD } from "../../lib/characterStore";
+import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
 import { getNPCStats } from "../../agents/npcAgent";
 import { HISTORY_WINDOW } from "../../lib/anthropic";
 
@@ -60,14 +64,38 @@ export async function POST(req: NextRequest) {
           srdData,
         );
 
+        // Create an encounter before creating NPCs so createNPC() can add them
+        if (!getEncounter()) {
+          const sessionId = getSessionId();
+          const enc = await createEncounter(
+            sessionId,
+            characterId,
+            [],
+            gameState.story.currentLocation,
+            gameState.story.currentScene,
+          );
+          setEncounter(enc);
+          gameState.story.activeEncounterId = enc.id;
+        }
+
         for (const npc of result.npcs) {
           createNPC(npc);
+        }
+
+        // Compute initial grid positions and persist encounter updates
+        const enc = getEncounter();
+        if (enc?.id) {
+          enc.positions = computeInitialPositions(enc.activeNPCs);
+          await saveEncounterState(enc.id, {
+            activeNPCs: enc.activeNPCs,
+            positions: enc.positions,
+          });
         }
 
         const message = "[DEMIGOD] A hostile Goblin materializes before you!";
         addConversationTurn("assistant", message, HISTORY_WINDOW);
 
-        // Persist updated state (with new NPC + conversation turn)
+        // Persist updated state (with new encounter + conversation turn)
         await saveCharacterState(characterId, {
           player: gameState.player,
           story: getGameState().story,
@@ -76,6 +104,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           gameState: getGameState(),
+          encounter: getEncounter(),
           message,
         });
       }

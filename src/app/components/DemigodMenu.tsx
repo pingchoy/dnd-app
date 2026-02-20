@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GameState } from "../lib/gameTypes";
+import { GameState, StoredEncounter } from "../lib/gameTypes";
 
 interface DebugAction {
   key: string;
@@ -25,7 +25,7 @@ const ACTIONS: DebugAction[] = [
 interface DemigodMenuProps {
   characterId: string;
   isBusy: boolean;
-  onResult: (gameState: GameState, message: string) => void;
+  onResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
   onError: (msg: string) => void;
 }
 
@@ -58,7 +58,7 @@ export default function DemigodMenu({ characterId, isBusy, onResult, onError }: 
       }
 
       const data = await res.json();
-      onResult(data.gameState, data.message);
+      onResult(data.gameState, data.message, data.encounter ?? null);
       setIsOpen(false);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Debug action failed");

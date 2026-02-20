@@ -14,7 +14,7 @@ import {
   getRulesOutcome,
   isContestedAction,
 } from "../../agents/rulesAgent";
-import { loadGameState } from "../../lib/gameState";
+import { loadGameState, getActiveNPCs } from "../../lib/gameState";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 
 export async function POST(req: NextRequest) {
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     const gameState = await loadGameState(characterId);
-    const outcome = await getRulesOutcome(playerInput, gameState.player, gameState.story.activeNPCs);
+    const outcome = await getRulesOutcome(playerInput, gameState.player, getActiveNPCs());
     const rulesCost = calculateCost(
       MODELS.UTILITY,
       outcome.inputTokens,

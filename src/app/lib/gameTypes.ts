@@ -7,6 +7,29 @@
  * Server-only logic (Firestore persistence, singleton state) lives in gameState.ts.
  */
 
+// ─── Grid & Combat Types ─────────────────────────────────────────────────────
+
+export interface GridPosition {
+  row: number;
+  col: number;
+}
+
+export interface WeaponRange {
+  type: "melee" | "ranged" | "both";  // "both" = thrown weapons
+  reach?: number;       // melee reach in feet (default 5)
+  shortRange?: number;  // normal range in feet for ranged/thrown
+  longRange?: number;   // max range (disadvantage beyond short)
+}
+
+export interface SRDWeaponData {
+  slug: string;
+  name: string;
+  category: string;       // "Simple Melee Weapons", "Martial Ranged Weapons", etc.
+  damageDice: string;
+  damageType: string;
+  properties: string[];   // ["reach", "thrown (range 30/120)", "ammunition (range 80/320)"]
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CharacterStats {
@@ -35,6 +58,7 @@ export interface WeaponStat {
   dice: string;
   stat: "str" | "dex" | "finesse" | "none";
   bonus: number;
+  range?: WeaponRange;  // parsed from SRD or set by DM
 }
 
 export interface PlayerState {
@@ -113,6 +137,7 @@ export interface NPC {
   disposition: "hostile" | "neutral" | "friendly";
   conditions: string[];
   notes: string;
+  speed?: number;  // walking speed in feet (default 30)
 }
 
 export interface StoryState {
@@ -122,8 +147,9 @@ export interface StoryState {
   currentScene: string;
   activeQuests: string[];
   importantNPCs: string[];
-  activeNPCs: NPC[];
   recentEvents: string[];
+  /** Firestore ID of the active combat encounter, if any. */
+  activeEncounterId?: string;
 }
 
 export interface ConversationTurn {
@@ -145,6 +171,25 @@ export interface StoredCharacterV2 {
   id?: string;
   player: PlayerState;
   sessionId: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** Encounter document (encounters/{id}) — combat-specific state. */
+export interface StoredEncounter {
+  id?: string;
+  sessionId: string;
+  characterId: string;
+  status: "active" | "completed";
+  activeNPCs: NPC[];
+  /** Token positions keyed by "player" or NPC id. */
+  positions: Record<string, GridPosition>;
+  gridSize: number;
+  round: number;
+  /** Snapshot of location at encounter start (for combat agent narration). */
+  location: string;
+  /** Snapshot of scene at encounter start (for combat agent narration). */
+  scene: string;
   createdAt?: number;
   updatedAt?: number;
 }

@@ -190,7 +190,6 @@ function buildDefaultStory(name: string, className: string): StoryState {
     currentScene: `${name} the ${className} has arrived, ready to make their mark on the world.`,
     activeQuests: [],
     importantNPCs: [],
-    activeNPCs: [],
     recentEvents: [],
   };
 }

@@ -1,33 +1,55 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { NPC } from "../lib/gameTypes";
+import type { NPC, GridPosition, StoredEncounter } from "../lib/gameTypes";
 
-export interface GridPosition {
-  row: number;
-  col: number;
-}
+export type { GridPosition };
 
 export const GRID_SIZE = 20;
 
 /**
  * Manages token positions on a 20x20 tactical grid.
- * Places player near center and NPCs along edges. Preserves positions
- * for surviving NPCs across re-renders; resets on new combat.
+ *
+ * When an encounter is provided, positions are loaded from it (persisted in
+ * Firestore). Moves are persisted via POST /api/encounter/move for durability.
+ * Local state is updated optimistically for instant UI feedback.
+ *
+ * Falls back to client-side placement if no encounter data is available.
  */
-export function useCombatGrid(activeNPCs: NPC[], inCombat: boolean) {
+export function useCombatGrid(
+  activeNPCs: NPC[],
+  inCombat: boolean,
+  encounter?: StoredEncounter | null,
+) {
   const [positions, setPositions] = useState<Map<string, GridPosition>>(new Map());
   const prevCombatRef = useRef(false);
+  const prevEncounterIdRef = useRef<string | undefined>(undefined);
 
-  // Reset positions when combat starts fresh (false→true transition)
+  // When a new encounter arrives or combat starts, load positions from encounter
   useEffect(() => {
-    if (inCombat && !prevCombatRef.current) {
-      setPositions(new Map());
-    }
-    prevCombatRef.current = inCombat;
-  }, [inCombat]);
+    const encounterId = encounter?.id;
+    const isNewEncounter = encounterId && encounterId !== prevEncounterIdRef.current;
+    const combatJustStarted = inCombat && !prevCombatRef.current;
 
-  // Place new NPCs and remove departed ones
+    if (isNewEncounter || combatJustStarted) {
+      if (encounter?.positions && Object.keys(encounter.positions).length > 0) {
+        // Load positions from Firestore encounter data
+        const loaded = new Map<string, GridPosition>();
+        for (const [id, pos] of Object.entries(encounter.positions)) {
+          loaded.set(id, pos);
+        }
+        setPositions(loaded);
+      } else {
+        // No persisted positions — reset for fresh placement
+        setPositions(new Map());
+      }
+    }
+
+    prevCombatRef.current = inCombat;
+    prevEncounterIdRef.current = encounterId;
+  }, [inCombat, encounter]);
+
+  // Place new NPCs that don't have positions yet (reinforcements mid-combat)
   useEffect(() => {
     if (!inCombat) return;
 
@@ -47,7 +69,7 @@ export function useCombatGrid(activeNPCs: NPC[], inCombat: boolean) {
         next.set("player", { row: 10, col: 10 });
       }
 
-      // Place new NPCs along edges (rows 0-3)
+      // Place new NPCs along edges (rows 0-3) — only for NPCs without positions
       const occupied = new Set(Array.from(next.values()).map((p) => `${p.row},${p.col}`));
       for (const npc of activeNPCs) {
         if (!next.has(npc.id)) {
@@ -61,13 +83,33 @@ export function useCombatGrid(activeNPCs: NPC[], inCombat: boolean) {
     });
   }, [activeNPCs, inCombat]);
 
+  /**
+   * Move a token to a new position.
+   * Updates local state optimistically, then persists to Firestore via API.
+   */
   const moveToken = useCallback((id: string, pos: GridPosition) => {
+    // Optimistic local update
     setPositions((prev) => {
       const next = new Map(prev);
       next.set(id, pos);
       return next;
     });
-  }, []);
+
+    // Persist to Firestore if we have an active encounter
+    if (encounter?.id) {
+      fetch("/api/encounter/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          encounterId: encounter.id,
+          tokenId: id,
+          position: pos,
+        }),
+      }).catch((err) => {
+        console.error("[useCombatGrid] Failed to persist position:", err);
+      });
+    }
+  }, [encounter?.id]);
 
   return { positions, moveToken, gridSize: GRID_SIZE };
 }

@@ -15,6 +15,7 @@ import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
 import type { GameState } from "../lib/gameTypes";
+import { feetDistance } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
   label: string;
@@ -43,6 +44,7 @@ export default function Dashboard() {
   const {
     messages,
     gameState,
+    encounter,
     pendingRoll,
     isLoading,
     isRolling,
@@ -59,20 +61,62 @@ export default function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const [combatChatOpen, setCombatChatOpen] = useState(false);
+  const [rangeWarning, setRangeWarning] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pendingRoll, isRolling, isNarrating]);
 
-  // Hook must be called unconditionally (before any early return)
-  const activeNPCs = gameState?.story.activeNPCs ?? [];
-  const inCombat = activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0);
-  const { positions, moveToken, gridSize } = useCombatGrid(activeNPCs, inCombat);
+  // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
+  const activeNPCs = encounter?.activeNPCs ?? [];
+  const inCombat =
+    encounter != null &&
+    activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0);
+  const { positions, moveToken, gridSize } = useCombatGrid(
+    activeNPCs,
+    inCombat,
+    encounter,
+  );
+
+  /** Regex for attack-like actions in player input. */
+  const ATTACK_PATTERN =
+    /\b(attack|strike|hit|stab|slash|shoot|fire|throw|cast)\b/i;
 
   const handleSubmit = async () => {
     const input = userInput.trim();
     if (!input) return;
+
+    // Soft range warning during combat — informational only, doesn't block
+    if (inCombat && ATTACK_PATTERN.test(input)) {
+      const playerPos = positions.get("player");
+      if (playerPos) {
+        const hostiles = activeNPCs.filter(
+          (n) => n.disposition === "hostile" && n.currentHp > 0,
+        );
+        if (hostiles.length > 0) {
+          let nearest = Infinity;
+          for (const npc of hostiles) {
+            const npcPos = positions.get(npc.id);
+            if (npcPos) {
+              nearest = Math.min(nearest, feetDistance(playerPos, npcPos));
+            }
+          }
+          if (nearest > 30) {
+            setRangeWarning(
+              `Nearest hostile is ${nearest} ft away — you may be out of range.`,
+            );
+            // Auto-clear after 4 seconds
+            setTimeout(() => setRangeWarning(null), 4000);
+          } else {
+            setRangeWarning(null);
+          }
+        }
+      }
+    } else {
+      setRangeWarning(null);
+    }
+
     setUserInput("");
     await sendMessage(input);
   };
@@ -97,7 +141,10 @@ export default function Dashboard() {
   const isBusy = isRolling || isNarrating || !!pendingRoll;
 
   function handleLevelUpComplete(newState: GameState) {
-    applyDebugResult(newState, `You have reached level ${newState.player.level}!`);
+    applyDebugResult(
+      newState,
+      `You have reached level ${newState.player.level}!`,
+    );
   }
 
   return (
@@ -171,8 +218,20 @@ export default function Dashboard() {
               onClick={() => router.push("/characters")}
               className="flex items-center gap-1 font-cinzel text-xs text-parchment/40 tracking-widest uppercase border border-parchment/20 rounded px-3 py-1.5 hover:text-gold hover:border-gold/40 transition-colors"
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="flex-shrink-0">
-                <path d="M6.5 2L3.5 5L6.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                className="flex-shrink-0"
+              >
+                <path
+                  d="M6.5 2L3.5 5L6.5 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Characters
             </button>
@@ -217,7 +276,7 @@ export default function Dashboard() {
               <OrnateFrame className="flex-1 overflow-hidden">
                 <CombatGrid
                   player={player}
-                  activeNPCs={story.activeNPCs}
+                  activeNPCs={activeNPCs}
                   positions={positions}
                   onMoveToken={moveToken}
                   gridSize={gridSize}
@@ -226,9 +285,14 @@ export default function Dashboard() {
 
               {/* Collapsible chat overlay */}
               {combatChatOpen ? (
-                <div className="absolute bottom-2 left-0 right-0 z-30 flex flex-col" style={{ maxHeight: "45%" }}>
-                  <OrnateFrame className="overflow-hidden">
-                    <div className="flex flex-col bg-dungeon/95 backdrop-blur-sm" style={{ maxHeight: "40vh" }}>
+                <div
+                  className="absolute bottom-2 left-0 right-0 z-30 flex flex-col"
+                  style={{ maxHeight: "45%" }}
+                >
+                    <div
+                      className="flex flex-col bg-dungeon/95 backdrop-blur-sm border border-gold/30 rounded-lg"
+                      style={{ maxHeight: "40vh" }}
+                    >
                       {/* Chat header with hide button */}
                       <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1 flex items-center justify-between">
                         <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
@@ -241,16 +305,21 @@ export default function Dashboard() {
                           ▼ Hide
                         </button>
                       </div>
-                      <div className="flex-1 overflow-hidden min-h-0">
-                        <CompactChatPanel
-                          messages={messages}
-                          playerName={player.name}
-                          pendingRoll={pendingRoll}
-                          isRolling={isRolling}
-                          isNarrating={isNarrating}
-                          confirmRoll={confirmRoll}
-                        />
-                      </div>
+                      <CompactChatPanel
+                        messages={messages}
+                        playerName={player.name}
+                        pendingRoll={pendingRoll}
+                        isRolling={isRolling}
+                        isNarrating={isNarrating}
+                        confirmRoll={confirmRoll}
+                      />
+                      {rangeWarning && (
+                        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-900/30 border-t border-amber-500/30">
+                          <p className="font-crimson text-amber-300/80 text-sm italic">
+                            {rangeWarning}
+                          </p>
+                        </div>
+                      )}
                       <Input
                         userInput={userInput}
                         setUserInput={setUserInput}
@@ -258,7 +327,6 @@ export default function Dashboard() {
                         disabled={isBusy}
                       />
                     </div>
-                  </OrnateFrame>
                 </div>
               ) : (
                 <button

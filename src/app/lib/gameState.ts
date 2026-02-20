@@ -6,7 +6,8 @@
  * start of each request; applyStateChangesAndPersist() flushes it at
  * the end.
  *
- * ALL game state (including activeNPCs) is persisted to Firestore.
+ * ALL game state is persisted to Firestore. NPCs live in the encounters
+ * collection; story/player data live in sessions/characters.
  */
 
 import {
@@ -16,6 +17,12 @@ import {
   loadCharacter,
   saveCharacterState,
 } from "./characterStore";
+
+import {
+  loadEncounter,
+  saveEncounterState,
+  completeEncounter as completeEncounterDoc,
+} from "./encounterStore";
 
 export type {
   CharacterStats,
@@ -30,6 +37,8 @@ export type {
   PendingLevelData,
   ParsedRollResult,
   DamageBreakdown,
+  GridPosition,
+  StoredEncounter,
 } from "./gameTypes";
 
 export {
@@ -50,6 +59,7 @@ import {
   StoryState,
   GameState,
   WeaponStat,
+  StoredEncounter,
   PendingLevelUp,
   PendingLevelData,
   formatModifier,
@@ -125,14 +135,12 @@ export function serializeActiveNPCs(npcs: NPC[]): string {
 
 /** Compact summary of the story state for prompt injection. */
 export function serializeStoryState(s: StoryState): string {
-  const npcSection = serializeActiveNPCs(s.activeNPCs);
   return [
     `Campaign: ${s.campaignTitle}`,
     `Location: ${s.currentLocation}`,
     `Scene: ${s.currentScene}`,
     `Quests: ${s.activeQuests.join("; ")}`,
     `Notable NPCs: ${s.importantNPCs.join(", ")}`,
-    npcSection,
     s.recentEvents.length
       ? `Recent: ${s.recentEvents.slice(-3).join(" | ")}`
       : "",
@@ -225,16 +233,44 @@ let state: GameState = {
     currentScene: "",
     activeQuests: [],
     importantNPCs: [],
-    activeNPCs: [],
     recentEvents: [],
   },
   conversationHistory: [],
 };
 
+/** SessionId for the current character — set by loadGameState(). */
+let currentSessionId = "";
+
+// ─── Encounter singleton ─────────────────────────────────────────────────────
+
+/**
+ * In-memory encounter state for the current request.
+ * Null when no combat encounter is active.
+ * Hydrated by loadGameState() when story.activeEncounterId is set.
+ */
+let encounter: StoredEncounter | null = null;
+
 // ─── Getters / Setters ────────────────────────────────────────────────────────
 
 export function getGameState(): GameState {
   return state;
+}
+
+export function getSessionId(): string {
+  return currentSessionId;
+}
+
+export function getEncounter(): StoredEncounter | null {
+  return encounter;
+}
+
+export function setEncounter(enc: StoredEncounter | null): void {
+  encounter = enc;
+}
+
+/** Returns the active NPCs from the current encounter, or an empty array if no encounter. */
+export function getActiveNPCs(): NPC[] {
+  return encounter?.activeNPCs ?? [];
 }
 
 export function addConversationTurn(
@@ -402,7 +438,11 @@ export function createNPC(input: CreateNPCInput): NPC {
     conditions: [],
     notes: input.notes ?? "",
   };
-  state.story.activeNPCs.push(npc);
+  if (!encounter) {
+    console.warn(`[createNPC] No active encounter — NPC "${npc.name}" created but not tracked`);
+  } else {
+    encounter.activeNPCs.push(npc);
+  }
   console.log(`[createNPC] Created "${npc.name}" — HP:${npc.maxHp}, AC:${npc.ac}, XP:${npc.xpValue}, disposition:${npc.disposition}`);
   return npc;
 }
@@ -426,9 +466,12 @@ export interface UpdateNPCResult {
 }
 
 export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
-  const npc = state.story.activeNPCs.find(
-    (n) => n.id === input.id,
-  );
+  if (!encounter) {
+    console.warn(`[updateNPC] No active encounter — cannot update NPC "${input.id}"`);
+    return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
+  }
+
+  const npc = encounter.activeNPCs.find((n) => n.id === input.id);
   if (!npc) return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
 
   if (input.hp_delta) {
@@ -466,7 +509,8 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
       state.story.recentEvents.push(`Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`);
       if (state.story.recentEvents.length > 10) state.story.recentEvents = state.story.recentEvents.slice(-10);
     }
-    state.story.activeNPCs = state.story.activeNPCs.filter((n) => n.id !== npc.id);
+    encounter.activeNPCs = encounter.activeNPCs.filter((n) => n.id !== npc.id);
+    delete encounter.positions[npc.id];
   }
 
   return { found: true, name: npc.name, died, removed: !!input.remove_from_scene, newHp: npc.currentHp, xpAwarded };
@@ -639,17 +683,32 @@ async function computePendingLevelUp(
 // ─── Firestore-backed async functions ─────────────────────────────────────────
 
 /**
- * Load a character from Firestore and hydrate the in-memory singleton.
+ * Load a character from Firestore and hydrate the in-memory singletons.
+ * If the session has an active encounter, also loads the encounter doc
+ * and uses its NPCs as the authoritative source.
  */
 export async function loadGameState(characterId: string): Promise<GameState> {
   const stored = await loadCharacter(characterId);
   if (!stored) throw new Error(`Character "${characterId}" not found in Firestore`);
 
+  currentSessionId = stored.sessionId;
   state = {
     player: stored.player,
     story: stored.story,
     conversationHistory: stored.conversationHistory,
   };
+
+  // Hydrate encounter if one is active
+  encounter = null;
+  if (state.story.activeEncounterId) {
+    const enc = await loadEncounter(state.story.activeEncounterId);
+    if (enc && enc.status === "active") {
+      encounter = enc;
+    } else {
+      // Encounter was completed or missing — clear the stale reference
+      state.story.activeEncounterId = undefined;
+    }
+  }
 
   return state;
 }
@@ -667,6 +726,7 @@ async function persistState(characterId: string): Promise<void> {
 /**
  * Apply state changes to the in-memory singleton and persist to Firestore.
  * Always calls awardXPAsync to catch level-ups from both xp_gained and NPC kills.
+ * If an encounter is active, also persists encounter state (NPCs, positions).
  */
 export async function applyStateChangesAndPersist(
   changes: StateChanges,
@@ -675,6 +735,28 @@ export async function applyStateChangesAndPersist(
   applyStateChanges(changes);
   // Check for level-up regardless of source (xp_gained field or NPC kill XP)
   await awardXPAsync(characterId, 0);
+
+  // Persist encounter state alongside game state
+  if (encounter?.id) {
+    // Check if combat is over (no hostile NPCs with HP > 0)
+    const stillInCombat = encounter.activeNPCs.some(
+      (n) => n.disposition === "hostile" && n.currentHp > 0,
+    );
+
+    if (stillInCombat) {
+      await saveEncounterState(encounter.id, {
+        activeNPCs: encounter.activeNPCs,
+        positions: encounter.positions,
+        round: encounter.round,
+      });
+    } else {
+      // Combat is over — complete the encounter and clear the link
+      await completeEncounterDoc(encounter.id);
+      state.story.activeEncounterId = undefined;
+      encounter = null;
+    }
+  }
+
   await persistState(characterId);
 }
 

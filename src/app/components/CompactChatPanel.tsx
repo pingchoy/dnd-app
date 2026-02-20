@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage, PendingRoll } from "../hooks/useChat";
 import DiceRoll from "./DiceRoll";
 
@@ -44,12 +46,20 @@ export default function CompactChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pendingRoll, isRolling, isNarrating]);
 
-  // Show last 6 messages
+  // Re-scroll while a dice roll is animating so the Continue button
+  // is visible once the animation settles and the button renders.
+  useEffect(() => {
+    if (!pendingRoll) return;
+    const id = setInterval(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 600);
+    return () => clearInterval(id);
+  }, [pendingRoll]);
+
   const recentMessages = messages.slice(-6);
 
   return (
-    <div className="tome-container flex-1 overflow-hidden flex flex-col min-h-0">
-      <div className="scroll-pane flex-1 overflow-y-auto px-3 py-2">
+    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2">
         {recentMessages.map((msg, idx) => {
           // Historical roll cards — render inline compact
           if (msg.rollResult) {
@@ -61,27 +71,26 @@ export default function CompactChatPanel({
           }
 
           const isDM = msg.role === "assistant";
-          // Truncate long messages for compact view
-          const truncated =
-            msg.content.length > 200
-              ? msg.content.slice(0, 200) + "..."
-              : msg.content;
-
           return (
             <div
               key={idx}
-              className={`py-1.5 ${idx > 0 ? "border-t border-[#3a2a1a]/50" : ""}`}
+              className={`py-2 ${idx > 0 ? "border-t border-gold/10" : ""}`}
             >
-              <span
-                className={`font-cinzel text-[10px] tracking-widest uppercase mr-2 ${
+              <div
+                className={`font-cinzel text-[10px] tracking-widest uppercase mb-0.5 ${
                   isDM ? "text-gold/70" : "text-parchment/40"
                 }`}
               >
                 {isDM ? "DM" : playerName}
-              </span>
-              <span className="font-crimson text-sm text-parchment/80 leading-snug">
-                {truncated}
-              </span>
+              </div>
+              <div className="font-crimson text-sm text-parchment/80 leading-snug prose prose-invert prose-sm max-w-none
+                prose-strong:text-parchment prose-strong:font-semibold
+                prose-em:italic prose-em:text-parchment/70
+                prose-p:my-1 prose-p:leading-snug
+                prose-ul:my-1 prose-ul:pl-4 prose-li:my-0
+                prose-hr:border-gold/20">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+              </div>
             </div>
           );
         })}
@@ -103,7 +112,6 @@ export default function CompactChatPanel({
         )}
 
         <div ref={bottomRef} />
-      </div>
     </div>
   );
 }

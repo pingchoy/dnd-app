@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameTypes";
+import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -28,6 +28,8 @@ export interface PendingRoll {
 export interface UseChatReturn {
   messages: ChatMessage[];
   gameState: GameState | null;
+  /** Active combat encounter data, or null if not in combat. */
+  encounter: StoredEncounter | null;
   /** Non-null while the dice roll UI should be shown. */
   pendingRoll: PendingRoll | null;
   /** True while the initial character is loading from Firestore. */
@@ -43,7 +45,7 @@ export interface UseChatReturn {
   sendMessage: (input: string) => Promise<void>;
   confirmRoll: () => Promise<void>;
   /** Apply a debug action result: update game state and append a system message. */
-  applyDebugResult: (gameState: GameState, message: string) => void;
+  applyDebugResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
 }
 
 export function useChat(): UseChatReturn {
@@ -51,6 +53,7 @@ export function useChat(): UseChatReturn {
   const [characterId, setCharacterId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [encounter, setEncounter] = useState<StoredEncounter | null>(null);
   const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
   const [isLoading, setIsLoading]     = useState(true);
   const [isRolling, setIsRolling]     = useState(false);
@@ -76,6 +79,7 @@ export function useChat(): UseChatReturn {
       .then((data) => {
         const gs: GameState = data.gameState;
         setGameState(gs);
+        setEncounter(data.encounter ?? null);
 
         if (gs.conversationHistory.length === 0) {
           // Brand-new character — show the opening narrative
@@ -220,6 +224,7 @@ export function useChat(): UseChatReturn {
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
           setGameState(refreshData.gameState);
+          setEncounter(refreshData.encounter ?? null);
         }
         return;
       }
@@ -233,6 +238,7 @@ export function useChat(): UseChatReturn {
         { role: "assistant", content: data.narrative, timestamp: Date.now() },
       ]);
       setGameState(data.gameState);
+      setEncounter(data.encounter ?? null);
       setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
       setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
     } catch (err) {
@@ -254,8 +260,11 @@ export function useChat(): UseChatReturn {
     ]);
   }
 
-  function applyDebugResult(newState: GameState, message: string): void {
+  function applyDebugResult(newState: GameState, message: string, newEncounter?: StoredEncounter | null): void {
     setGameState(newState);
+    if (newEncounter !== undefined) {
+      setEncounter(newEncounter);
+    }
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: message, timestamp: Date.now() },
@@ -265,6 +274,7 @@ export function useChat(): UseChatReturn {
   return {
     messages,
     gameState,
+    encounter,
     pendingRoll,
     isLoading,
     isRolling,
