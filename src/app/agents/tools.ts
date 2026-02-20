@@ -220,13 +220,13 @@ export const COMBAT_UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
 export const UPDATE_NPC_TOOL: Anthropic.Tool = {
   name: "update_npc",
   description:
-    "Update an NPC after taking damage, gaining a condition, or being defeated. Use remove_from_scene when they die or leave.",
+    "Update an NPC after taking damage, gaining a condition, or being defeated. Use the NPC's unique id (shown as [id=...] in the combatant list). Use remove_from_scene when they die or leave.",
   input_schema: {
     type: "object",
     properties: {
-      name: {
+      id: {
         type: "string",
-        description: "NPC name (must match an existing active NPC).",
+        description: "Unique NPC id (from [id=...] in the active combatants list).",
       },
       hp_delta: {
         type: "number",
@@ -239,7 +239,7 @@ export const UPDATE_NPC_TOOL: Anthropic.Tool = {
         description: "True when the NPC is defeated or leaves.",
       },
     },
-    required: ["name"],
+    required: ["id"],
   },
 };
 
@@ -290,6 +290,8 @@ export const QUERY_SRD_TOOL: Anthropic.Messages.Tool = {
 export interface NPCPreRollResult {
   contextString: string;
   totalDamage: number;
+  /** Per-NPC damage for computing surviving NPC damage after deaths. */
+  perNPC: { id: string; damage: number }[];
 }
 
 /**
@@ -304,20 +306,23 @@ export function buildNPCRollContext(npcs: NPC[], playerAC: number): NPCPreRollRe
   const hostile = npcs.filter(
     (n) => n.disposition === "hostile" && n.currentHp > 0,
   );
-  if (hostile.length === 0) return { contextString: "No hostile NPCs remain to attack.", totalDamage: 0 };
+  if (hostile.length === 0) return { contextString: "No hostile NPCs remain to attack.", totalDamage: 0, perNPC: [] };
 
   let totalDamage = 0;
+  const perNPC: { id: string; damage: number }[] = [];
   const lines = hostile.map((n) => {
     const d20 = Math.floor(Math.random() * 20) + 1;
     const attackTotal = d20 + n.attackBonus;
     const hits = attackTotal >= playerAC;
     const dmg = hits ? rollDice(n.damageDice).total + n.damageBonus : 0;
     if (hits) totalDamage += dmg;
-    return `  ${n.name}: d20=${d20}${formatModifier(n.attackBonus)}=${attackTotal} vs AC ${playerAC} → ${hits ? `HIT — ${dmg} damage` : "MISS"}`;
+    perNPC.push({ id: n.id, damage: dmg });
+    return `  [id=${n.id}] ${n.name}: d20=${d20}${formatModifier(n.attackBonus)}=${attackTotal} vs AC ${playerAC} → ${hits ? `HIT — ${dmg} damage` : "MISS"}`;
   });
 
   return {
-    contextString: `[NPC attack rolls for surviving hostiles]\n${lines.join("\n")}`,
+    contextString: `[PRE-ROLLED NPC attacks — ignore any NPC killed by the player this turn]\n${lines.join("\n")}`,
     totalDamage,
+    perNPC,
   };
 }

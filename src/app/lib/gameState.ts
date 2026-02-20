@@ -109,7 +109,7 @@ export function serializePlayerState(p: PlayerState): string {
   return lines.join("\n");
 }
 
-/** Compact summary of active NPCs for injection into prompts. */
+/** Compact summary of active NPCs for injection into prompts. Includes unique id for tool calls. */
 export function serializeActiveNPCs(npcs: NPC[]): string {
   if (npcs.length === 0) return "";
   return (
@@ -117,7 +117,7 @@ export function serializeActiveNPCs(npcs: NPC[]): string {
     npcs
       .map(
         (n) =>
-          `  ${n.name}: AC ${n.ac}, HP ${n.currentHp}/${n.maxHp}, ATK ${formatModifier(n.attackBonus)} (${n.damageDice}${n.damageBonus ? formatModifier(n.damageBonus) : ""}) [${n.disposition}]${n.conditions.length ? ` — ${n.conditions.join(", ")}` : ""}${n.notes ? ` — ${n.notes}` : ""}`,
+          `  [id=${n.id}] ${n.name}: AC ${n.ac}, HP ${n.currentHp}/${n.maxHp}, ATK ${formatModifier(n.attackBonus)} (${n.damageDice}${n.damageBonus ? formatModifier(n.damageBonus) : ""}) [${n.disposition}]${n.conditions.length ? ` — ${n.conditions.join(", ")}` : ""}${n.notes ? ` — ${n.notes}` : ""}`,
       )
       .join("\n")
   );
@@ -408,7 +408,8 @@ export function createNPC(input: CreateNPCInput): NPC {
 }
 
 export interface UpdateNPCInput {
-  name: string;
+  /** Unique NPC id (matches NPC.id in activeNPCs). */
+  id: string;
   hp_delta?: number;
   conditions_added?: string[];
   conditions_removed?: string[];
@@ -426,9 +427,9 @@ export interface UpdateNPCResult {
 
 export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   const npc = state.story.activeNPCs.find(
-    (n) => n.name.toLowerCase() === input.name.toLowerCase(),
+    (n) => n.id === input.id,
   );
-  if (!npc) return { found: false, name: input.name, died: false, removed: false, newHp: 0, xpAwarded: 0 };
+  if (!npc) return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
 
   if (input.hp_delta) {
     npc.currentHp = Math.max(0, Math.min(npc.maxHp, npc.currentHp + input.hp_delta));

@@ -60,6 +60,8 @@ export interface PlayerState {
   gold: number;
   weaponDamage: Record<string, WeaponStat>;
   subclass?: string;
+  // ─── Movement ───
+  speed?: number; // walking speed in feet (default 30)
   // ─── Spellcasting (optional — non-casters carry none of these) ───
   spellcastingAbility?: keyof CharacterStats;
   cantrips?: string[];

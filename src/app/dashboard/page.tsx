@@ -9,8 +9,11 @@ import CharacterSheet from "../components/CharacterSheet";
 import CharacterSidebar from "../components/CharacterSidebar";
 import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
+import CombatGrid from "../components/CombatGrid";
+import CompactChatPanel from "../components/CompactChatPanel";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
+import { useCombatGrid } from "../hooks/useCombatGrid";
 import type { GameState } from "../lib/gameTypes";
 
 interface LoadingIndicatorProps {
@@ -55,11 +58,17 @@ export default function Dashboard() {
   const [userInput, setUserInput] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
+  const [combatChatOpen, setCombatChatOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pendingRoll, isRolling, isNarrating]);
+
+  // Hook must be called unconditionally (before any early return)
+  const activeNPCs = gameState?.story.activeNPCs ?? [];
+  const inCombat = activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0);
+  const { positions, moveToken, gridSize } = useCombatGrid(activeNPCs, inCombat);
 
   const handleSubmit = async () => {
     const input = userInput.trim();
@@ -199,57 +208,119 @@ export default function Dashboard() {
 
       {/* ── Body: chat + sidebar ── */}
       <div className="flex-1 overflow-hidden flex">
-        {/* ── Left: chat area ── */}
+        {/* ── Left: chat area (swaps to combat grid when in combat) ── */}
         <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-4 min-w-0">
-          <OrnateFrame className="flex-1 overflow-hidden">
-            <div className="tome-container flex-1 overflow-hidden flex flex-col">
-              <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-                {messages.map((message, idx) => (
-                  <ChatCard
-                    key={idx}
-                    message={message}
-                    playerName={player.name}
-                  />
-                ))}
+          {inCombat ? (
+            /* ── Combat layout: grid fills entire left side, chat overlays ── */
+            <div className="flex-1 overflow-hidden flex flex-col relative">
+              {/* Combat grid — fills entire area */}
+              <OrnateFrame className="flex-1 overflow-hidden">
+                <CombatGrid
+                  player={player}
+                  activeNPCs={story.activeNPCs}
+                  positions={positions}
+                  onMoveToken={moveToken}
+                  gridSize={gridSize}
+                />
+              </OrnateFrame>
 
-                {isRolling && (
-                  <LoadingIndicator label="The fates are consulted" />
-                )}
+              {/* Collapsible chat overlay */}
+              {combatChatOpen ? (
+                <div className="absolute bottom-2 left-0 right-0 z-30 flex flex-col" style={{ maxHeight: "45%" }}>
+                  <OrnateFrame className="overflow-hidden">
+                    <div className="flex flex-col bg-dungeon/95 backdrop-blur-sm" style={{ maxHeight: "40vh" }}>
+                      {/* Chat header with hide button */}
+                      <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1 flex items-center justify-between">
+                        <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
+                          Combat Log
+                        </span>
+                        <button
+                          onClick={() => setCombatChatOpen(false)}
+                          className="font-cinzel text-[10px] tracking-widest text-parchment/50 uppercase hover:text-gold transition-colors"
+                        >
+                          ▼ Hide
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-hidden min-h-0">
+                        <CompactChatPanel
+                          messages={messages}
+                          playerName={player.name}
+                          pendingRoll={pendingRoll}
+                          isRolling={isRolling}
+                          isNarrating={isNarrating}
+                          confirmRoll={confirmRoll}
+                        />
+                      </div>
+                      <Input
+                        userInput={userInput}
+                        setUserInput={setUserInput}
+                        handleSubmit={handleSubmit}
+                        disabled={isBusy}
+                      />
+                    </div>
+                  </OrnateFrame>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setCombatChatOpen(true)}
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 font-cinzel text-[10px] tracking-widest text-parchment/60 uppercase bg-dungeon-mid/95 border border-gold/30 rounded-full px-4 py-1.5 hover:text-gold hover:border-gold/50 transition-colors backdrop-blur-sm"
+                >
+                  ▲ Show Chat
+                </button>
+              )}
+            </div>
+          ) : (
+            /* ── Normal chat layout ── */
+            <OrnateFrame className="flex-1 overflow-hidden">
+              <div className="tome-container flex-1 overflow-hidden flex flex-col">
+                <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+                  {messages.map((message, idx) => (
+                    <ChatCard
+                      key={idx}
+                      message={message}
+                      playerName={player.name}
+                    />
+                  ))}
 
-                {pendingRoll && (
-                  <DiceRoll
-                    result={pendingRoll.parsed}
-                    onContinue={confirmRoll}
-                    isNarrating={isNarrating}
-                  />
-                )}
+                  {isRolling && (
+                    <LoadingIndicator label="The fates are consulted" />
+                  )}
 
-                {isNarrating && !pendingRoll && (
-                  <LoadingIndicator label="The Dungeon Master weaves the tale" />
-                )}
+                  {pendingRoll && (
+                    <DiceRoll
+                      result={pendingRoll.parsed}
+                      onContinue={confirmRoll}
+                      isNarrating={isNarrating}
+                    />
+                  )}
 
-                <div ref={bottomRef} />
-              </div>
+                  {isNarrating && !pendingRoll && (
+                    <LoadingIndicator label="The Dungeon Master weaves the tale" />
+                  )}
 
-              {/* Session stats footer */}
-              <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 sm:px-6 py-2 flex items-center justify-end">
-                <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
-                  <span>{totalTokens.toLocaleString()} tokens</span>
-                  <span className="text-parchment/20">|</span>
-                  <span className="text-gold/50">
-                    est. ${estimatedCostUsd.toFixed(4)}
-                  </span>
+                  <div ref={bottomRef} />
+                </div>
+
+                {/* Session stats footer */}
+                <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 sm:px-6 py-2 flex items-center justify-end">
+                  <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
+                    <span>{totalTokens.toLocaleString()} tokens</span>
+                    <span className="text-parchment/20">|</span>
+                    <span className="text-gold/50">
+                      est. ${estimatedCostUsd.toFixed(4)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <Input
-              userInput={userInput}
-              setUserInput={setUserInput}
-              handleSubmit={handleSubmit}
-              disabled={isBusy}
-            />
-          </OrnateFrame>
+              <Input
+                userInput={userInput}
+                setUserInput={setUserInput}
+                handleSubmit={handleSubmit}
+                disabled={isBusy}
+              />
+            </OrnateFrame>
+          )}
         </div>
 
         {/* ── Right: character sidebar (desktop only) ── */}

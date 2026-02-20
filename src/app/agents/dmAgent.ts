@@ -14,7 +14,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   anthropic,
-  HISTORY_WINDOW,
   MAX_TOKENS,
   MODELS,
 } from "../lib/anthropic";
@@ -71,21 +70,14 @@ FORMATTING:
 
 TONE: Dark fantasy. Evershade is a city of secrets, shadow, and danger. Rewards careful play.`;
 
-function buildSystemPrompt(
-  state: GameState,
-): Anthropic.Messages.TextBlockParam[] {
-  return [
-    {
-      type: "text",
-      text: STATIC_DM_INSTRUCTIONS,
-      cache_control: { type: "ephemeral" },
-    },
-    {
-      type: "text",
-      text: `CAMPAIGN STATE:\n${serializeStoryState(state.story)}\n\nPLAYER CHARACTER:\n${serializePlayerState(state.player)}`,
-    },
-  ];
-}
+/** Static-only system prompt — cached across requests. */
+const SYSTEM_PROMPT: Anthropic.Messages.TextBlockParam[] = [
+  {
+    type: "text",
+    text: STATIC_DM_INSTRUCTIONS,
+    cache_control: { type: "ephemeral" },
+  },
+];
 
 // ─── Main agent function ──────────────────────────────────────────────────────
 
@@ -102,13 +94,16 @@ export interface DMResponse {
 const MAX_SRD_QUERIES = 3;
 /** Maximum total loop iterations (guards against unexpected infinite loops). */
 const MAX_ITERATIONS = 8;
+/** Number of conversation history entries to include (5 turns = 10 entries). */
+const DM_HISTORY_ENTRIES = 10;
 
 export async function getDMResponse(
   playerInput: string,
   gameState: GameState,
   rulesOutcome: RulesOutcome | null,
 ): Promise<DMResponse> {
-  let userContent = playerInput;
+  // Prepend dynamic game state so the static system prompt + tools stay fully cacheable
+  let userContent = `CAMPAIGN STATE:\n${serializeStoryState(gameState.story)}\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
 
   // Append player rules check result
   if (rulesOutcome) {
@@ -117,7 +112,7 @@ export async function getDMResponse(
 
   const historyMessages: Anthropic.MessageParam[] =
     gameState.conversationHistory
-      .slice(-HISTORY_WINDOW * 2)
+      .slice(-DM_HISTORY_ENTRIES)
       .map((turn) => ({ role: turn.role, content: turn.content }));
 
   const messages: Anthropic.MessageParam[] = [
@@ -146,7 +141,7 @@ export async function getDMResponse(
     const response = await anthropic.messages.create({
       model: MODELS.NARRATIVE,
       max_tokens: MAX_TOKENS.NARRATIVE,
-      system: buildSystemPrompt(gameState),
+      system: SYSTEM_PROMPT,
       tools,
       messages,
     });
