@@ -337,6 +337,34 @@ export function resolveSpellSave(
 }
 
 /**
+ * Resolve a single NPC's attack against the player.
+ * Used by the turn-by-turn combat loop to pre-roll one NPC at a time.
+ */
+export function resolveNPCTurn(
+  npc: NPC,
+  playerAC: number,
+): NPCTurnResult {
+  const d20 = rollD20();
+  const attackTotal = d20 + npc.attackBonus;
+  const isNat1 = d20 === 1;
+  const isNat20 = d20 === 20;
+  const hit = isNat1 ? false : isNat20 ? true : attackTotal >= playerAC;
+
+  let damage = 0;
+  if (hit) {
+    let diceExpr = npc.damageDice;
+    if (isNat20) {
+      diceExpr = doubleDice(diceExpr);
+    }
+    const roll = rollDice(diceExpr);
+    damage = roll.total + npc.damageBonus;
+    if (damage < 0) damage = 0;
+  }
+
+  return { npcId: npc.id, npcName: npc.name, d20, attackTotal, hit, damage };
+}
+
+/**
  * Resolve all surviving hostile NPC attacks against the player.
  * Same math as buildNPCRollContext() in tools.ts.
  */

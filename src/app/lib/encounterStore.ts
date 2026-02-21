@@ -71,6 +71,9 @@ export async function createEncounter(
   const positions = computeInitialPositions(npcs);
   const now = Date.now();
 
+  // Turn order: player always first, then NPCs in array order
+  const turnOrder = ["player", ...npcs.map(n => n.id)];
+
   const doc: Omit<StoredEncounter, "id"> = {
     sessionId,
     characterId,
@@ -79,6 +82,8 @@ export async function createEncounter(
     positions,
     gridSize: GRID_SIZE,
     round: 1,
+    turnOrder,
+    currentTurnIndex: 0,
     location,
     scene,
     createdAt: now,

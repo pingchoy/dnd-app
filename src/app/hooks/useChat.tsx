@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, Ability } from "../lib/gameTypes";
-import type { NPCTurnResult } from "../lib/combatResolver";
+import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, Ability, CombatSSEEvent } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -39,6 +38,8 @@ export interface UseChatReturn {
   isNarrating: boolean;
   /** True while /api/roll is in-flight (before dice UI appears). */
   isRolling: boolean;
+  /** True while the turn-by-turn combat loop is processing (SSE streaming). */
+  isCombatProcessing: boolean;
   totalTokens: number;
   estimatedCostUsd: number;
   /** The Firestore character ID (null until loaded from localStorage). */
@@ -49,8 +50,6 @@ export interface UseChatReturn {
   applyDebugResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
   /** Execute a deterministic combat action (ability bar click). */
   executeCombatAction: (ability: Ability, targetId?: string) => Promise<void>;
-  /** NPC turn results from the last combat action (shown in dice UI). */
-  pendingNPCResults: NPCTurnResult[] | null;
 }
 
 export function useChat(): UseChatReturn {
@@ -63,9 +62,18 @@ export function useChat(): UseChatReturn {
   const [isLoading, setIsLoading]     = useState(true);
   const [isRolling, setIsRolling]     = useState(false);
   const [isNarrating, setIsNarrating] = useState(false);
+  const [isCombatProcessing, setIsCombatProcessing] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
-  const [pendingNPCResults, setPendingNPCResults] = useState<NPCTurnResult[] | null>(null);
+
+  // SSE connection management
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const characterIdRef = useRef<string | null>(null);
+
+  // Keep characterId ref in sync
+  useEffect(() => {
+    characterIdRef.current = characterId;
+  }, [characterId]);
 
   // On mount: read characterId from localStorage; redirect to creation if missing.
   useEffect(() => {
@@ -110,9 +118,139 @@ export function useChat(): UseChatReturn {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * SSE combat stream — opens when an active encounter with hostiles exists,
+   * closes on combat_end or when the encounter changes.
+   */
+  const handleCombatEvent = useCallback((data: CombatSSEEvent) => {
+    switch (data.type) {
+      case "round_start":
+        // Round display updated via state_update
+        break;
+
+      case "player_turn":
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.narrative,
+          timestamp: Date.now(),
+        }]);
+        break;
+
+      case "npc_turn":
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.narrative,
+          timestamp: Date.now(),
+        }]);
+        break;
+
+      case "state_update":
+        setGameState(data.gameState);
+        setEncounter(data.encounter);
+        break;
+
+      case "round_end":
+        setIsCombatProcessing(false);
+        break;
+
+      case "player_dead":
+        setIsCombatProcessing(false);
+        break;
+
+      case "combat_end": {
+        setIsCombatProcessing(false);
+        // Close SSE connection
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        // Refetch final game state (encounter completed, activeEncounterId cleared)
+        const cId = characterIdRef.current;
+        if (cId) {
+          fetch(`/api/chat?characterId=${encodeURIComponent(cId)}`)
+            .then(res => res.json())
+            .then(refreshData => {
+              setGameState(refreshData.gameState);
+              setEncounter(refreshData.encounter ?? null);
+            })
+            .catch(err => console.error("[useChat] Failed to refresh after combat end:", err));
+        }
+        break;
+      }
+
+      case "error":
+        console.error("[SSE] Server error:", data.message);
+        setIsCombatProcessing(false);
+        break;
+    }
+  }, []);
+
+  // Open/close SSE connection based on encounter state
+  useEffect(() => {
+    const hasHostiles = encounter?.activeNPCs?.some(
+      n => n.disposition === "hostile" && n.currentHp > 0,
+    );
+    const shouldConnect = encounter?.id && encounter.status === "active" && hasHostiles;
+
+    if (!shouldConnect) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      return;
+    }
+
+    // Already connected — don't reopen
+    if (eventSourceRef.current) return;
+
+    console.log(`[useChat] Opening SSE connection for encounter ${encounter.id}`);
+    const es = new EventSource(`/api/combat/stream?encounterId=${encounter.id}`);
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as CombatSSEEvent;
+        handleCombatEvent(data);
+      } catch (err) {
+        console.error("[SSE] Failed to parse event:", err);
+      }
+    };
+
+    es.onerror = () => {
+      console.error("[SSE] Connection error — closing");
+      es.close();
+      eventSourceRef.current = null;
+      setIsCombatProcessing(false);
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounter?.id, encounter?.status, handleCombatEvent]);
+
+  // Clean up SSE on unmount
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+    };
+  }, []);
+
+  // Safety timeout: if isCombatProcessing stays true for 30s, reset it
+  useEffect(() => {
+    if (!isCombatProcessing) return;
+    const timer = setTimeout(() => {
+      console.warn("[useChat] Combat processing timeout — resetting");
+      setIsCombatProcessing(false);
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [isCombatProcessing]);
+
   /** Phase 1 — submit action, check for dice roll. */
   async function sendMessage(input: string): Promise<void> {
-    if (!input.trim() || isRolling || isNarrating || pendingRoll || !characterId) return;
+    if (!input.trim() || isRolling || isNarrating || pendingRoll || isCombatProcessing || !characterId) return;
 
     // Show the player's message immediately
     setMessages((prev) => [...prev, { role: "user", content: input, timestamp: Date.now() }]);
@@ -192,13 +330,7 @@ export function useChat(): UseChatReturn {
       { role: "assistant", content: "", rollResult: pr.parsed, timestamp: Date.now() },
     ]);
     setPendingRoll(null);
-
-    // Route to combat narration if this was a combat action
-    if (pendingNPCResults !== null) {
-      await requestCombatNarration(pr.parsed, pendingNPCResults);
-    } else {
-      await requestNarrative(pr.playerInput, pr);
-    }
+    await requestNarrative(pr.playerInput, pr);
   }
 
   /** Calls /api/chat and appends the DM response. */
@@ -262,14 +394,24 @@ export function useChat(): UseChatReturn {
   }
 
   /**
-   * Execute a deterministic combat action via /api/combat/action.
-   * Parks the result in pendingRoll (reuses existing dice UI).
-   * NPC results are stored separately for the narration call.
+   * Execute a combat action via the ability bar.
+   * Sends POST to /api/combat/action which triggers the turn-by-turn loop.
+   * All UI updates come through the SSE combat stream.
    */
   async function executeCombatAction(ability: Ability, targetId?: string): Promise<void> {
-    if (!characterId || isRolling || isNarrating || pendingRoll) return;
+    if (!characterId || isRolling || isNarrating || pendingRoll || isCombatProcessing) return;
 
-    setIsRolling(true);
+    // Show the player's action as a message immediately
+    let actionDesc = `I use ${ability.name}`;
+    if (targetId) {
+      const targetNPC = encounter?.activeNPCs.find(n => n.id === targetId);
+      actionDesc += ` on ${targetNPC?.name ?? targetId}`;
+    }
+    setMessages(prev => [...prev, { role: "user", content: actionDesc, timestamp: Date.now() }]);
+
+    // Block input until round_end SSE event
+    setIsCombatProcessing(true);
+
     try {
       const res = await fetch("/api/combat/action", {
         method: "POST",
@@ -282,65 +424,13 @@ export function useChat(): UseChatReturn {
         throw new Error(data.error ?? "Combat action failed");
       }
 
-      const data = await res.json();
-
-      // Update game state and encounter immediately (already persisted server-side)
-      setGameState(data.gameState);
-      setEncounter(data.encounter ?? null);
-
-      // Store NPC results for the narration phase
-      setPendingNPCResults(data.npcResults ?? []);
-
-      // Park the player result as a pending roll (reuses DiceRoll component)
-      if (data.playerResult.noCheck) {
-        // Non-targeted actions (Dodge/Dash/Disengage): skip dice UI, go straight to narration
-        await requestCombatNarration(data.playerResult, data.npcResults ?? []);
-      } else {
-        setPendingRoll({
-          playerInput: `[Combat] ${ability.name}${targetId ? ` on target` : ""}`,
-          roll: data.playerResult.dieResult,
-          parsed: data.playerResult,
-          raw: "",
-          rulesCost: 0,
-        });
-      }
+      // Response arrives after all turns are processed.
+      // UI has already been updated via SSE events during this time.
+      // We can use the response for final state reconciliation if needed.
     } catch (err) {
       console.error("[useChat] executeCombatAction error:", err);
+      setIsCombatProcessing(false);
       appendError();
-    } finally {
-      setIsRolling(false);
-    }
-  }
-
-  /** Narrate combat results via /api/combat/narrate (Haiku only). */
-  async function requestCombatNarration(
-    playerResult: import("../lib/gameTypes").ParsedRollResult,
-    npcResults: NPCTurnResult[],
-  ): Promise<void> {
-    if (!characterId) return;
-    setIsNarrating(true);
-    try {
-      const res = await fetch("/api/combat/narrate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, playerResult, npcResults }),
-      });
-
-      if (!res.ok) throw new Error((await res.json()).error ?? "Narration failed");
-
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.narrative, timestamp: Date.now() },
-      ]);
-      setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
-      setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
-    } catch (err) {
-      console.error("[useChat] requestCombatNarration error:", err);
-      appendError();
-    } finally {
-      setIsNarrating(false);
-      setPendingNPCResults(null);
     }
   }
 
@@ -374,6 +464,7 @@ export function useChat(): UseChatReturn {
     isLoading,
     isRolling,
     isNarrating,
+    isCombatProcessing,
     totalTokens,
     estimatedCostUsd,
     characterId,
@@ -381,6 +472,5 @@ export function useChat(): UseChatReturn {
     confirmRoll,
     applyDebugResult,
     executeCombatAction,
-    pendingNPCResults,
   };
 }
