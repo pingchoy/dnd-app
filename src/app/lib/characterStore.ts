@@ -342,8 +342,15 @@ export async function deleteCharacter(id: string): Promise<void> {
         const remaining = (session.characterIds ?? []).filter((cid) => cid !== id);
 
         if (remaining.length === 0) {
-          // Last character — delete the session
-          await adminDb.collection("sessions").doc(sessionId).delete();
+          // Last character — delete the session and its encounters
+          const encSnaps = await adminDb
+            .collection("encounters")
+            .where("sessionId", "==", sessionId)
+            .get();
+          const batch = adminDb.batch();
+          encSnaps.forEach((doc) => batch.delete(doc.ref));
+          batch.delete(adminDb.collection("sessions").doc(sessionId));
+          await batch.commit();
         } else {
           // Update characterIds
           await adminDb.collection("sessions").doc(sessionId).update({
@@ -483,6 +490,14 @@ export interface SRDSpellCompact {
   castingTime: string;
   range: string;
   description: string;
+  /** Whether this spell requires an attack roll (true) vs a saving throw (false). */
+  attackRoll?: boolean;
+  /** Saving throw ability required by the target (e.g. "dexterity"). Empty/undefined for attack rolls. */
+  savingThrowAbility?: string;
+  /** Base damage dice expression (e.g. "1d10"). Undefined for non-damage spells. */
+  damageRoll?: string;
+  /** Damage types (e.g. ["fire"]). Undefined for non-damage spells. */
+  damageTypes?: string[];
 }
 
 /**
@@ -516,6 +531,10 @@ export async function getSRDSpellsByClassAndLevel(
           castingTime: s.castingTime as string,
           range: s.range as string,
           description: String(s.description ?? "").slice(0, 300),
+          attackRoll: s.attackRoll as boolean | undefined,
+          savingThrowAbility: s.savingThrowAbility as string | undefined,
+          damageRoll: s.damageRoll as string | undefined,
+          damageTypes: s.damageTypes as string[] | undefined,
         });
       }
     } else {
@@ -542,6 +561,10 @@ export async function getSRDSpellsByClassAndLevel(
           castingTime: s.castingTime as string,
           range: s.range as string,
           description: String(s.description ?? "").slice(0, 300),
+          attackRoll: s.attackRoll as boolean | undefined,
+          savingThrowAbility: s.savingThrowAbility as string | undefined,
+          damageRoll: s.damageRoll as string | undefined,
+          damageTypes: s.damageTypes as string[] | undefined,
         });
       }
     }

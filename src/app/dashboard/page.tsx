@@ -345,6 +345,7 @@ export default function Dashboard() {
                   selectedAbility={selectedAbility}
                   onSelectAbility={handleSelectAbility}
                   abilityBarDisabled={isBusy}
+                  onCancel={() => setSelectedAbility(null)}
                 />
               </OrnateFrame>
 

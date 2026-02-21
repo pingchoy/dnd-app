@@ -89,6 +89,7 @@ export interface SRDCantripData {
 }
 
 export const SRD_CANTRIP_DATA: Record<string, SRDCantripData> = {
+  "acid-splash":     { slug: "acid-splash",     damageDice: "1d6",  damageType: "acid",      attackType: "save", saveAbility: "dexterity", scalingLevels: [5,11,17] },
   "fire-bolt":       { slug: "fire-bolt",       damageDice: "1d10", damageType: "fire",      attackType: "ranged",  scalingLevels: [5,11,17] },
   "eldritch-blast":  { slug: "eldritch-blast",  damageDice: "1d10", damageType: "force",     attackType: "ranged",  scalingLevels: [5,11,17] },
   "ray-of-frost":    { slug: "ray-of-frost",    damageDice: "1d8",  damageType: "cold",      attackType: "ranged",  scalingLevels: [5,11,17] },

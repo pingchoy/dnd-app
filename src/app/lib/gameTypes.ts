@@ -28,6 +28,9 @@ export interface SRDWeaponData {
   damageDice: string;
   damageType: string;
   properties: string[];   // ["reach", "thrown (range 30/120)", "ammunition (range 80/320)"]
+  range?: number;         // normal range in feet (0 for melee-only)
+  longRange?: number;     // long range in feet (0 for melee-only)
+  isSimple?: boolean;     // true for simple weapons, false for martial
 }
 
 // ─── Combat Ability Types ────────────────────────────────────────────────────

@@ -4,8 +4,8 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
 import { getModifier, xpForLevel } from "../lib/gameTypes";
-import type { CharacterStats, CharacterFeature, StoryState, CombatAbility, WeaponRange } from "../lib/gameTypes";
-import { SRD_CANTRIP_DATA } from "../lib/dnd5eData";
+import type { CharacterStats, CharacterFeature, StoryState, CombatAbility, SpellAttackType, WeaponRange } from "../lib/gameTypes";
+
 import { parseSpellRange } from "../lib/combatEnforcement";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
 
@@ -107,6 +107,10 @@ export interface SpellOption {
   castingTime: string;
   range: string;
   description: string;
+  attackRoll?: boolean;
+  savingThrowAbility?: string;
+  damageRoll?: string;
+  damageTypes?: string[];
 }
 
 export interface CharacterCreationState {
@@ -608,21 +612,35 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
 
       const cantripAbilities: CombatAbility[] = state.selectedCantrips.map(slug => {
         const spell = state.availableCantrips.find(c => c.slug === slug);
-        const cantripData = SRD_CANTRIP_DATA[slug];
         const parsedRange = parseSpellRange(spell?.range ?? "self");
+
+        const damageRoll = spell?.damageRoll;
+        const damageType = spell?.damageTypes?.[0];
+
+        // Derive attackType from Firestore fields
+        let attackType: SpellAttackType = "none";
+        if (spell?.savingThrowAbility) {
+          attackType = "save";
+        } else if (spell?.attackRoll) {
+          // Melee spells have range "Touch" or very short range
+          const isMelee = spell.range?.toLowerCase() === "touch"
+            || (spell.range?.match(/^(\d+)/) && parseInt(spell.range) <= 5);
+          attackType = isMelee ? "melee" : "ranged";
+        } else if (damageRoll) {
+          attackType = "auto";
+        }
+
         return {
           id: `cantrip:${slug}`,
           name: spell?.name ?? slug,
           type: "cantrip" as const,
           spellLevel: 0,
           srdRange: spell?.range,
-          attackType: cantripData?.attackType ?? "ranged",
-          saveAbility: cantripData?.saveAbility,
-          requiresTarget: cantripData
-            ? (cantripData.attackType !== "none" && cantripData.attackType !== "auto")
-            : parsedRange.type !== "self",
-          damageDice: cantripData?.damageDice,
-          damageType: cantripData?.damageType,
+          attackType,
+          saveAbility: spell?.savingThrowAbility,
+          requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",
+          damageDice: damageRoll,
+          damageType,
         };
       });
 

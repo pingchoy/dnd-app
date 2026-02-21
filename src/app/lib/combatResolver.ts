@@ -22,12 +22,15 @@ import {
   CombatAbility,
   WeaponStat,
 } from "./gameTypes";
-import { isWeaponProficient, SRD_CANTRIP_DATA, getCantripDice } from "./dnd5eData";
+import { isWeaponProficient, getCantripDice } from "./dnd5eData";
 import {
   getPositionalModifiers,
   CombatModifier,
 } from "./combatEnforcement";
 import type { GridPosition } from "./gameTypes";
+
+/** All SRD cantrips scale at character levels 5, 11, and 17. */
+const CANTRIP_SCALING_LEVELS = [5, 11, 17];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -238,10 +241,9 @@ export function resolveSpellAttack(
 
   let damage: ParsedRollResult["damage"] = undefined;
   if (hit && ability.damageDice) {
-    const cantripData = SRD_CANTRIP_DATA[ability.id.replace("cantrip:", "")];
     let diceExpr = ability.damageDice;
-    if (cantripData) {
-      diceExpr = getCantripDice(cantripData.damageDice, player.level, cantripData.scalingLevels);
+    if (ability.type === "cantrip") {
+      diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
     }
     if (isNat20) {
       const dm = diceExpr.match(/^(\d+)(d\d+)$/i);
@@ -313,10 +315,9 @@ export function resolveSpellSave(
 
   let damage: ParsedRollResult["damage"] = undefined;
   if (spellLands && ability.damageDice) {
-    const cantripData = SRD_CANTRIP_DATA[ability.id.replace("cantrip:", "")];
     let diceExpr = ability.damageDice;
-    if (cantripData) {
-      diceExpr = getCantripDice(cantripData.damageDice, player.level, cantripData.scalingLevels);
+    if (ability.type === "cantrip") {
+      diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
     }
     const spellRoll = rollDice(diceExpr);
     const breakdown: DamageBreakdown[] = [{
