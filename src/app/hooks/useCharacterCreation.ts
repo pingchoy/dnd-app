@@ -3,8 +3,8 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
-import { getModifier, xpForLevel } from "../lib/gameTypes";
-import type { CharacterStats, CharacterFeature, StoryState, CombatAbility, SpellAttackType, WeaponRange } from "../lib/gameTypes";
+import { getModifier, xpForLevel, FEATURE_CHOICE_OPTIONS } from "../lib/gameTypes";
+import type { CharacterStats, CharacterFeature, StoryState, Ability, SpellAttackType, SpellScalingEntry, WeaponRange } from "../lib/gameTypes";
 
 import { parseSpellRange } from "../lib/combatEnforcement";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
@@ -65,44 +65,24 @@ export interface ChoiceFeature {
 
 /**
  * Allowlist of level-1 features that require a character-creation-time choice.
- * Keyed by exact feature name from the SRD. Value is a prompt hint shown to the player.
+ * Keyed by exact feature name from the SRD. Prompt hint is shown to the player;
+ * option data comes from the shared FEATURE_CHOICE_OPTIONS constant.
  *
  * Subclass picks (Divine Domain, Sorcerous Origin, etc.) are handled by StepArchetype.
  * Spell/cantrip selection is handled by StepSpells.
  * Everything else that mentions "choose" in its description is a gameplay decision, not creation-time.
  */
-const CREATION_TIME_CHOICES: Record<string, {
-  prompt: string;
-  options: string[];
-  picks?: number; // default 1
-}> = {
-  "fighting style": {
-    prompt: "Choose a fighting style",
-    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
-  },
-  "favored enemy": {
-    prompt: "Choose a favored enemy type",
-    options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
-  },
-  "natural explorer": {
-    prompt: "Choose a favored terrain",
-    options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
-  },
-  "expertise": {
-    prompt: "Choose two proficiencies to double",
-    options: [
-      "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
-      "History", "Insight", "Intimidation", "Investigation", "Medicine",
-      "Nature", "Perception", "Performance", "Persuasion", "Religion",
-      "Sleight of Hand", "Stealth", "Survival", "Thieves' Tools",
-    ],
-    picks: 2,
-  },
+const CREATION_TIME_PROMPTS: Record<string, string> = {
+  "fighting style": "Choose a fighting style",
+  "favored enemy": "Choose a favored enemy type",
+  "natural explorer": "Choose a favored terrain",
+  "expertise": "Choose two proficiencies to double",
 };
 
 export interface SpellOption {
   slug: string;
   name: string;
+  level?: number;
   school: string;
   castingTime: string;
   range: string;
@@ -111,6 +91,8 @@ export interface SpellOption {
   savingThrowAbility?: string;
   damageRoll?: string;
   damageTypes?: string[];
+  upcastScaling?: Record<string, SpellScalingEntry>;
+  cantripScaling?: Record<string, SpellScalingEntry>;
 }
 
 export interface CharacterCreationState {
@@ -277,14 +259,15 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       if (!res.ok) { patch({ choiceFeatures: [], step: "abilities" }); return; }
       const data = await res.json() as { features?: Array<{ name: string; description: string }> };
       const choiceFeatures: ChoiceFeature[] = (data.features ?? [])
-        .filter((f) => f.name.toLowerCase() in CREATION_TIME_CHOICES)
+        .filter((f) => f.name.toLowerCase() in CREATION_TIME_PROMPTS && f.name.toLowerCase() in FEATURE_CHOICE_OPTIONS)
         .map((f) => {
-          const meta = CREATION_TIME_CHOICES[f.name.toLowerCase()];
+          const key = f.name.toLowerCase();
+          const opts = FEATURE_CHOICE_OPTIONS[key];
           return {
             ...f,
-            description: f.description || meta.prompt,
-            options: meta.options,
-            picks: meta.picks,
+            description: f.description || CREATION_TIME_PROMPTS[key],
+            options: opts.options,
+            picks: opts.picks,
           };
         });
       if (choiceFeatures.length > 0) {
@@ -601,16 +584,16 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       // ── Build combat abilities from weapons + cantrips + universal actions ──
       const weaponDamageMap = (gear?.weaponDamage ?? {}) as Record<string, { dice: string; stat: string; bonus: number; range?: WeaponRange }>;
 
-      const weaponAbilities: CombatAbility[] = Object.entries(weaponDamageMap).map(([name, ws]) => ({
+      const weaponAbilities: Ability[] = Object.entries(weaponDamageMap).map(([name, ws]) => ({
         id: `weapon:${name}`,
         name,
         type: "weapon" as const,
         weaponRange: ws.range,
         requiresTarget: true,
-        damageDice: ws.dice,
+        damageRoll: ws.dice,
       }));
 
-      const cantripAbilities: CombatAbility[] = state.selectedCantrips.map(slug => {
+      const cantripAbilities: Ability[] = state.selectedCantrips.map(slug => {
         const spell = state.availableCantrips.find(c => c.slug === slug);
         const parsedRange = parseSpellRange(spell?.range ?? "self");
 
@@ -639,18 +622,54 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           attackType,
           saveAbility: spell?.savingThrowAbility,
           requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",
-          damageDice: damageRoll,
+          damageRoll,
           damageType,
+          cantripScaling: spell?.cantripScaling,
         };
       });
 
-      const universalAbilities: CombatAbility[] = [
+      const spellAbilities: Ability[] = state.selectedSpells.map(slug => {
+        const spell = state.availableSpells.find(s => s.slug === slug);
+        const parsedRange = parseSpellRange(spell?.range ?? "self");
+
+        const damageRoll = spell?.damageRoll;
+        const damageType = spell?.damageTypes?.[0];
+
+        let attackType: SpellAttackType = "none";
+        if (spell?.savingThrowAbility) {
+          attackType = "save";
+        } else if (spell?.attackRoll) {
+          const isMelee = spell.range?.toLowerCase() === "touch"
+            || (spell.range?.match(/^(\d+)/) && parseInt(spell.range) <= 5);
+          attackType = isMelee ? "melee" : "ranged";
+        } else if (damageRoll) {
+          attackType = "auto";
+        }
+
+        return {
+          id: `spell:${slug}`,
+          name: spell?.name ?? slug,
+          type: "spell" as const,
+          spellLevel: spell?.level ?? 1,
+          srdRange: spell?.range,
+          attackType,
+          saveAbility: spell?.savingThrowAbility,
+          requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",
+          damageRoll,
+          damageType,
+          upcastScaling: spell?.upcastScaling,
+        };
+      });
+
+      const universalAbilities: Ability[] = [
         { id: "action:dodge", name: "Dodge", type: "action", requiresTarget: false },
         { id: "action:dash", name: "Dash", type: "action", requiresTarget: false },
         { id: "action:disengage", name: "Disengage", type: "action", requiresTarget: false },
       ];
 
-      const combatAbilities = [...weaponAbilities, ...cantripAbilities, ...universalAbilities];
+      const racialAbilities: Ability[] = (selectedRace.providedAbilities ?? []);
+
+      const abilities = [...weaponAbilities, ...cantripAbilities, ...spellAbilities, ...racialAbilities, ...universalAbilities];
 
       const player = {
         name: characterName.trim(),
@@ -674,7 +693,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         conditions: [],
         gold: gear?.gold ?? 0,
         weaponDamage: gear?.weaponDamage ?? {},
-        combatAbilities,
+        abilities,
         ...(state.selectedArchetype ? { subclass: state.selectedArchetype.name } : {}),
         // Spellcasting (only for casters)
         ...(state.isSpellcaster && spellcastingAbility ? {

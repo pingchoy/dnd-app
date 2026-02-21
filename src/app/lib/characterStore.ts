@@ -19,13 +19,14 @@
 
 import { adminDb } from "./firebaseAdmin";
 import type {
+  Ability,
   PlayerState,
   StoryState,
   ConversationTurn,
   CharacterSummary,
   StoredCharacterV2,
   StoredSession,
-  SRDWeaponData,
+  SpellScalingEntry,
 } from "./gameTypes";
 
 // ─── SRD Types ────────────────────────────────────────────────────────────────
@@ -63,6 +64,8 @@ export interface SRDRace {
   weaponProficiencies?: string[];
   /** Armor proficiencies granted by racial traits (e.g. Dwarven Armor Training) */
   armorProficiencies?: string[];
+  /** Combat abilities granted by racial traits (e.g. Dragonborn Breath Weapon) */
+  providedAbilities?: Ability[];
   /** Flavour text from Open5e — age, alignment, language descriptions, etc. */
   lore?: SRDRaceLore;
 }
@@ -486,6 +489,7 @@ export async function getAllSRDRaces(): Promise<SRDRace[]> {
 export interface SRDSpellCompact {
   slug: string;
   name: string;
+  level: number;
   school: string;
   castingTime: string;
   range: string;
@@ -498,6 +502,10 @@ export interface SRDSpellCompact {
   damageRoll?: string;
   /** Damage types (e.g. ["fire"]). Undefined for non-damage spells. */
   damageTypes?: string[];
+  /** Leveled spell upcast scaling: slot level → scaling overrides. */
+  upcastScaling?: Record<string, SpellScalingEntry>;
+  /** Cantrip scaling by player level: level → scaling overrides. */
+  cantripScaling?: Record<string, SpellScalingEntry>;
 }
 
 /**
@@ -527,6 +535,7 @@ export async function getSRDSpellsByClassAndLevel(
         results.push({
           slug: s.slug as string,
           name: s.name as string,
+          level: s.level as number,
           school: s.school as string,
           castingTime: s.castingTime as string,
           range: s.range as string,
@@ -535,6 +544,8 @@ export async function getSRDSpellsByClassAndLevel(
           savingThrowAbility: s.savingThrowAbility as string | undefined,
           damageRoll: s.damageRoll as string | undefined,
           damageTypes: s.damageTypes as string[] | undefined,
+          upcastScaling: s.upcastScaling as Record<string, SpellScalingEntry> | undefined,
+          cantripScaling: s.cantripScaling as Record<string, SpellScalingEntry> | undefined,
         });
       }
     } else {
@@ -557,6 +568,7 @@ export async function getSRDSpellsByClassAndLevel(
         results.push({
           slug: s.slug as string,
           name: s.name as string,
+          level: s.level as number,
           school: s.school as string,
           castingTime: s.castingTime as string,
           range: s.range as string,
@@ -565,6 +577,8 @@ export async function getSRDSpellsByClassAndLevel(
           savingThrowAbility: s.savingThrowAbility as string | undefined,
           damageRoll: s.damageRoll as string | undefined,
           damageTypes: s.damageTypes as string[] | undefined,
+          upcastScaling: s.upcastScaling as Record<string, SpellScalingEntry> | undefined,
+          cantripScaling: s.cantripScaling as Record<string, SpellScalingEntry> | undefined,
         });
       }
     }
@@ -624,20 +638,6 @@ export async function getAllSRDFeats(): Promise<SRDFeat[]> {
   });
   collectionCache.set("srdFeats", data);
   return data;
-}
-
-/** Fetch a weapon's SRD data by slug. Returns parsed category + properties. */
-export async function getSRDWeapon(slug: string): Promise<SRDWeaponData | null> {
-  const doc = await querySRD("equipment", slug);
-  if (!doc) return null;
-  return {
-    slug: doc.slug as string,
-    name: doc.name as string,
-    category: doc.category as string,
-    damageDice: doc.damageDice as string,
-    damageType: doc.damageType as string,
-    properties: (doc.properties ?? []) as string[],
-  };
 }
 
 export async function getSRDStartingEquipment(classSlug: string): Promise<SRDStartingEquipment | null> {

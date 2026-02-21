@@ -10,6 +10,7 @@ export type LevelUpStep = "summary" | "subclass" | "asi" | "features" | "spells"
 export interface SpellOption {
   slug: string;
   name: string;
+  level?: number;
   school: string;
   castingTime: string;
   range: string;

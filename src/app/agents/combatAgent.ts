@@ -33,8 +33,8 @@ import {
   serializeActiveNPCs,
   updateNPC,
 } from "../lib/gameState";
-import { querySRD } from "../lib/characterStore";
 import { RulesOutcome } from "./rulesAgent";
+import { handleSRDQuery } from "./agentUtils";
 import type { DMResponse } from "./dmAgent";
 import {
   COMBAT_UPDATE_GAME_STATE_TOOL,
@@ -288,31 +288,8 @@ export async function getCombatResponse(
           class_slug?: string;
           level?: number;
         };
-        console.log(
-          `[Combat Agent] Tool call: query_srd (${srdQueryCount + 1}/${MAX_SRD_QUERIES})`,
-          JSON.stringify(input),
-        );
-
-        let resultContent: string;
-        if (srdQueryCount >= MAX_SRD_QUERIES) {
-          console.log("[Combat Agent] SRD query limit reached");
-          resultContent =
-            '{"error":"SRD query limit reached for this turn. Use your existing knowledge."}';
-        } else {
-          srdQueryCount++;
-          const docSlug =
-            input.type === "class_level"
-              ? `${input.class_slug}_${input.level}`
-              : (input.slug ?? "");
-          const data = await querySRD(input.type, docSlug);
-          console.log(
-            `[Combat Agent] SRD result for "${docSlug}":`,
-            data ? "found" : "not found",
-          );
-          resultContent = data
-            ? JSON.stringify(data)
-            : `{"error":"No ${input.type} found for '${docSlug}'"}`;
-        }
+        const { resultContent, newCount } = await handleSRDQuery(input, srdQueryCount, MAX_SRD_QUERIES, "Combat Agent");
+        srdQueryCount = newCount;
 
         toolResults.push({
           type: "tool_result",

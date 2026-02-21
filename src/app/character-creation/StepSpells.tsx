@@ -251,9 +251,9 @@ export default function StepSpells({
                 <SpellCard
                   key={spell.slug}
                   spell={spell}
-                  isSelected={selectedSpells.includes(spell.name)}
+                  isSelected={selectedSpells.includes(spell.slug)}
                   disabled={selectedSpells.length >= spellsToChoose}
-                  onToggle={() => onToggleSpell(spell.name)}
+                  onToggle={() => onToggleSpell(spell.slug)}
                   onExpand={() => setExpandedSpell(spell)}
                 />
               ))}

@@ -223,15 +223,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Apply state changes (HP, inventory, conditions, gold, XP) and persist to Firestore
-    // This also persists encounter state if one is active
+    // Apply state changes and persist to Firestore (including encounter state if active)
     console.log("[Persist] Applying state changes and saving to Firestore...");
-    if (dmResult.stateChanges) {
-      await applyStateChangesAndPersist(dmResult.stateChanges, characterId);
-    } else {
-      // No state changes from DM — still persist conversation history
-      await applyStateChangesAndPersist({}, characterId);
-    }
+    await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
 
     const totalCost = dmCost + rulesCost + npcAgentCost;
     const costBreakdown: Record<string, string> = {};

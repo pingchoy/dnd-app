@@ -20,6 +20,7 @@ import {
   loadGameState,
   setEncounter,
   xpForLevel,
+  PERSISTENCE_HISTORY_WINDOW,
 } from "../../lib/gameState";
 import { saveCharacterState, querySRD } from "../../lib/characterStore";
 import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
         await saveCharacterState(characterId, {
           player: gameState.player,
           story: getGameState().story,
-          conversationHistory: getGameState().conversationHistory.slice(-40),
+          conversationHistory: getGameState().conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
         });
 
         return NextResponse.json({
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
         await saveCharacterState(characterId, {
           player: updatedState.player,
           story: updatedState.story,
-          conversationHistory: updatedState.conversationHistory.slice(-40),
+          conversationHistory: updatedState.conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
         });
 
         return NextResponse.json({

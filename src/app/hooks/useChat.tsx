@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, CombatAbility } from "../lib/gameTypes";
+import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, Ability } from "../lib/gameTypes";
 import type { NPCTurnResult } from "../lib/combatResolver";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
@@ -48,7 +48,7 @@ export interface UseChatReturn {
   /** Apply a debug action result: update game state and append a system message. */
   applyDebugResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
   /** Execute a deterministic combat action (ability bar click). */
-  executeCombatAction: (ability: CombatAbility, targetId?: string) => Promise<void>;
+  executeCombatAction: (ability: Ability, targetId?: string) => Promise<void>;
   /** NPC turn results from the last combat action (shown in dice UI). */
   pendingNPCResults: NPCTurnResult[] | null;
 }
@@ -266,7 +266,7 @@ export function useChat(): UseChatReturn {
    * Parks the result in pendingRoll (reuses existing dice UI).
    * NPC results are stored separately for the narration call.
    */
-  async function executeCombatAction(ability: CombatAbility, targetId?: string): Promise<void> {
+  async function executeCombatAction(ability: Ability, targetId?: string): Promise<void> {
     if (!characterId || isRolling || isNarrating || pendingRoll) return;
 
     setIsRolling(true);

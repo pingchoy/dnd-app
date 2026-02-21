@@ -14,7 +14,7 @@ import CompactChatPanel from "../components/CompactChatPanel";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
-import type { GameState, CombatAbility } from "../lib/gameTypes";
+import type { GameState, Ability } from "../lib/gameTypes";
 import { feetDistance, validateAttackRange, checkSpellRange } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
@@ -64,7 +64,7 @@ export default function Dashboard() {
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const [combatChatOpen, setCombatChatOpen] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
-  const [selectedAbility, setSelectedAbility] = useState<CombatAbility | null>(null);
+  const [selectedAbility, setSelectedAbility] = useState<Ability | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -155,7 +155,7 @@ export default function Dashboard() {
   const isBusy = isRolling || isNarrating || !!pendingRoll;
 
   /** Handle ability bar click: non-targeted abilities execute immediately, targeted ones enter targeting mode. */
-  const handleSelectAbility = (ability: CombatAbility) => {
+  const handleSelectAbility = (ability: Ability) => {
     if (isBusy) return;
     if (!ability.requiresTarget) {
       setSelectedAbility(null);
@@ -341,7 +341,7 @@ export default function Dashboard() {
                   gridSize={gridSize}
                   targetingAbility={selectedAbility}
                   onTargetSelected={handleTargetSelected}
-                  abilities={player.combatAbilities ?? []}
+                  abilities={player.abilities ?? []}
                   selectedAbility={selectedAbility}
                   onSelectAbility={handleSelectAbility}
                   abilityBarDisabled={isBusy}

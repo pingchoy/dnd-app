@@ -215,15 +215,15 @@ export default function LevelUpSpells({
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {spellsAtLevel.map((spell) => {
-                    const isKnown = alreadyKnownSpells.includes(spell.name);
+                    const isKnown = alreadyKnownSpells.includes(spell.slug);
                     return (
                       <SpellCard
                         key={spell.slug}
                         spell={spell}
-                        isSelected={selectedSpells.includes(spell.name)}
+                        isSelected={selectedSpells.includes(spell.slug)}
                         isKnown={isKnown}
                         disabled={selectedSpells.length >= totalSpellSlots}
-                        onToggle={() => onToggleSpell(spell.name)}
+                        onToggle={() => onToggleSpell(spell.slug)}
                         onExpand={() => setExpandedSpell(spell)}
                       />
                     );

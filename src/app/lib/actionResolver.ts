@@ -15,6 +15,9 @@ import {
 } from "./gameState";
 import {
   rollDice,
+  rollD20,
+  getWeaponAbilityMod,
+  doubleDice,
   ParsedRollResult,
   DamageBreakdown,
   CharacterStats,
@@ -42,10 +45,6 @@ export interface SavingThrowInput {
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
 
-function rollD20(): number {
-  return Math.floor(Math.random() * 20) + 1;
-}
-
 /**
  * Case-insensitive bidirectional substring match.
  * Returns true if either string contains the other.
@@ -54,27 +53,6 @@ function fuzzyMatch(a: string, b: string): boolean {
   const al = a.toLowerCase();
   const bl = b.toLowerCase();
   return al.includes(bl) || bl.includes(al);
-}
-
-/** Resolve the ability modifier for a weapon's stat type. */
-function getWeaponAbilityMod(
-  stat: "str" | "dex" | "finesse" | "none",
-  stats: CharacterStats,
-): { mod: number; label: string } {
-  const strMod = getModifier(stats.strength);
-  const dexMod = getModifier(stats.dexterity);
-  switch (stat) {
-    case "str":
-      return { mod: strMod, label: "STR" };
-    case "dex":
-      return { mod: dexMod, label: "DEX" };
-    case "finesse":
-      return strMod >= dexMod
-        ? { mod: strMod, label: "STR" }
-        : { mod: dexMod, label: "DEX" };
-    case "none":
-      return { mod: 0, label: "NONE" };
-  }
 }
 
 /** Look up a feature by name (case-insensitive). */
@@ -113,8 +91,7 @@ function rollExtraDice(
 ): DamageBreakdown {
   let expr = diceExpr;
   if (isCrit && expr !== "0d0") {
-    const dm = expr.match(/^(\d+)(d\d+)$/i);
-    if (dm) expr = `${parseInt(dm[1]) * 2}${dm[2]}`;
+    expr = doubleDice(expr);
   }
 
   if (expr === "0d0") {
@@ -346,8 +323,7 @@ export function resolveAttack(
     // Weapon damage (crit doubles dice count, not flat bonus)
     let diceExpr = weaponStat.dice;
     if (isNat20) {
-      const dm = diceExpr.match(/^(\d+)(d\d+)$/i);
-      if (dm) diceExpr = `${parseInt(dm[1]) * 2}${dm[2]}`;
+      diceExpr = doubleDice(diceExpr);
     }
     const weaponRoll = rollDice(diceExpr);
     const flatBonus = abilityMod + weaponBonus;

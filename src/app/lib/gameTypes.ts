@@ -33,22 +33,40 @@ export interface SRDWeaponData {
   isSimple?: boolean;     // true for simple weapons, false for martial
 }
 
-// ─── Combat Ability Types ────────────────────────────────────────────────────
+// ─── Ability Types ───────────────────────────────────────────────────────────
 
 export type SpellAttackType = "ranged" | "melee" | "save" | "auto" | "none";
 
-export interface CombatAbility {
+/** Per-level scaling override for spells (upcast) and cantrips (player level). */
+export interface SpellScalingEntry {
+  damageRoll?: string;
+  targetCount?: number;
+}
+
+export interface Ability {
   id: string;                    // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
   name: string;
-  type: "weapon" | "cantrip" | "spell" | "action";
-  spellLevel?: number;           // 0=cantrip, 1+=leveled
+  type: "weapon" | "cantrip" | "spell" | "action" | "racial";
+  spellLevel?: number;           // 0=cantrip, 1+=leveled (base level for spells)
   attackType?: SpellAttackType;  // how this ability targets
   saveAbility?: string;          // "dexterity" for Sacred Flame etc.
+  /** Ability score used to compute save DC (DC = 8 + prof + this mod). e.g. "constitution" for Breath Weapon. */
+  saveDCAbility?: string;
   srdRange?: string;             // SRD range string ("120 feet", "Touch", "Self")
   weaponRange?: WeaponRange;     // parsed range for weapons
   requiresTarget: boolean;       // false for Self spells, Dodge, Dash, Disengage
-  damageDice?: string;           // "1d10" — used for resolution
+  damageRoll?: string;           // "1d10" — base damage at minimum spell level
   damageType?: string;           // "fire", "piercing"
+  /** Leveled spells: slot level → scaling overrides. Only breakpoint levels stored. */
+  upcastScaling?: Record<string, SpellScalingEntry>;
+  /** Cantrips: player level → scaling overrides (levels 5, 11, 17). */
+  cantripScaling?: Record<string, SpellScalingEntry>;
+  /** Racial abilities: character level → scaling overrides (levels 6, 11, 16). */
+  racialScaling?: Record<string, SpellScalingEntry>;
+  /** How many times this ability can be used per rest (informational). */
+  usesPerRest?: number;
+  /** Short or long rest recharge (informational). */
+  restType?: "short" | "long";
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -115,8 +133,8 @@ export interface PlayerState {
   maxKnownSpells?: number;
   spellSlots?: Record<string, number>;
   spellSlotsUsed?: Record<string, number>;
-  // ─── Combat abilities (built at character creation from weapons + cantrips + actions) ───
-  combatAbilities?: CombatAbility[];
+  // ─── Abilities (weapons + cantrips + spells + universal actions) ───
+  abilities?: Ability[];
   // ─── Level-up wizard (set when XP crosses a threshold) ───
   pendingLevelUp?: PendingLevelUp;
 }
@@ -295,6 +313,41 @@ export function toDisplayCase(s: string): string {
     .join(" ");
 }
 
+// ─── Shared combat helpers ────────────────────────────────────────────────────
+
+/** Roll a single d20. */
+export function rollD20(): number {
+  return Math.floor(Math.random() * 20) + 1;
+}
+
+/** Resolve the ability modifier for a weapon's stat type. */
+export function getWeaponAbilityMod(
+  stat: "str" | "dex" | "finesse" | "none",
+  stats: CharacterStats,
+): { mod: number; label: string } {
+  const strMod = getModifier(stats.strength);
+  const dexMod = getModifier(stats.dexterity);
+  switch (stat) {
+    case "str":
+      return { mod: strMod, label: "STR" };
+    case "dex":
+      return { mod: dexMod, label: "DEX" };
+    case "finesse":
+      return strMod >= dexMod
+        ? { mod: strMod, label: "STR" }
+        : { mod: dexMod, label: "DEX" };
+    case "none":
+      return { mod: 0, label: "NONE" };
+  }
+}
+
+/** Double the dice count in a standard NdS expression (for critical hits). */
+export function doubleDice(expr: string): string {
+  const dm = expr.match(/^(\d+)(d\d+)$/i);
+  if (dm) return `${parseInt(dm[1]) * 2}${dm[2]}`;
+  return expr;
+}
+
 // ─── Dice rolling ─────────────────────────────────────────────────────────────
 
 export interface DiceRollResult {
@@ -378,6 +431,33 @@ export interface ParsedRollResult {
     isCrit: boolean;
   };
 }
+
+// ─── Feature choice options ──────────────────────────────────────────────────
+
+/**
+ * Shared option data for features that require a player choice.
+ * Used at both character creation and level-up time.
+ */
+export const FEATURE_CHOICE_OPTIONS: Record<string, { options: string[]; picks?: number }> = {
+  "fighting style": {
+    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
+  },
+  "favored enemy": {
+    options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
+  },
+  "natural explorer": {
+    options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
+  },
+  "expertise": {
+    options: [
+      "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
+      "History", "Insight", "Intimidation", "Investigation", "Medicine",
+      "Nature", "Perception", "Performance", "Persuasion", "Religion",
+      "Sleight of Hand", "Stealth", "Survival", "Thieves' Tools",
+    ],
+    picks: 2,
+  },
+};
 
 // ─── UI constants ─────────────────────────────────────────────────────────────
 

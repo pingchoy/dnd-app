@@ -25,8 +25,8 @@ import {
   serializeStoryState,
   updateNPC,
 } from "../lib/gameState";
-import { querySRD } from "../lib/characterStore";
 import { RulesOutcome } from "./rulesAgent";
+import { handleSRDQuery } from "./agentUtils";
 import {
   UPDATE_GAME_STATE_TOOL,
   UPDATE_NPC_TOOL,
@@ -198,25 +198,8 @@ export async function getDMResponse(
           class_slug?: string;
           level?: number;
         };
-        console.log(`[DM Agent] Tool call: query_srd (${srdQueryCount + 1}/${MAX_SRD_QUERIES})`, JSON.stringify(input));
-
-        let resultContent: string;
-        if (srdQueryCount >= MAX_SRD_QUERIES) {
-          console.log("[DM Agent] SRD query limit reached — returning error to model");
-          resultContent =
-            '{"error":"SRD query limit reached for this turn. Use your existing knowledge."}';
-        } else {
-          srdQueryCount++;
-          const docSlug =
-            input.type === "class_level"
-              ? `${input.class_slug}_${input.level}`
-              : (input.slug ?? "");
-          const data = await querySRD(input.type, docSlug);
-          console.log(`[DM Agent] SRD result for "${docSlug}":`, data ? "found" : "not found");
-          resultContent = data
-            ? JSON.stringify(data)
-            : `{"error":"No ${input.type} found for '${docSlug}'"}`;
-        }
+        const { resultContent, newCount } = await handleSRDQuery(input, srdQueryCount, MAX_SRD_QUERIES, "DM Agent");
+        srdQueryCount = newCount;
 
         toolResults.push({
           type: "tool_result",

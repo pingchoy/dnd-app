@@ -50,6 +50,9 @@ export {
   XP_THRESHOLDS,
   xpForLevel,
   OPENING_NARRATIVE,
+  rollD20,
+  getWeaponAbilityMod,
+  doubleDice,
 } from "./gameTypes";
 
 import {
@@ -62,6 +65,7 @@ import {
   StoredEncounter,
   PendingLevelUp,
   PendingLevelData,
+  FEATURE_CHOICE_OPTIONS,
   formatModifier,
   getModifier,
   getProficiencyBonus,
@@ -70,27 +74,45 @@ import {
   XP_THRESHOLDS,
 } from "./gameTypes";
 
-/** Compact single-string summary of the player for injection into prompts. */
-export function serializePlayerState(p: PlayerState): string {
+/**
+ * Build the shared stat lines used by both serializePlayerState and
+ * serializeCombatPlayerState. The `compact` flag omits non-combat fields
+ * (inventory, gold, XP, skills, features, gender).
+ */
+function buildStatLines(p: PlayerState, compact: boolean): string[] {
   const m = p.stats;
+  const wp = p.weaponProficiencies ?? [];
+  const ap = p.armorProficiencies ?? [];
+
   const lines = [
-    `${p.name} | ${p.gender} ${p.race} ${p.characterClass} Lv${p.level}`,
+    compact
+      ? `${p.name} | ${p.race} ${p.characterClass} Lv${p.level}`
+      : `${p.name} | ${p.gender} ${p.race} ${p.characterClass} Lv${p.level}`,
     `HP ${p.currentHP}/${p.maxHP} | AC ${p.armorClass}`,
     `STR ${m.strength}(${formatModifier(getModifier(m.strength))}) DEX ${m.dexterity}(${formatModifier(getModifier(m.dexterity))}) CON ${m.constitution}(${formatModifier(getModifier(m.constitution))}) INT ${m.intelligence}(${formatModifier(getModifier(m.intelligence))}) WIS ${m.wisdom}(${formatModifier(getModifier(m.wisdom))}) CHA ${m.charisma}(${formatModifier(getModifier(m.charisma))})`,
     `Proficiency bonus: ${formatModifier(getProficiencyBonus(p.level))}`,
     `Saving throws: ${p.savingThrowProficiencies.join(", ")}`,
-    `Skills (proficient): ${p.skillProficiencies.join(", ")}`,
-    `Weapon proficiencies: ${(p.weaponProficiencies ?? []).length ? (p.weaponProficiencies ?? []).join(", ") : "None"}`,
-    `Armor proficiencies: ${(p.armorProficiencies ?? []).length ? (p.armorProficiencies ?? []).join(", ") : "None"}`,
-    `Inventory: ${p.inventory.join(", ")}`,
+  ];
+
+  if (!compact) {
+    lines.push(`Skills (proficient): ${p.skillProficiencies.join(", ")}`);
+    lines.push(`Weapon proficiencies: ${wp.length ? wp.join(", ") : "None"}`);
+    lines.push(`Armor proficiencies: ${ap.length ? ap.join(", ") : "None"}`);
+    lines.push(`Inventory: ${p.inventory.join(", ")}`);
+  }
+
+  lines.push(
     ...Object.entries(p.weaponDamage).map(
       ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
     ),
-    `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
-    `Gold: ${p.gold}gp`,
-    `XP: ${p.xp} / ${p.xpToNextLevel} (Level ${p.level})`,
-    `Features: ${p.features.map((f) => f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name).join(" | ")}`,
-  ];
+  );
+  lines.push(`Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`);
+
+  if (!compact) {
+    lines.push(`Gold: ${p.gold}gp`);
+    lines.push(`XP: ${p.xp} / ${p.xpToNextLevel} (Level ${p.level})`);
+    lines.push(`Features: ${p.features.map((f) => f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name).join(" | ")}`);
+  }
 
   // Spell block (only for casters)
   if (p.spellcastingAbility) {
@@ -101,10 +123,14 @@ export function serializePlayerState(p: PlayerState): string {
     lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
 
     if (p.cantrips?.length) {
-      lines.push(`Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
+      lines.push(compact
+        ? `Cantrips: ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`
+        : `Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
     }
     if (p.knownSpells?.length) {
-      lines.push(`Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.join(", ")}`);
+      lines.push(compact
+        ? `Spells: ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`
+        : `Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
     }
     if (p.spellSlots && Object.keys(p.spellSlots).length > 0) {
       const used = p.spellSlotsUsed ?? {};
@@ -116,7 +142,12 @@ export function serializePlayerState(p: PlayerState): string {
     }
   }
 
-  return lines.join("\n");
+  return lines;
+}
+
+/** Compact single-string summary of the player for injection into prompts. */
+export function serializePlayerState(p: PlayerState): string {
+  return buildStatLines(p, false).join("\n");
 }
 
 /** Compact summary of active NPCs for injection into prompts. Includes unique id for tool calls. */
@@ -155,45 +186,11 @@ export function serializeStoryState(s: StoryState): string {
  * (non-weapon), quests, gold, XP, skill proficiencies, and full features.
  */
 export function serializeCombatPlayerState(p: PlayerState): string {
-  const m = p.stats;
-  const lines = [
-    `${p.name} | ${p.race} ${p.characterClass} Lv${p.level}`,
-    `HP ${p.currentHP}/${p.maxHP} | AC ${p.armorClass}`,
-    `STR ${m.strength}(${formatModifier(getModifier(m.strength))}) DEX ${m.dexterity}(${formatModifier(getModifier(m.dexterity))}) CON ${m.constitution}(${formatModifier(getModifier(m.constitution))}) INT ${m.intelligence}(${formatModifier(getModifier(m.intelligence))}) WIS ${m.wisdom}(${formatModifier(getModifier(m.wisdom))}) CHA ${m.charisma}(${formatModifier(getModifier(m.charisma))})`,
-    `Proficiency bonus: ${formatModifier(getProficiencyBonus(p.level))}`,
-    `Saving throws: ${p.savingThrowProficiencies.join(", ")}`,
-    ...Object.entries(p.weaponDamage).map(
-      ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
-    ),
-    `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
-  ];
-
-  // Spell block (only for casters)
-  if (p.spellcastingAbility) {
-    const abilityMod = getModifier(m[p.spellcastingAbility]);
-    const prof = getProficiencyBonus(p.level);
-    const saveDC = 8 + prof + abilityMod;
-    const spellAttack = prof + abilityMod;
-    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
-
-    if (p.cantrips?.length) {
-      lines.push(`Cantrips: ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
-    }
-    if (p.knownSpells?.length) {
-      lines.push(`Spells: ${p.knownSpells.join(", ")}`);
-    }
-    if (p.spellSlots && Object.keys(p.spellSlots).length > 0) {
-      const used = p.spellSlotsUsed ?? {};
-      const slotStr = Object.entries(p.spellSlots)
-        .sort(([a], [b]) => Number(a) - Number(b))
-        .map(([lvl, total]) => `Lv${lvl}: ${total - (used[lvl] ?? 0)}/${total} remaining`)
-        .join(" ");
-      lines.push(`Spell Slots: ${slotStr}`);
-    }
-  }
-
-  return lines.join("\n");
+  return buildStatLines(p, true).join("\n");
 }
+
+/** Max conversation entries persisted (20 user + 20 assistant turns). */
+export const PERSISTENCE_HISTORY_WINDOW = 40;
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
 
@@ -532,29 +529,12 @@ const ASI_LEVELS = [4, 8, 12, 16, 19];
 
 /**
  * Map of features that require player choices at level-up time.
- * Keyed by exact feature name from SRD. Each entry provides options and pick count.
+ * Extends the shared FEATURE_CHOICE_OPTIONS with level-up-only entries.
  */
 const LEVELUP_CHOICE_FEATURES: Record<string, { options: string[]; picks?: number }> = {
-  "fighting style": {
-    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
-  },
-  "favored enemy": {
-    options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
-  },
-  "natural explorer": {
-    options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
-  },
-  "expertise": {
-    options: [
-      "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
-      "History", "Insight", "Intimidation", "Investigation", "Medicine",
-      "Nature", "Perception", "Performance", "Persuasion", "Religion",
-      "Sleight of Hand", "Stealth", "Survival", "Thieves' Tools",
-    ],
-    picks: 2,
-  },
+  ...FEATURE_CHOICE_OPTIONS,
   "additional fighting style": {
-    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
+    options: FEATURE_CHOICE_OPTIONS["fighting style"].options,
   },
 };
 
@@ -718,8 +698,7 @@ async function persistState(characterId: string): Promise<void> {
   await saveCharacterState(characterId, {
     player: state.player,
     story: state.story,
-    // Keep last 40 conversation entries (20 user+assistant pairs)
-    conversationHistory: state.conversationHistory.slice(-40),
+    conversationHistory: state.conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
   });
 }
 

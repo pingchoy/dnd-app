@@ -264,14 +264,14 @@ export function validateAttackRange(
 
 // ─── AOE targeting ───────────────────────────────────────────────────────────
 
-export type AOEShape =
+type AOEShape =
   | { type: "sphere" | "cube"; origin: GridPosition; radiusFeet: number }
   | { type: "cone"; origin: GridPosition; lengthFeet: number; direction: GridPosition }
   | { type: "line"; origin: GridPosition; lengthFeet: number; widthFeet: number; direction: GridPosition }
   | { type: "cylinder"; origin: GridPosition; radiusFeet: number };
 
 /** Grid cells affected by an AOE shape. */
-export function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
+function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
   switch (shape.type) {
     case "sphere":
     case "cylinder": {
@@ -343,7 +343,7 @@ export function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
 }
 
 /** Token IDs caught in an AOE. */
-export function getAOETargets(
+function getAOETargets(
   shape: AOEShape,
   positions: Map<string, GridPosition>,
   gridSize: number,

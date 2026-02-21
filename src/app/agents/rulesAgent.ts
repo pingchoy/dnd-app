@@ -195,7 +195,7 @@ function buildClassifierContext(
   ];
 
   if (player.knownSpells?.length) {
-    lines.push(`Known spells: ${player.knownSpells.join(", ")}`);
+    lines.push(`Known spells: ${player.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
   }
   if (player.cantrips?.length) {
     lines.push(`Cantrips: ${player.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);

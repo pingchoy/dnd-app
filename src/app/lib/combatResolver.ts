@@ -16,10 +16,13 @@ import {
 } from "./gameState";
 import {
   rollDice,
+  rollD20,
+  getWeaponAbilityMod,
+  doubleDice,
   ParsedRollResult,
   DamageBreakdown,
   CharacterStats,
-  CombatAbility,
+  Ability,
   WeaponStat,
 } from "./gameTypes";
 import { isWeaponProficient, getCantripDice } from "./dnd5eData";
@@ -33,10 +36,6 @@ import type { GridPosition } from "./gameTypes";
 const CANTRIP_SCALING_LEVELS = [5, 11, 17];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function rollD20(): number {
-  return Math.floor(Math.random() * 20) + 1;
-}
 
 /** Resolve advantage/disadvantage from a list of modifiers. */
 function resolveAdvantage(mods: CombatModifier[]): "advantage" | "disadvantage" | "normal" {
@@ -62,27 +61,6 @@ function rollD20WithAdvantage(advType: "advantage" | "disadvantage" | "normal"):
   const r2 = rollD20();
   const d20 = advType === "advantage" ? Math.max(r1, r2) : Math.min(r1, r2);
   return { d20, allRolls: [r1, r2], advType };
-}
-
-/** Get the ability modifier for a weapon's stat type. */
-function getWeaponAbilityMod(
-  stat: "str" | "dex" | "finesse" | "none",
-  stats: CharacterStats,
-): { mod: number; label: string } {
-  const strMod = getModifier(stats.strength);
-  const dexMod = getModifier(stats.dexterity);
-  switch (stat) {
-    case "str":
-      return { mod: strMod, label: "STR" };
-    case "dex":
-      return { mod: dexMod, label: "DEX" };
-    case "finesse":
-      return strMod >= dexMod
-        ? { mod: strMod, label: "STR" }
-        : { mod: dexMod, label: "DEX" };
-    case "none":
-      return { mod: 0, label: "NONE" };
-  }
 }
 
 // ─── NPC Turn Result ────────────────────────────────────────────────────────
@@ -151,8 +129,7 @@ export function resolveWeaponAttack(
   if (hit) {
     let diceExpr = weapon.dice;
     if (isNat20) {
-      const dm = diceExpr.match(/^(\d+)(d\d+)$/i);
-      if (dm) diceExpr = `${parseInt(dm[1]) * 2}${dm[2]}`;
+      diceExpr = doubleDice(diceExpr);
     }
     const weaponRoll = rollDice(diceExpr);
     const flatBonus = abilityMod + weaponBonus;
@@ -200,7 +177,7 @@ export function resolveWeaponAttack(
  */
 export function resolveSpellAttack(
   player: PlayerState,
-  ability: CombatAbility,
+  ability: Ability,
   target: NPC,
   positions?: Map<string, GridPosition>,
 ): ParsedRollResult {
@@ -240,14 +217,13 @@ export function resolveSpellAttack(
   const hit = isNat1 ? false : isNat20 ? true : total >= target.ac;
 
   let damage: ParsedRollResult["damage"] = undefined;
-  if (hit && ability.damageDice) {
-    let diceExpr = ability.damageDice;
+  if (hit && ability.damageRoll) {
+    let diceExpr = ability.damageRoll;
     if (ability.type === "cantrip") {
       diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
     }
     if (isNat20) {
-      const dm = diceExpr.match(/^(\d+)(d\d+)$/i);
-      if (dm) diceExpr = `${parseInt(dm[1]) * 2}${dm[2]}`;
+      diceExpr = doubleDice(diceExpr);
     }
     const spellRoll = rollDice(diceExpr);
     const breakdown: DamageBreakdown[] = [{
@@ -294,10 +270,11 @@ export function resolveSpellAttack(
  */
 export function resolveSpellSave(
   player: PlayerState,
-  ability: CombatAbility,
+  ability: Ability,
   target: NPC,
 ): ParsedRollResult {
-  const spellAbility = player.spellcastingAbility ?? "intelligence";
+  // Use saveDCAbility (for racial abilities like Breath Weapon) or fall back to spellcastingAbility
+  const spellAbility = ability.saveDCAbility ?? player.spellcastingAbility ?? "intelligence";
   const abilityMod = getModifier(player.stats[spellAbility as keyof CharacterStats] as number);
   const profBonus = getProficiencyBonus(player.level);
   const spellDC = 8 + abilityMod + profBonus;
@@ -308,16 +285,27 @@ export function resolveSpellSave(
   const targetSaved = targetSaveTotal >= spellDC;
 
   const abilityLabel = spellAbility.substring(0, 3).toUpperCase();
-  const components = `Spell DC: 8 + ${abilityLabel} ${formatModifier(abilityMod)} + Prof ${formatModifier(profBonus)} = ${spellDC}`;
+  const dcLabel = ability.type === "racial" ? "DC" : "Spell DC";
+  const components = `${dcLabel}: 8 + ${abilityLabel} ${formatModifier(abilityMod)} + Prof ${formatModifier(profBonus)} = ${spellDC}`;
 
   // Spell lands if target FAILS the save
   const spellLands = !targetSaved;
 
   let damage: ParsedRollResult["damage"] = undefined;
-  if (spellLands && ability.damageDice) {
-    let diceExpr = ability.damageDice;
+  if (spellLands && ability.damageRoll) {
+    let diceExpr = ability.damageRoll;
     if (ability.type === "cantrip") {
       diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
+    } else if (ability.type === "racial" && ability.racialScaling) {
+      // Racial scaling: find the highest threshold at or below the player's level
+      const thresholds = Object.keys(ability.racialScaling)
+        .map(Number)
+        .filter((t) => t <= player.level)
+        .sort((a, b) => b - a);
+      if (thresholds.length > 0) {
+        const best = ability.racialScaling[String(thresholds[0])];
+        if (best?.damageRoll) diceExpr = best.damageRoll;
+      }
     }
     const spellRoll = rollDice(diceExpr);
     const breakdown: DamageBreakdown[] = [{
@@ -375,8 +363,7 @@ export function resolveNPCTurns(
     if (hit) {
       let diceExpr = npc.damageDice;
       if (isNat20) {
-        const dm = diceExpr.match(/^(\d+)(d\d+)$/i);
-        if (dm) diceExpr = `${parseInt(dm[1]) * 2}${dm[2]}`;
+        diceExpr = doubleDice(diceExpr);
       }
       const roll = rollDice(diceExpr);
       damage = roll.total + npc.damageBonus;
@@ -401,7 +388,7 @@ export function resolveNPCTurns(
  */
 export function resolvePlayerAction(
   player: PlayerState,
-  ability: CombatAbility,
+  ability: Ability,
   targetNPC: NPC | null,
   positions?: Map<string, GridPosition>,
 ): ParsedRollResult {
@@ -454,8 +441,8 @@ export function resolvePlayerAction(
     return resolveWeaponAttack(player, weaponName, weapon, targetNPC, positions);
   }
 
-  // Cantrip / spell attacks
-  if (ability.type === "cantrip" || ability.type === "spell") {
+  // Cantrip / spell / racial attacks
+  if (ability.type === "cantrip" || ability.type === "spell" || ability.type === "racial") {
     if (ability.attackType === "save") {
       return resolveSpellSave(player, ability, targetNPC);
     }

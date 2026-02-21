@@ -35,6 +35,7 @@ import * as admin from "firebase-admin";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { crToXP } from "../src/app/lib/gameTypes";
+import { RACE_OVERRIDES, CLASS_OVERRIDES, CLASS_LEVEL_OVERRIDES } from "./srdOverrides";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
@@ -57,27 +58,13 @@ interface Open5ePage<T> {
   results: T[];
 }
 
-/** Fetch all pages from a v2 endpoint (no document filter). */
-async function fetchAllV2<T>(path: string): Promise<T[]> {
+/** Fetch all pages from a v2 endpoint, optionally filtered to a specific document. */
+async function fetchAllV2<T>(path: string, documentKey?: string): Promise<T[]> {
   const results: T[] = [];
-  let url: string | null = `${OPEN5E_V2}${path}?limit=100`;
-
-  while (url) {
-    console.log(`  GET ${url}`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    const page: Open5ePage<T> = await res.json();
-    results.push(...page.results);
-    url = page.next;
-  }
-
-  return results;
-}
-
-/** Fetch all pages from a v2 endpoint filtered to a specific document. */
-async function fetchAllV2Filtered<T>(path: string, documentKey: string): Promise<T[]> {
-  const results: T[] = [];
-  let url: string | null = `${OPEN5E_V2}${path}?document__key=${documentKey}&limit=100`;
+  const params = documentKey
+    ? `?document__key=${documentKey}&limit=100`
+    : `?limit=100`;
+  let url: string | null = `${OPEN5E_V2}${path}${params}`;
 
   while (url) {
     console.log(`  GET ${url}`);
@@ -334,131 +321,12 @@ interface V2MagicItem {
   cost: string;
 }
 
-// ─── Race trait text parsers ─────────────────────────────────────────────────
-
-/**
- * Parse ability score bonuses from trait description text.
- * Patterns: "Your Strength score increases by 2" / "Your X and Y scores increase by 1"
- */
-function parseAbilityBonuses(traits: V2Trait[]): Record<string, number> {
-  const bonuses: Record<string, number> = {};
-  const abilityNames = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
-
-  for (const trait of traits) {
-    if (!trait.name.toLowerCase().includes("ability score")) continue;
-    const text = trait.desc;
-
-    // Match individual "Your X score increases by N" patterns
-    const singlePattern = /your\s+(\w+)\s+score\s+increases?\s+by\s+(\d+)/gi;
-    let m;
-    while ((m = singlePattern.exec(text)) !== null) {
-      const ability = m[1].toLowerCase();
-      if (abilityNames.includes(ability)) {
-        bonuses[ability] = parseInt(m[2], 10);
-      }
-    }
-
-    // Pattern for "two other ability scores of your choice each increase by 1" (Half-Elf)
-    // We can't pick specific abilities here, but we note the +2 CHA is already matched above
-  }
-
-  return bonuses;
-}
-
-/** Parse walking speed from trait text. Default 30 if not found. */
-function parseSpeed(traits: V2Trait[]): number {
-  for (const trait of traits) {
-    if (!trait.name.toLowerCase().includes("speed")) continue;
-    const m = trait.desc.match(/base\s+walking\s+speed\s+is\s+(\d+)/i);
-    if (m) return parseInt(m[1], 10);
-    // Fallback: just find a number followed by "feet"
-    const f = trait.desc.match(/(\d+)\s*feet/i);
-    if (f) return parseInt(f[1], 10);
-  }
-  return 30;
-}
-
-/** Parse size from trait text. */
-function parseSize(traits: V2Trait[]): string {
-  for (const trait of traits) {
-    if (!trait.name.toLowerCase().includes("size")) continue;
-    const m = trait.desc.match(/\b(tiny|small|medium|large|huge|gargantuan)\b/i);
-    if (m) return m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
-  }
-  return "Medium";
-}
-
-/** Parse languages from trait text. */
-function parseLanguages(traits: V2Trait[]): string[] {
-  for (const trait of traits) {
-    if (!trait.name.toLowerCase().includes("language")) continue;
-    const text = trait.desc.toLowerCase();
-    // "You can speak, read, and write Common and Dwarvish"
-    const m = text.match(/speak.*?(?:read.*?write\s+)?(.+)/i);
-    if (m) {
-      return m[1]
-        .replace(/\.$/, "")
-        .split(/,\s*|\s+and\s+/)
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0 && l.length < 30 && !l.includes("you ") && !l.includes("one "));
-    }
-  }
-  return [];
-}
-
-/** Parse weapon proficiencies from racial trait text. */
-function parseRacialWeaponProficiencies(traits: V2Trait[]): string[] {
-  const weapons: string[] = [];
-  for (const trait of traits) {
-    // Look for traits like "Dwarven Combat Training", "Elf Weapon Training"
-    const text = trait.desc.toLowerCase();
-    const m = text.match(/proficiency\s+with\s+(?:the\s+)?(.+?)(?:\.|$)/i);
-    if (m) {
-      const items = m[1]
-        .split(/,\s*|\s+and\s+/)
-        .map((w) => w.trim())
-        .filter((w) => w.length > 0 && w.length < 30);
-      weapons.push(...items);
-    }
-  }
-  return weapons;
-}
-
-/** Parse skill proficiencies from racial trait text. */
-function parseRacialSkillProficiencies(traits: V2Trait[]): string[] {
-  const skills: string[] = [];
-  for (const trait of traits) {
-    const text = trait.desc.toLowerCase();
-    // "You have proficiency in the Perception skill"
-    const m = text.match(/proficiency\s+in\s+the\s+(\w+)\s+skill/i);
-    if (m) {
-      skills.push(m[1].toLowerCase());
-    }
-  }
-  return skills;
-}
-
-/** Detect how many extra free skill choices a race grants (Half-Elf = 2). */
-function parseExtraSkillChoices(traits: V2Trait[]): number {
-  for (const trait of traits) {
-    const text = trait.desc.toLowerCase();
-    // Half-Elf: "you gain proficiency in two skills of your choice"
-    const m = text.match(/proficiency\s+in\s+(\w+)\s+skills?\s+of\s+your\s+choice/i);
-    if (m) {
-      const numWord = m[1].toLowerCase();
-      const wordToNum: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
-      return wordToNum[numWord] ?? (parseInt(numWord, 10) || 0);
-    }
-  }
-  return 0;
-}
-
 // ─── Seeding functions ────────────────────────────────────────────────────────
 
 async function seedRaces(): Promise<void> {
-  console.log("\n── Seeding srdRaces (v2 species) ──");
+  console.log("\n── Seeding srdRaces (v2 species + hardcoded overrides) ──");
 
-  const allSpecies = await fetchAllV2Filtered<V2Species>("/species", "srd-2014");
+  const allSpecies = await fetchAllV2<V2Species>("/species", "srd-2014");
 
   // Separate base races and subspecies
   const baseRaces = allSpecies.filter((s) => !s.is_subspecies);
@@ -467,7 +335,7 @@ async function seedRaces(): Promise<void> {
   const docs = baseRaces.map((race) => {
     const slug = stripKeyPrefix(race.key);
 
-    // Merge subspecies traits into the base race
+    // Merge subspecies traits into the base race (for narrative text)
     const subTraits: V2Trait[] = [];
     for (const sub of subspecies) {
       if (sub.subspecies_of === race.key) {
@@ -476,29 +344,8 @@ async function seedRaces(): Promise<void> {
     }
     const allTraits = [...race.traits, ...subTraits];
 
-    // Parse structured data from trait description text
-    const abilityBonuses = parseAbilityBonuses(allTraits);
-    // If subspecies added ability bonuses, merge them
-    const subAbilityBonuses = parseAbilityBonuses(subTraits);
-    for (const [ability, bonus] of Object.entries(subAbilityBonuses)) {
-      if (!(ability in abilityBonuses)) {
-        abilityBonuses[ability] = bonus;
-      }
-    }
-
-    const speed = parseSpeed(allTraits);
-    const size = parseSize(allTraits);
-    const languages = parseLanguages(allTraits);
-    const skillProficiencies = parseRacialSkillProficiencies(allTraits);
-    const weaponProficiencies = parseRacialWeaponProficiencies(allTraits);
-    const extraSkillChoices = parseExtraSkillChoices(allTraits);
-
-    // Build trait list (exclude meta-traits like "Ability Score Increase", "Speed", "Size", "Languages")
-    const metaTraitNames = new Set([
-      "ability score increase", "speed", "size", "languages", "age", "alignment",
-    ]);
+    // Include all traits — the UI shows them in a dedicated "Racial Traits" section
     const traits = allTraits
-      .filter((t) => !metaTraitNames.has(t.name.toLowerCase()))
       .map((t) => ({ name: t.name, description: t.desc }));
 
     // Build lore sections from dedicated traits
@@ -513,20 +360,27 @@ async function seedRaces(): Promise<void> {
       if (n === "languages") lore.languageDescription = t.desc;
     }
 
+    // Use hardcoded overrides for all mechanical data
+    const override = RACE_OVERRIDES[slug];
+    if (!override) {
+      console.warn(`  ⚠ No override for race "${slug}" — using defaults`);
+    }
+
     return {
       id: slug,
       data: {
         slug,
         name: race.name,
-        speed,
-        size,
-        abilityBonuses,
+        speed: override?.speed ?? 30,
+        size: override?.size ?? "medium",
+        abilityBonuses: override?.abilityBonuses ?? {},
         traits,
-        languages,
-        skillProficiencies,
-        extraSkillChoices,
-        weaponProficiencies,
-        armorProficiencies: [] as string[],
+        languages: override?.languages ?? [],
+        skillProficiencies: override?.skillProficiencies ?? [],
+        extraSkillChoices: override?.extraSkillChoices ?? 0,
+        weaponProficiencies: override?.weaponProficiencies ?? [],
+        armorProficiencies: override?.armorProficiencies ?? [],
+        providedAbilities: override?.providedAbilities ?? [],
         lore,
       },
     };
@@ -539,11 +393,12 @@ async function seedRaces(): Promise<void> {
 /**
  * Seed classes and return the raw v2 class data for seedClassLevels() to use.
  * Filters to base classes (subclass_of === null), collects subclasses as archetypes.
+ * Uses hardcoded CLASS_OVERRIDES for proficiencies, skill options, and spellcasting info.
  */
 async function seedClasses(): Promise<V2Class[]> {
-  console.log("\n── Seeding srdClasses (v2) ──");
+  console.log("\n── Seeding srdClasses (v2 + hardcoded overrides) ──");
 
-  const allClasses = await fetchAllV2Filtered<V2Class>("/classes", "srd-2014");
+  const allClasses = await fetchAllV2<V2Class>("/classes", "srd-2014");
   const baseClasses = allClasses.filter((c) => c.subclass_of === null);
   const subclasses = allClasses.filter((c) => c.subclass_of !== null);
 
@@ -553,94 +408,32 @@ async function seedClasses(): Promise<V2Class[]> {
     // Hit die: parse from "D12" → 12
     const hitDie = parseInt(cls.hit_dice.replace(/\D/g, ""), 10) || 8;
 
-    // Saving throws from structured array
+    // Saving throws from structured API field
     const savingThrows = cls.saving_throws.map((s) => s.name);
 
-    // Find the PROFICIENCIES feature to extract skill/weapon/armor profs
-    const profFeature = cls.features.find((f) => f.feature_type === "PROFICIENCIES");
-    const profDesc = profFeature?.desc ?? "";
-
-    // Extract skill choices count and options
-    const choiceMatch = profDesc.match(/choose\s+(?:any\s+)?(\w+)/i);
-    let skillChoices = 2;
-    if (choiceMatch) {
-      const wordToNum: Record<string, number> = {
-        one: 1, two: 2, three: 3, four: 4, five: 5, any: 2,
-      };
-      skillChoices = wordToNum[choiceMatch[1].toLowerCase()] ?? (parseInt(choiceMatch[1], 10) || 2);
-    }
-
-    // Extract skill options from the proficiencies description
-    // Pattern: "Choose N from ..." or "**Skills:** Choose two from ..."
-    const skillsSection = profDesc.match(/\*\*Skills:?\*\*\s*(.*?)(?:\n\n|\*\*|$)/is)?.[1] ?? profDesc;
-    const afterFrom = skillsSection.replace(/^.*?(?:from|following[^:]*:?)/i, "");
-    const skillOptions: string[] = afterFrom
-      .split(/,\s*|\s+and\s+/)
-      .map((s: string) =>
-        s.replace(/\band\b/i, "").replace(/\.$/, "").replace(/\*\*/g, "").trim(),
-      )
-      .filter((s: string) => s.length > 0 && s.length < 30 && /^[A-Z]/.test(s));
-
-    // Weapon and armor proficiencies from the proficiencies feature desc
-    const weaponProficiencies = extractProficiencies(profDesc, "weapons");
-    const armorProficiencies = extractProficiencies(profDesc, "armor");
-
-    // Archetypes from subclasses
+    // Archetypes from subclasses (v2 API has empty top-level desc, compose from features)
     const archetypes = subclasses
       .filter((sc) => sc.subclass_of === cls.key)
       .map((sc) => ({
         slug: stripKeyPrefix(sc.key),
         name: sc.name,
-        description: sc.desc ?? "",
+        description: sc.desc || sc.features
+          .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
+          .map((f) => `**${f.name}:** ${f.desc}`)
+          .join("\n\n"),
       }));
 
-    // Archetype level: find the feature that matches the subclass concept name
-    // Each class has a feature like "Primal Path", "Arcane Tradition", etc.
-    // whose gained_at level indicates when the archetype is chosen
-    let archetypeLevel = 3; // default
-    const subtypeFeatureNames = [
-      "primal path", "arcane tradition", "divine domain", "druid circle",
-      "martial archetype", "monastic tradition", "sacred oath", "ranger archetype",
-      "roguish archetype", "sorcerous origin", "otherworldly patron", "school of",
-      "ranger conclave", "patron",
-    ];
-    for (const feature of cls.features) {
-      const fName = feature.name.toLowerCase();
-      if (subtypeFeatureNames.some((n) => fName.includes(n)) && feature.gained_at.length > 0) {
-        archetypeLevel = feature.gained_at[0].level;
-        break;
-      }
+    // Description: compose from CLASS_LEVEL_FEATURE features (v2 API has empty top-level desc)
+    const description = cls.desc || cls.features
+      .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
+      .map((f) => `### ${f.name}\n${f.desc}`)
+      .join("\n\n");
+
+    // Use hardcoded overrides for proficiencies, skills, and spellcasting
+    const override = CLASS_OVERRIDES[slug];
+    if (!override) {
+      console.warn(`  ⚠ No override for class "${slug}" — using defaults`);
     }
-
-    // Spellcasting type derivation
-    const hasSpellsKnown = cls.features.some(
-      (f) => f.name.toLowerCase().includes("spells known") && f.data_for_class_table.length > 0,
-    );
-    const hasSpellSlotFeature = cls.features.some(
-      (f) => /^(1st|2nd|3rd|[4-9]th)\b/i.test(f.name) && f.data_for_class_table.length > 0,
-    );
-    const hasCantrips = cls.features.some(
-      (f) => f.name.toLowerCase().includes("cantrips") && f.data_for_class_table.length > 0,
-    );
-    const spellcastingType: "known" | "prepared" | "none" =
-      hasSpellsKnown ? "known"
-      : (hasSpellSlotFeature || hasCantrips) ? "prepared"
-      : "none";
-
-    // Spellcasting ability: parse from "Spellcasting" feature desc
-    let spellcastingAbility = "";
-    const spellcastingFeature = cls.features.find(
-      (f) => f.name.toLowerCase() === "spellcasting" || f.name.toLowerCase() === "pact magic",
-    );
-    if (spellcastingFeature) {
-      const abilityMatch = spellcastingFeature.desc.match(
-        /(\w+)\s+is\s+your\s+spellcasting\s+ability/i,
-      );
-      if (abilityMatch) spellcastingAbility = abilityMatch[1];
-    }
-
-    // Description: the class desc field
-    const description = cls.desc || "";
 
     return {
       id: slug,
@@ -649,15 +442,15 @@ async function seedClasses(): Promise<V2Class[]> {
         name: cls.name,
         hitDie,
         savingThrows,
-        skillChoices,
-        skillOptions,
+        skillChoices: override?.skillChoices ?? 2,
+        skillOptions: override?.skillOptions ?? [],
         primaryAbility: "",
         archetypes,
-        archetypeLevel,
-        spellcastingType,
-        spellcastingAbility,
-        weaponProficiencies,
-        armorProficiencies,
+        archetypeLevel: override?.archetypeLevel ?? 3,
+        spellcastingType: override?.spellcastingType ?? "none",
+        spellcastingAbility: override?.spellcastingAbility ?? "",
+        weaponProficiencies: override?.weaponProficiencies ?? [],
+        armorProficiencies: override?.armorProficiencies ?? [],
         description,
       },
     };
@@ -669,36 +462,20 @@ async function seedClasses(): Promise<V2Class[]> {
   return baseClasses;
 }
 
-/** Extract weapon or armor proficiencies from the proficiencies feature desc text. */
-function extractProficiencies(desc: string, type: "weapons" | "armor"): string[] {
-  // Find the **Armor:** or **Weapons:** section
-  const sectionLabel = type === "armor" ? "Armor" : "Weapons";
-  const pattern = new RegExp(`\\*\\*${sectionLabel}:?\\*\\*\\s*(.*?)(?:\\n|\\*\\*|$)`, "is");
-  const m = desc.match(pattern);
-  if (!m) return [];
-
-  const text = m[1].trim();
-  if (/^none$/i.test(text)) return [];
-
-  return text
-    .split(/,\s*/)
-    .map((s) => s.replace(/\.$/, "").replace(/\*\*/g, "").trim())
-    .filter((s) => s.length > 0 && s.length < 40);
-}
-
 /**
- * Derive class level data from v2 class features.
- * Each class gets 20 level documents with features, spell slots, etc.
+ * Derive class level data from v2 class features + hardcoded spell progression.
+ * Features (names + descriptions) come from the API; spell slots, cantrips known,
+ * and spells known come from CLASS_LEVEL_OVERRIDES for accuracy.
  */
 async function seedClassLevels(classData: V2Class[]): Promise<void> {
-  console.log("\n── Seeding srdClassLevels (from v2 class features) ──");
+  console.log("\n── Seeding srdClassLevels (v2 features + hardcoded spell progression) ──");
 
   const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
 
   for (const cls of classData) {
     const classSlug = stripKeyPrefix(cls.key);
 
-    // Build a map of level → features from CLASS_LEVEL_FEATURE type
+    // Build a map of level → features from CLASS_LEVEL_FEATURE type (narrative text from API)
     const levelFeatures = new Map<number, Array<{ name: string; description: string; level: number }>>();
     for (let lvl = 1; lvl <= 20; lvl++) levelFeatures.set(lvl, []);
 
@@ -716,49 +493,32 @@ async function seedClassLevels(classData: V2Class[]): Promise<void> {
       }
     }
 
-    // Extract spell slot data from features named "1st", "2nd", "3rd", etc.
-    const spellSlotsByLevel = new Map<number, Record<string, number>>();
-    for (const feature of cls.features) {
-      const slotMatch = feature.name.match(/^(\d+)(?:st|nd|rd|th)$/i);
-      if (!slotMatch || feature.data_for_class_table.length === 0) continue;
-      const spellLevel = slotMatch[1];
-
-      for (const entry of feature.data_for_class_table) {
-        const classLevel = entry.level;
-        const value = parseInt(entry.column_value, 10);
-        if (isNaN(value) || value <= 0) continue;
-
-        if (!spellSlotsByLevel.has(classLevel)) spellSlotsByLevel.set(classLevel, {});
-        spellSlotsByLevel.get(classLevel)![spellLevel] = value;
-      }
-    }
-
-    // Cantrips Known and Spells Known from features
-    const cantripsMap = new Map<number, number>();
-    const spellsKnownMap = new Map<number, number>();
-
-    for (const feature of cls.features) {
-      const isCantrips = feature.name.toLowerCase().includes("cantrips known")
-        || feature.name.toLowerCase() === "cantrips";
-      const isSpellsKnown = feature.name.toLowerCase().includes("spells known");
-
-      if (!isCantrips && !isSpellsKnown) continue;
-
-      for (const entry of feature.data_for_class_table) {
-        const value = parseInt(entry.column_value, 10);
-        if (isNaN(value) || value <= 0) continue;
-
-        if (isCantrips) cantripsMap.set(entry.level, value);
-        if (isSpellsKnown) spellsKnownMap.set(entry.level, value);
-      }
-    }
+    // Spell progression from hardcoded overrides (replaces fragile API parsing)
+    const progression = CLASS_LEVEL_OVERRIDES[classSlug];
 
     for (let level = 1; level <= 20; level++) {
       const proficiencyBonus = Math.ceil(level / 4) + 1;
       const features = levelFeatures.get(level) ?? [];
-      const spellSlots = spellSlotsByLevel.get(level);
-      const cantripsKnown = cantripsMap.get(level);
-      const spellsKnown = spellsKnownMap.get(level);
+
+      // Build spell slots from override table, omitting zero-slot entries
+      let spellSlots: Record<string, number> | undefined;
+      let cantripsKnown: number | undefined;
+      let spellsKnown: number | undefined;
+
+      if (progression) {
+        const slots: Record<string, number> = {};
+        for (const [spellLevel, counts] of Object.entries(progression.slots)) {
+          const count = counts[level - 1] ?? 0;
+          if (count > 0) slots[spellLevel] = count;
+        }
+        if (Object.keys(slots).length > 0) spellSlots = slots;
+
+        const cantrips = progression.cantripsKnown?.[level - 1];
+        if (cantrips != null && cantrips > 0) cantripsKnown = cantrips;
+
+        const spells = progression.spellsKnown?.[level - 1];
+        if (spells != null && spells > 0) spellsKnown = spells;
+      }
 
       docs.push({
         id: `${classSlug}_${level}`,
@@ -924,7 +684,7 @@ function buildUpcastScaling(spell: V2Spell): Record<string, ScalingEntry> | null
 async function seedSpells(): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
   console.log("\n── Seeding srdSpells (v2) ──");
 
-  const raw = await fetchAllV2Filtered<V2Spell>("/spells", "srd-2014");
+  const raw = await fetchAllV2<V2Spell>("/spells", "srd-2014");
 
   const docs = raw.map((s) => {
     const slug = stripKeyPrefix(s.key);
@@ -1053,7 +813,7 @@ async function seedSpellLists(
 async function seedEquipment(): Promise<void> {
   console.log("\n── Seeding srdEquipment (v2 weapons, srd-2024) ──");
   // Note: srd-2014 weapons don't exist in v2, so we use srd-2024
-  const raw = await fetchAllV2Filtered<V2Weapon>("/weapons", "srd-2024");
+  const raw = await fetchAllV2<V2Weapon>("/weapons", "srd-2024");
 
   const docs = raw.map((w) => {
     const slug = stripKeyPrefix(w.key);
@@ -1107,7 +867,7 @@ async function seedSubclassLevels(): Promise<void> {
 
 async function seedConditions(): Promise<void> {
   console.log("\n── Seeding srdConditions (v2, srd-2014) ──");
-  const raw = await fetchAllV2Filtered<Record<string, unknown>>("/conditions", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>("/conditions", "srd-2014");
   const docs = raw.map((c) => {
     const key = stripKeyPrefix(c.key as string);
     const descriptions = Array.isArray(c.descriptions)
@@ -1128,7 +888,7 @@ async function seedConditions(): Promise<void> {
 
 async function seedBackgrounds(): Promise<void> {
   console.log("\n── Seeding srdBackgrounds (v2, srd-2014) ──");
-  const raw = await fetchAllV2Filtered<Record<string, unknown>>("/backgrounds", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>("/backgrounds", "srd-2014");
   const docs = raw.map((b) => {
     const key = stripKeyPrefix(b.key as string);
     const benefits = Array.isArray(b.benefits) ? b.benefits : [];
@@ -1148,7 +908,7 @@ async function seedBackgrounds(): Promise<void> {
 
 async function seedFeats(): Promise<void> {
   console.log("\n── Seeding srdFeats (v2, srd-2014) ──");
-  const raw = await fetchAllV2Filtered<Record<string, unknown>>("/feats", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>("/feats", "srd-2014");
   const docs = raw.map((f) => {
     const key = stripKeyPrefix(f.key as string);
     const benefits = Array.isArray(f.benefits) ? f.benefits : [];
@@ -1169,7 +929,7 @@ async function seedFeats(): Promise<void> {
 
 async function seedArmor(): Promise<void> {
   console.log("\n── Seeding srdArmor (v2, srd-2014) ──");
-  const raw = await fetchAllV2Filtered<Record<string, unknown>>("/armor", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>("/armor", "srd-2014");
   const docs = raw.map((a) => {
     const key = stripKeyPrefix(a.key as string);
     return {
@@ -1195,7 +955,7 @@ async function seedArmor(): Promise<void> {
 
 async function seedMonsters(): Promise<void> {
   console.log("\n── Seeding srdMonsters (v2 creatures) ──");
-  const raw = await fetchAllV2Filtered<V2Creature>("/creatures", "srd-2014");
+  const raw = await fetchAllV2<V2Creature>("/creatures", "srd-2014");
 
   const docs = raw.map((m) => {
     const slug = stripKeyPrefix(m.key);
@@ -1296,7 +1056,7 @@ async function seedMonsters(): Promise<void> {
 async function seedMagicItems(): Promise<void> {
   console.log("\n── Seeding srdMagicItems (v2, srd-2024) ──");
   // Note: srd-2014 magic items don't exist in v2, so we use srd-2024
-  const raw = await fetchAllV2Filtered<V2MagicItem>("/magicitems", "srd-2024");
+  const raw = await fetchAllV2<V2MagicItem>("/magicitems", "srd-2024");
 
   const docs = raw.map((i) => {
     const slug = stripKeyPrefix(i.key);

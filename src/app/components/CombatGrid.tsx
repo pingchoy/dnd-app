@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import type { NPC, PlayerState, GridPosition, CombatAbility } from "../lib/gameTypes";
+import type { NPC, PlayerState, GridPosition, Ability } from "../lib/gameTypes";
 import { toDisplayCase } from "../lib/gameTypes";
 import {
   cellsInRange,
@@ -19,15 +19,15 @@ interface Props {
   onMoveToken: (id: string, pos: GridPosition) => void;
   gridSize: number;
   /** When set, grid enters targeting mode: shows range overlay, highlights valid targets. */
-  targetingAbility?: CombatAbility | null;
+  targetingAbility?: Ability | null;
   /** Called when a valid target is clicked during targeting mode. */
   onTargetSelected?: (targetId: string) => void;
   /** Combat abilities to display in the overlay bar. */
-  abilities?: CombatAbility[];
+  abilities?: Ability[];
   /** Currently selected ability (for highlight state). */
-  selectedAbility?: CombatAbility | null;
+  selectedAbility?: Ability | null;
   /** Called when an ability button is clicked. */
-  onSelectAbility?: (ability: CombatAbility) => void;
+  onSelectAbility?: (ability: Ability) => void;
   /** Whether the ability bar buttons are disabled (during busy states). */
   abilityBarDisabled?: boolean;
   /** Called on right-click to cancel pending actions (targeting, spell panel, etc.). */
@@ -73,7 +73,7 @@ interface DrawState {
   dragPixel: { x: number; y: number } | null;
   dragOrigin: GridPosition | null;
   playerSpeed: number;
-  targetingAbility: CombatAbility | null;
+  targetingAbility: Ability | null;
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -89,7 +89,7 @@ function clampScale(s: number): number {
 }
 
 /** Format a compact range tag for an ability button. */
-function abilityRangeTag(ability: CombatAbility): string {
+function abilityRangeTag(ability: Ability): string {
   if (ability.type === "action") return "Self";
   if (ability.weaponRange) {
     const r = ability.weaponRange;

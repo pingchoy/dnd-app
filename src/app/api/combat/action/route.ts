@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
 
     const { player } = gameState;
 
-    // Find ability in player's combatAbilities
-    const ability = (player.combatAbilities ?? []).find(a => a.id === abilityId);
+    // Find ability in player's abilities
+    const ability = (player.abilities ?? []).find(a => a.id === abilityId);
     if (!ability) {
       return NextResponse.json(
         { error: `Ability "${abilityId}" not found in player's combat abilities` },
