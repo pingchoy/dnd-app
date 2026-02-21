@@ -202,10 +202,14 @@ export async function POST(req: NextRequest) {
       );
 
       // If we just created an encounter with NPCs, compute initial grid positions
+      // and set the turn order now that all NPCs have been added
       const enc = getEncounter();
       if (needsEncounter && enc) {
         enc.positions = computeInitialPositions(enc.activeNPCs);
+        enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];
+        enc.currentTurnIndex = 0;
         console.log(`[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`);
+        console.log(`[Encounter] Turn order: ${enc.turnOrder.join(", ")}`);
       }
 
       console.log(`[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`);

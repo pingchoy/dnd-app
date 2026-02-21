@@ -47,5 +47,13 @@ class CombatEventBus {
   }
 }
 
-/** Singleton event bus — shared across all API route handlers. */
-export const combatEventBus = new CombatEventBus();
+/**
+ * Singleton event bus pinned to globalThis so it survives Next.js dev-mode
+ * module re-evaluation. Without this, the POST and SSE route handlers
+ * can end up with different instances and events never reach the stream.
+ */
+const g = globalThis as unknown as { __combatEventBus?: CombatEventBus };
+if (!g.__combatEventBus) {
+  g.__combatEventBus = new CombatEventBus();
+}
+export const combatEventBus = g.__combatEventBus;

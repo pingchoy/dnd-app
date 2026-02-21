@@ -796,6 +796,8 @@ export async function applyStateChangesAndPersist(
         activeNPCs: encounter.activeNPCs,
         positions: encounter.positions,
         round: encounter.round,
+        turnOrder: encounter.turnOrder,
+        currentTurnIndex: encounter.currentTurnIndex,
       });
     } else {
       // Combat is over — complete the encounter and clear the link

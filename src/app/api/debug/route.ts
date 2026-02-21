@@ -83,13 +83,17 @@ export async function POST(req: NextRequest) {
           createNPC(npc);
         }
 
-        // Compute initial grid positions and persist encounter updates
+        // Compute initial grid positions and turn order, then persist
         const enc = getEncounter();
         if (enc?.id) {
           enc.positions = computeInitialPositions(enc.activeNPCs);
+          enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];
+          enc.currentTurnIndex = 0;
           await saveEncounterState(enc.id, {
             activeNPCs: enc.activeNPCs,
             positions: enc.positions,
+            turnOrder: enc.turnOrder,
+            currentTurnIndex: enc.currentTurnIndex,
           });
         }
 

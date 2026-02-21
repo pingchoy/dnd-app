@@ -50,6 +50,8 @@ export interface UseChatReturn {
   applyDebugResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
   /** Execute a deterministic combat action (ability bar click). */
   executeCombatAction: (ability: Ability, targetId?: string) => Promise<void>;
+  /** Ref to set a callback for showing floating combat labels on the grid. */
+  combatLabelRef: React.MutableRefObject<((tokenId: string, hit: boolean, damage: number) => void) | null>;
 }
 
 export function useChat(): UseChatReturn {
@@ -65,6 +67,9 @@ export function useChat(): UseChatReturn {
   const [isCombatProcessing, setIsCombatProcessing] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
+
+  // Combat floating label callback (set by dashboard, called on hit/miss results)
+  const combatLabelRef = useRef<((tokenId: string, hit: boolean, damage: number) => void) | null>(null);
 
   // SSE connection management
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -142,6 +147,8 @@ export function useChat(): UseChatReturn {
           content: data.narrative,
           timestamp: Date.now(),
         }]);
+        // Show floating HIT/MISS label on the attacked token
+        combatLabelRef.current?.(data.targetId, data.hit, data.damage);
         break;
 
       case "state_update":
@@ -150,6 +157,8 @@ export function useChat(): UseChatReturn {
         break;
 
       case "round_end":
+        setTotalTokens(t => t + (data.tokensUsed ?? 0));
+        setEstimatedCostUsd(c => c + (data.costUsd ?? 0));
         setIsCombatProcessing(false);
         break;
 
@@ -395,23 +404,14 @@ export function useChat(): UseChatReturn {
 
   /**
    * Execute a combat action via the ability bar.
-   * Sends POST to /api/combat/action which triggers the turn-by-turn loop.
-   * All UI updates come through the SSE combat stream.
+   * Phase 1: POST /api/combat/action resolves the player's roll (deterministic, instant).
+   * Shows the roll result as a chat card, then immediately triggers Phase 2
+   * (narration + NPC turns via SSE) without requiring user interaction.
    */
   async function executeCombatAction(ability: Ability, targetId?: string): Promise<void> {
     if (!characterId || isRolling || isNarrating || pendingRoll || isCombatProcessing) return;
 
-    // Show the player's action as a message immediately
-    let actionDesc = `I use ${ability.name}`;
-    if (targetId) {
-      const targetNPC = encounter?.activeNPCs.find(n => n.id === targetId);
-      actionDesc += ` on ${targetNPC?.name ?? targetId}`;
-    }
-    setMessages(prev => [...prev, { role: "user", content: actionDesc, timestamp: Date.now() }]);
-
-    // Block input until round_end SSE event
-    setIsCombatProcessing(true);
-
+    setIsRolling(true);
     try {
       const res = await fetch("/api/combat/action", {
         method: "POST",
@@ -424,11 +424,65 @@ export function useChat(): UseChatReturn {
         throw new Error(data.error ?? "Combat action failed");
       }
 
-      // Response arrives after all turns are processed.
-      // UI has already been updated via SSE events during this time.
-      // We can use the response for final state reconciliation if needed.
+      const data = await res.json();
+
+      // Update game state and encounter (damage already applied server-side)
+      setGameState(data.gameState);
+      setEncounter(data.encounter ?? null);
+
+      // Show the roll result as a historical dice card in chat (unless it's a non-roll action)
+      if (!data.playerResult.noCheck) {
+        setMessages(prev => [...prev, {
+          role: "assistant" as const,
+          content: "",
+          rollResult: data.playerResult,
+          timestamp: Date.now(),
+        }]);
+      }
+
+      // Show floating HIT/MISS label on the targeted NPC
+      if (targetId && !data.playerResult.noCheck) {
+        combatLabelRef.current?.(
+          targetId,
+          data.playerResult.success,
+          data.playerResult.damage?.totalDamage ?? 0,
+        );
+      }
+
+      // Immediately proceed to narration + NPC turns (no Continue button)
+      setIsRolling(false);
+      await requestCombatContinue(data.playerResult, targetId);
     } catch (err) {
       console.error("[useChat] executeCombatAction error:", err);
+      appendError();
+      setIsRolling(false);
+    }
+  }
+
+  /**
+   * Phase 2: Trigger narration + NPC turns via SSE.
+   * Called after the player confirms their roll in the dice UI.
+   */
+  async function requestCombatContinue(
+    playerResult: ParsedRollResult,
+    targetId?: string | null,
+  ): Promise<void> {
+    if (!characterId) return;
+    setIsCombatProcessing(true);
+    try {
+      const res = await fetch("/api/combat/continue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, playerResult, targetId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Combat continue failed");
+      }
+      // SSE events handle all UI updates (narratives, state, round_end)
+    } catch (err) {
+      console.error("[useChat] requestCombatContinue error:", err);
       setIsCombatProcessing(false);
       appendError();
     }
@@ -472,5 +526,6 @@ export function useChat(): UseChatReturn {
     confirmRoll,
     applyDebugResult,
     executeCombatAction,
+    combatLabelRef,
   };
 }

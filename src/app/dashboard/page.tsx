@@ -9,7 +9,7 @@ import CharacterSheet from "../components/CharacterSheet";
 import CharacterSidebar from "../components/CharacterSidebar";
 import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
-import CombatGrid from "../components/CombatGrid";
+import CombatGrid, { CombatGridHandle } from "../components/CombatGrid";
 import CompactChatPanel from "../components/CompactChatPanel";
 import TurnOrderBar from "../components/TurnOrderBar";
 import { OrnateFrame } from "../components/OrnateFrame";
@@ -58,6 +58,7 @@ export default function Dashboard() {
     confirmRoll,
     applyDebugResult,
     executeCombatAction,
+    combatLabelRef,
   } = useChat();
 
   const [userInput, setUserInput] = useState("");
@@ -67,6 +68,7 @@ export default function Dashboard() {
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
   const [selectedAbility, setSelectedAbility] = useState<Ability | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<CombatGridHandle>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -82,6 +84,14 @@ export default function Dashboard() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedAbility]);
+
+  // Wire combat label callback to the grid's imperative handle
+  useEffect(() => {
+    combatLabelRef.current = (tokenId, hit, damage) => {
+      gridRef.current?.showCombatResult(tokenId, hit, damage);
+    };
+    return () => { combatLabelRef.current = null; };
+  }, [combatLabelRef]);
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = encounter?.activeNPCs ?? [];
@@ -325,17 +335,10 @@ export default function Dashboard() {
           {inCombat ? (
             /* ── Combat layout: grid fills entire left side, chat overlays ── */
             <div className="flex-1 overflow-hidden flex flex-col relative">
-              {/* Turn order bar — top of combat area */}
-              {encounter?.turnOrder && (
-                <TurnOrderBar
-                  turnOrder={encounter.turnOrder}
-                  currentTurnIndex={encounter.currentTurnIndex ?? 0}
-                  activeNPCs={activeNPCs}
-                />
-              )}
               {/* Combat grid — fills entire area */}
               <OrnateFrame className="flex-1 overflow-hidden">
                 <CombatGrid
+                  ref={gridRef}
                   player={player}
                   activeNPCs={activeNPCs}
                   positions={positions}
@@ -348,6 +351,13 @@ export default function Dashboard() {
                   onSelectAbility={handleSelectAbility}
                   abilityBarDisabled={isBusy}
                   onCancel={() => setSelectedAbility(null)}
+                  headerExtra={encounter?.turnOrder ? (
+                    <TurnOrderBar
+                      turnOrder={encounter.turnOrder}
+                      currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                      activeNPCs={activeNPCs}
+                    />
+                  ) : undefined}
                 />
               </OrnateFrame>
 

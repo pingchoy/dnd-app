@@ -368,8 +368,8 @@ export interface CharacterSummary {
 export type CombatSSEEvent =
   | { type: "round_start"; round: number }
   | { type: "player_turn"; playerId: string; narrative: string }
-  | { type: "npc_turn"; npcId: string; narrative: string }
-  | { type: "round_end"; round: number }
+  | { type: "npc_turn"; npcId: string; narrative: string; targetId: string; hit: boolean; damage: number }
+  | { type: "round_end"; round: number; tokensUsed: number; costUsd: number }
   | { type: "state_update"; gameState: GameState; encounter: StoredEncounter }
   | { type: "player_dead"; playerId: string; narrative: string }
   | { type: "combat_end" }

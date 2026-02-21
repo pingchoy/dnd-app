@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from "react";
 import type { NPC, PlayerState, GridPosition, Ability } from "../lib/gameTypes";
 import { toDisplayCase } from "../lib/gameTypes";
 import {
@@ -31,6 +31,19 @@ interface Props {
   abilityBarDisabled?: boolean;
   /** Called on right-click to cancel pending actions (targeting, spell panel, etc.). */
   onCancel?: () => void;
+  /** Optional element rendered below the combat map header (e.g. TurnOrderBar). */
+  headerExtra?: React.ReactNode;
+}
+
+export interface CombatGridHandle {
+  showCombatResult: (tokenId: string, hit: boolean, damage: number) => void;
+}
+
+interface FloatingCombatLabel {
+  tokenId: string;  // "player" or NPC id
+  hit: boolean;
+  damage: number;   // 0 for misses
+  startTime: number; // performance.now() when created
 }
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -203,7 +216,7 @@ function getDragTokenInfo(s: DrawState): {
  * Reset: double-click or ⟲ button.
  * Token drag: left-click on any token.
  */
-export default function CombatGrid({
+const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   player,
   activeNPCs,
   positions,
@@ -216,10 +229,20 @@ export default function CombatGrid({
   onSelectAbility,
   abilityBarDisabled = false,
   onCancel,
-}: Props) {
+  headerExtra,
+}, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef(0);
+  const floatingLabelsRef = useRef<FloatingCombatLabel[]>([]);
+
+  useImperativeHandle(ref, () => ({
+    showCombatResult(tokenId: string, hit: boolean, damage: number) {
+      // Replace any existing label for the same token
+      floatingLabelsRef.current = floatingLabelsRef.current.filter(l => l.tokenId !== tokenId);
+      floatingLabelsRef.current.push({ tokenId, hit, damage, startTime: performance.now() });
+    },
+  }));
 
   // View transform (user-controlled offset is relative to centered position)
   const [scale, setScale] = useState(1);
@@ -546,6 +569,71 @@ export default function CombatGrid({
         }
       }
 
+      // 6) Floating combat labels (HIT/MISS + damage)
+      const labels = floatingLabelsRef.current;
+      for (let li = labels.length - 1; li >= 0; li--) {
+        const label = labels[li];
+        const elapsed = now - label.startTime;
+        const totalDuration = label.hit ? 2500 : 1000;
+
+        // Cleanup expired labels
+        if (elapsed > totalDuration) {
+          labels.splice(li, 1);
+          continue;
+        }
+
+        // Find token position
+        const tokenPos = s.positions.get(label.tokenId);
+        if (!tokenPos) continue;
+        const tcx = tokenPos.col * s.cellStep + s.cellSize / 2;
+        const tcy = tokenPos.row * s.cellStep + s.cellSize / 2 - s.cellSize * 0.6;
+
+        const labelFontSize = Math.max(10, s.cellSize * 0.35);
+        ctx!.save();
+        ctx!.font = `bold ${labelFontSize}px Cinzel, Georgia, serif`;
+        ctx!.textAlign = "center";
+        ctx!.textBaseline = "middle";
+
+        // Phase 1: HIT or MISS (0–1000ms)
+        if (elapsed < 1000) {
+          let opacity: number;
+          if (elapsed < 150) {
+            opacity = elapsed / 150;
+          } else if (elapsed < 800) {
+            opacity = 1;
+          } else {
+            opacity = 1 - (elapsed - 800) / 200;
+          }
+          const text = label.hit ? "HIT" : "MISS";
+          const color = label.hit ? "#4ade80" : "#f87171";
+          ctx!.shadowColor = "rgba(0, 0, 0, 0.8)";
+          ctx!.shadowBlur = 4;
+          ctx!.globalAlpha = Math.max(0, Math.min(1, opacity));
+          ctx!.fillStyle = color;
+          ctx!.fillText(text, tcx, tcy);
+        }
+
+        // Phase 2: Damage number (1000–2500ms, hit only)
+        if (label.hit && elapsed >= 1000 && elapsed < 2500) {
+          const phase2 = elapsed - 1000;
+          let opacity: number;
+          if (phase2 < 150) {
+            opacity = phase2 / 150;
+          } else if (phase2 < 1200) {
+            opacity = 1;
+          } else {
+            opacity = 1 - (phase2 - 1200) / 300;
+          }
+          ctx!.shadowColor = "rgba(0, 0, 0, 0.8)";
+          ctx!.shadowBlur = 4;
+          ctx!.globalAlpha = Math.max(0, Math.min(1, opacity));
+          ctx!.fillStyle = "#ffffff";
+          ctx!.fillText(`-${label.damage}`, tcx, tcy);
+        }
+
+        ctx!.restore();
+      }
+
       ctx!.restore();
       rafRef.current = requestAnimationFrame(draw);
     }
@@ -841,6 +929,8 @@ export default function CombatGrid({
         </span>
       </div>
 
+      {headerExtra}
+
       {/* Canvas area — viewport clips zoomed/panned content */}
       <div className="flex-1 min-h-0 relative">
         {/* Zoom controls */}
@@ -977,4 +1067,6 @@ export default function CombatGrid({
       </div>
     </div>
   );
-}
+});
+
+export default CombatGrid;
