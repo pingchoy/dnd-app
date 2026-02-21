@@ -69,16 +69,6 @@ function parseSlotLevel(source: string, defaultLevel: number): number {
 }
 
 /**
- * Compute the Rage damage bonus by Barbarian level.
- * 5e SRD: +2 (levels 1-8), +3 (levels 9-15), +4 (levels 16+).
- */
-function rageBonusByLevel(level: number): number {
-  if (level >= 16) return 4;
-  if (level >= 9) return 3;
-  return 2;
-}
-
-/**
  * Roll dice for an extra damage source, doubling dice on crit.
  * Returns a DamageBreakdown. For flat-only bonuses (no dice), pass "0d0".
  */
@@ -118,14 +108,16 @@ function rollExtraDice(
 }
 
 /**
- * Resolve extra damage from class features and active effects.
+ * Resolve extra damage from per-attack choices and situational sources.
  *
  * The classifier sends source names like "Sneak Attack", "Divine Smite 2",
- * "Rage", "Hunter's Mark", etc. Each handler verifies the player actually
- * has the feature/condition before rolling damage.
+ * "GWM", etc. Each handler verifies the player actually has the
+ * feature/condition before rolling damage.
+ *
+ * Persistent bonuses (Rage, Dueling, Hunter's Mark, Hex) are handled by
+ * applyEffects() → PlayerState aggregated fields, NOT here.
  *
  * Dice-based sources (Sneak Attack, Divine Smite, etc.) double dice on crit.
- * Flat-bonus sources (Rage, Dueling) are NOT doubled on crit per 5e rules.
  */
 function resolveExtraDamage(
   sources: string[],
@@ -138,17 +130,11 @@ function resolveExtraDamage(
     const sourceLower = source.toLowerCase();
 
     // ── Sneak Attack (Rogue) ──────────────────────────────────────────
-    // ceil(level/2)d6, requires finesse/ranged + advantage or adjacent ally
+    // Dice count read from feature's gameplayEffects.sneakAttackDice
     if (sourceLower.includes("sneak attack")) {
-      if (!findFeature(player, "sneak attack")) continue;
-      const feature = findFeature(player, "sneak attack")!;
-      let diceCount: number;
-      if (feature.scalingFormula) {
-        const m = feature.scalingFormula.match(/^(\d+)d(\d+)$/i);
-        diceCount = m ? parseInt(m[1]) : Math.ceil(player.level / 2);
-      } else {
-        diceCount = Math.ceil(player.level / 2);
-      }
+      const feature = findFeature(player, "sneak attack");
+      if (!feature) continue;
+      const diceCount = feature.gameplayEffects?.sneakAttackDice ?? Math.ceil(player.level / 2);
       results.push(
         rollExtraDice("Sneak Attack", `${diceCount}d6`, 0, "piercing", isCrit),
       );
@@ -180,36 +166,6 @@ function resolveExtraDamage(
       continue;
     }
 
-    // ── Rage Damage (Barbarian) ───────────────────────────────────────
-    // Flat bonus to melee STR weapon attacks: +2/+3/+4 by level.
-    // NOT doubled on crit (flat bonus, not dice).
-    if (sourceLower.includes("rage")) {
-      if (!findFeature(player, "rage")) continue;
-      const bonus = rageBonusByLevel(player.level);
-      results.push(
-        rollExtraDice("Rage", "0d0", bonus, "melee", false),
-      );
-      continue;
-    }
-
-    // ── Hunter's Mark (Ranger/other spell) ────────────────────────────
-    // 1d6 extra damage per hit while concentrating on the spell.
-    if (sourceLower.includes("hunter's mark") || sourceLower.includes("hunters mark")) {
-      results.push(
-        rollExtraDice("Hunter's Mark", "1d6", 0, "weapon", isCrit),
-      );
-      continue;
-    }
-
-    // ── Hex (Warlock spell) ───────────────────────────────────────────
-    // 1d6 necrotic per hit while concentrating on the spell.
-    if (sourceLower.includes("hex")) {
-      results.push(
-        rollExtraDice("Hex", "1d6", 0, "necrotic", isCrit),
-      );
-      continue;
-    }
-
     // ── Colossus Slayer (Hunter Ranger) ───────────────────────────────
     // 1d8 once per turn if target is below its hit point maximum.
     if (sourceLower.includes("colossus slayer")) {
@@ -237,17 +193,6 @@ function resolveExtraDamage(
       if (!findFeature(player, "great weapon master")) continue;
       results.push(
         rollExtraDice("Great Weapon Master", "0d0", 10, "weapon", false),
-      );
-      continue;
-    }
-
-    // ── Dueling (Fighting Style) ──────────────────────────────────────
-    // +2 damage when wielding a one-handed melee weapon in one hand.
-    // NOT doubled on crit (flat bonus).
-    if (sourceLower.includes("dueling")) {
-      if (!findFeature(player, "dueling")) continue;
-      results.push(
-        rollExtraDice("Dueling", "0d0", 2, "weapon", false),
       );
       continue;
     }
@@ -305,13 +250,21 @@ export function resolveAttack(
     player.weaponProficiencies ?? [],
   );
   const profBonus = proficient ? getProficiencyBonus(player.level) : 0;
-  const totalMod = abilityMod + profBonus + weaponBonus;
+
+  // Read aggregated attack bonus from PlayerState (set by applyEffects)
+  // weaponStat "dex" = ranged weapons; "str"/"finesse"/"none" = melee
+  const isMelee = weaponStatType !== "dex";
+  const effectAttackBonus = isMelee
+    ? (player.meleeAttackBonus ?? 0)
+    : (player.rangedAttackBonus ?? 0);
+  const totalMod = abilityMod + profBonus + weaponBonus + effectAttackBonus;
   const total = d20 + totalMod;
 
   // Build components string
   const parts: string[] = [`${abilityLabel} ${formatModifier(abilityMod)}`];
   if (proficient) parts.push(`Prof ${formatModifier(profBonus)}`);
   if (weaponBonus !== 0) parts.push(`Bonus ${formatModifier(weaponBonus)}`);
+  if (effectAttackBonus !== 0) parts.push(`Effects ${formatModifier(effectAttackBonus)}`);
   const components = `${parts.join(", ")} = ${formatModifier(totalMod)}`;
 
   // Determine hit/miss (nat 1 = auto-miss, nat 20 = auto-hit)
@@ -328,7 +281,11 @@ export function resolveAttack(
       diceExpr = doubleDice(diceExpr);
     }
     const weaponRoll = rollDice(diceExpr);
-    const flatBonus = abilityMod + weaponBonus;
+    // Read aggregated damage bonus from PlayerState (set by applyEffects)
+    const effectDamageBonus = isMelee
+      ? (player.meleeDamageBonus ?? 0)
+      : (player.rangedDamageBonus ?? 0);
+    const flatBonus = abilityMod + weaponBonus + effectDamageBonus;
     breakdown.push({
       label: weaponName,
       dice: diceExpr,
@@ -337,6 +294,20 @@ export function resolveAttack(
       subtotal: weaponRoll.total + flatBonus,
       damageType: weaponAbility.damageType ?? "piercing",
     });
+
+    // Aggregated bonus damage from effects (e.g. "1d6", "1d8 radiant")
+    if (player.bonusDamage?.length) {
+      for (const bd of player.bonusDamage) {
+        // Parse "1d6" or "1d8 radiant" — dice expression + optional damage type
+        const match = bd.match(/^(\d+d\d+)(?:\s+(.+))?$/i);
+        if (match) {
+          const damageType = match[2] ?? "weapon";
+          breakdown.push(
+            rollExtraDice("Effect Bonus", match[1], 0, damageType, isNat20),
+          );
+        }
+      }
+    }
 
     // Extra damage sources (Sneak Attack, etc.)
     if (input.extra_damage_sources?.length) {
@@ -405,10 +376,8 @@ export function resolveSkillCheck(
     isProficient &&
     expertiseFeature?.chosenOption?.toLowerCase().includes(skillLower);
 
-  // Check for Jack of All Trades (half proficiency on non-proficient checks)
-  const hasJackOfAllTrades =
-    !isProficient &&
-    player.features.some((f) => f.name.toLowerCase() === "jack of all trades");
+  // Check for half proficiency on non-proficient checks (Jack of All Trades)
+  const hasHalfProficiency = !isProficient && (player.halfProficiency ?? false);
 
   let skillMod = abilityMod;
   const parts: string[] = [
@@ -422,25 +391,37 @@ export function resolveSkillCheck(
   } else if (isProficient) {
     skillMod += profBonus;
     parts.push(`Prof ${formatModifier(profBonus)}`);
-  } else if (hasJackOfAllTrades) {
+  } else if (hasHalfProficiency) {
     const halfProf = Math.floor(profBonus / 2);
     skillMod += halfProf;
-    parts.push(`Jack of All Trades ${formatModifier(halfProf)}`);
+    parts.push(`Half Prof ${formatModifier(halfProf)}`);
   }
 
-  const total = d20 + skillMod;
+  // Apply minimum check roll (Reliable Talent) for proficient checks
+  let effectiveD20 = d20;
+  const minRoll = player.minCheckRoll ?? 0;
+  if (isProficient && minRoll > 0 && d20 < minRoll) {
+    effectiveD20 = minRoll;
+  }
+
+  const total = effectiveD20 + skillMod;
   const components = `${parts.join(", ")} = ${formatModifier(skillMod)}`;
   const success = total >= input.dc;
+
+  const reliableUsed = effectiveD20 > d20;
+  const notes = reliableUsed
+    ? `${success ? "Check succeeds" : "Check fails"} (Reliable Talent: d20 ${d20} → ${effectiveD20})`
+    : success ? "Check succeeds" : "Check fails";
 
   return {
     checkType: `${input.skill.charAt(0).toUpperCase() + input.skill.slice(1)} Check`,
     components,
-    dieResult: d20,
+    dieResult: effectiveD20,
     totalModifier: formatModifier(skillMod),
     total,
     dcOrAc: `${input.dc}`,
     success,
-    notes: success ? "Check succeeds" : "Check fails",
+    notes,
   };
 }
 
@@ -453,9 +434,11 @@ export function resolveSavingThrow(
     player.stats[abilityLower as keyof CharacterStats] as number,
   );
   const profBonus = getProficiencyBonus(player.level);
+  // Check base proficiency and bonus proficiencies from effects (e.g. Diamond Soul)
+  const bonusSaves = player.bonusSaveProficiencies ?? [];
   const isProficient = player.savingThrowProficiencies.some(
     (s) => s.toLowerCase() === abilityLower,
-  );
+  ) || bonusSaves.includes("all") || bonusSaves.includes(abilityLower);
 
   let saveMod = abilityMod;
   const parts: string[] = [

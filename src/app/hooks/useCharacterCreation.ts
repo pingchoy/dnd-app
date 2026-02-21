@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
-import { getModifier, xpForLevel, FEATURE_CHOICE_OPTIONS } from "../lib/gameTypes";
+import { getModifier, xpForLevel, FEATURE_CHOICE_OPTIONS, FIGHTING_STYLE_EFFECTS } from "../lib/gameTypes";
 import type { CharacterStats, CharacterFeature, StoryState, Ability, SpellAttackType, SpellScalingEntry, WeaponRange } from "../lib/gameTypes";
 
 import { parseSpellRange } from "../lib/combatEnforcement";
@@ -536,15 +536,24 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           level: 0, // 0 = racial, not from a class level
           source: selectedRace.name,
         })),
-        ...(levelData?.features ?? []).map((f: { name: string; description: string; type?: string; gameplayEffects?: Record<string, unknown> }) => ({
-          name: f.name,
-          description: f.description,
-          level: 1,
-          source: selectedClass.name,
-          ...(f.type ? { type: f.type as "active" | "passive" | "reaction" } : {}),
-          ...(f.gameplayEffects ? { gameplayEffects: f.gameplayEffects } : {}),
-          ...(state.featureChoices[f.name] ? { chosenOption: state.featureChoices[f.name] } : {}),
-        })),
+        ...(levelData?.features ?? []).map((f: { name: string; description: string; type?: string; gameplayEffects?: Record<string, unknown> }) => {
+          const chosenOption = state.featureChoices[f.name];
+          // For fighting style, look up the chosen style's gameplay effects
+          let effects: Record<string, unknown> | undefined = f.gameplayEffects;
+          if (f.name.toLowerCase() === "fighting style" && chosenOption) {
+            const styleEffects = FIGHTING_STYLE_EFFECTS[chosenOption.toLowerCase()];
+            if (styleEffects) effects = styleEffects as unknown as Record<string, unknown>;
+          }
+          return {
+            name: f.name,
+            description: f.description,
+            level: 1,
+            source: selectedClass.name,
+            ...(f.type ? { type: f.type as "active" | "passive" | "reaction" } : {}),
+            ...(effects ? { gameplayEffects: effects } : {}),
+            ...(chosenOption ? { chosenOption } : {}),
+          };
+        }),
         ...(state.selectedArchetype ? [{
           name: state.selectedArchetype.name,
           description: state.selectedArchetype.description,
@@ -673,6 +682,9 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
 
       const abilities = [...weaponAbilities, ...cantripAbilities, ...spellAbilities, ...racialAbilities, ...universalAbilities];
 
+      // Race speed, defaulting to 30
+      const raceSpeed = selectedRace.speed ?? 30;
+
       const player = {
         name: characterName.trim(),
         gender: state.selectedGender,
@@ -685,6 +697,10 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         currentHP: maxHP,
         maxHP,
         armorClass,
+        baseArmorClass: armorClass,
+        speed: raceSpeed,
+        baseSpeed: raceSpeed,
+        activeConditions: [] as string[],
         stats: finalStats,
         savingThrowProficiencies,
         skillProficiencies,
