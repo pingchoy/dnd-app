@@ -5,7 +5,7 @@ import {
   formatModifier,
   getModifier,
   getProficiencyBonus,
-  formatWeaponDamage,
+  formatAbilityDamage,
   toDisplayCase,
 } from "../lib/gameTypes";
 
@@ -221,9 +221,9 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
           ) : (
             <ul className="space-y-1">
               {player.inventory.map((item, i) => {
-                const weaponStat = player.weaponDamage[item];
-                const damage = weaponStat
-                  ? formatWeaponDamage(weaponStat, player.stats)
+                const weaponAbility = player.abilities?.find(a => a.type === "weapon" && a.name === item);
+                const damage = weaponAbility
+                  ? formatAbilityDamage(weaponAbility, player.stats)
                   : null;
                 return (
                   <li

@@ -82,15 +82,7 @@ function ClassDetailModal({ cls, onClose }: ClassDetailModalProps) {
                   Hit Die{" "}
                   <strong className="text-parchment/90">d{cls.hitDie}</strong>
                 </span>
-                {cls.primaryAbility && (
-                  <span>
-                    Primary{" "}
-                    <strong className="text-parchment/90">
-                      {toDisplayCase(cls.primaryAbility)}
-                    </strong>
-                  </span>
-                )}
-                <span>
+<span>
                   Spellcasting{" "}
                   <strong className="text-parchment/90">{spellLabel}</strong>
                 </span>

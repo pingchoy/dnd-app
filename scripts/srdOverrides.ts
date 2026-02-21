@@ -8,7 +8,7 @@
  * from the v2 API — this file provides only the structured mechanical values.
  */
 
-import type { Ability } from "../src/app/lib/gameTypes";
+import type { Ability, GameplayEffects } from "../src/app/lib/gameTypes";
 
 // ─── Race Overrides ──────────────────────────────────────────────────────────
 
@@ -380,5 +380,483 @@ export const CLASS_LEVEL_OVERRIDES: Record<string, ClassSpellProgression> = {
   wizard: {
     cantripsKnown:             [ 3,  3,  3,  4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5],
     slots: FULL_CASTER_SLOTS,
+  },
+};
+
+// ─── Per-Level Class Feature Overrides ──────────────────────────────────────
+//
+// Each feature is listed at every level where its mechanical effects change.
+// Each entry has the COMPLETE current state of the feature (not incremental).
+// Features with no gameplayEffects are still listed for type classification.
+
+export interface ClassFeatureDef {
+  name: string;
+  type: "active" | "passive" | "reaction";
+  gameplayEffects?: GameplayEffects;
+}
+
+export interface ClassFeaturesOverride {
+  asiLevels: number[];
+  levels: Record<number, ClassFeatureDef[]>;
+}
+
+export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
+  // ── Barbarian ───────────────────────────────────────────────────────────────
+  barbarian: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 2, restType: "long" } },
+        { name: "unarmored defense", type: "passive", gameplayEffects: { acFormula: "10 + dex + con" } },
+      ],
+      2: [
+        { name: "reckless attack", type: "active" },
+        { name: "danger sense", type: "passive", gameplayEffects: { saveAdvantage: "dexterity" } },
+      ],
+      3: [
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 3, restType: "long" } },
+      ],
+      5: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
+        { name: "fast movement", type: "passive", gameplayEffects: { speedBonus: 10 } },
+      ],
+      6: [
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
+      ],
+      7: [
+        { name: "feral instinct", type: "passive", gameplayEffects: { initiativeAdvantage: true } },
+      ],
+      9: [
+        { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 1 } },
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
+      ],
+      11: [
+        { name: "relentless rage", type: "passive" },
+      ],
+      12: [
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
+      ],
+      13: [
+        { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 2 } },
+      ],
+      15: [
+        { name: "persistent rage", type: "passive" },
+      ],
+      16: [
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
+      ],
+      17: [
+        { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 3 } },
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 6, restType: "long" } },
+      ],
+      18: [
+        { name: "indomitable might", type: "passive" },
+      ],
+      20: [
+        { name: "primal champion", type: "passive", gameplayEffects: { statBonuses: { strength: 4, constitution: 4 } } },
+        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], restType: "long" } },
+      ],
+    },
+  },
+
+  // ── Bard ─────────────────────────────────────────────────────────────────────
+  bard: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "spellcasting", type: "passive" },
+        { name: "bardic inspiration", type: "active", gameplayEffects: { dieType: "d6", restType: "long" } },
+      ],
+      2: [
+        { name: "jack of all trades", type: "passive", gameplayEffects: { halfProficiency: true } },
+        { name: "song of rest", type: "active", gameplayEffects: { dieType: "d6" } },
+      ],
+      3: [
+        { name: "expertise", type: "passive", gameplayEffects: { expertiseSlots: 2 } },
+      ],
+      5: [
+        { name: "bardic inspiration", type: "active", gameplayEffects: { dieType: "d8", restType: "short" } },
+        { name: "font of inspiration", type: "passive" },
+      ],
+      6: [
+        { name: "countercharm", type: "active" },
+      ],
+      9: [
+        { name: "song of rest", type: "active", gameplayEffects: { dieType: "d8" } },
+      ],
+      10: [
+        { name: "bardic inspiration", type: "active", gameplayEffects: { dieType: "d10", restType: "short" } },
+        { name: "expertise", type: "passive", gameplayEffects: { expertiseSlots: 2 } },
+        { name: "magical secrets", type: "passive" },
+      ],
+      13: [
+        { name: "song of rest", type: "active", gameplayEffects: { dieType: "d10" } },
+      ],
+      14: [
+        { name: "magical secrets", type: "passive" },
+      ],
+      15: [
+        { name: "bardic inspiration", type: "active", gameplayEffects: { dieType: "d12", restType: "short" } },
+      ],
+      17: [
+        { name: "song of rest", type: "active", gameplayEffects: { dieType: "d12" } },
+      ],
+      18: [
+        { name: "magical secrets", type: "passive" },
+      ],
+      20: [
+        { name: "superior inspiration", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Cleric ───────────────────────────────────────────────────────────────────
+  cleric: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "spellcasting", type: "passive" },
+      ],
+      2: [
+        { name: "channel divinity", type: "active", gameplayEffects: { usesPerRest: 1, restType: "short" } },
+        { name: "turn undead", type: "active" },
+      ],
+      5: [
+        { name: "destroy undead", type: "passive" },
+      ],
+      6: [
+        { name: "channel divinity", type: "active", gameplayEffects: { usesPerRest: 2, restType: "short" } },
+      ],
+      10: [
+        { name: "divine intervention", type: "active" },
+      ],
+      18: [
+        { name: "channel divinity", type: "active", gameplayEffects: { usesPerRest: 3, restType: "short" } },
+      ],
+    },
+  },
+
+  // ── Druid ────────────────────────────────────────────────────────────────────
+  druid: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "druidic", type: "passive" },
+        { name: "spellcasting", type: "passive" },
+      ],
+      2: [
+        { name: "wild shape", type: "active", gameplayEffects: { usesPerRest: 2, restType: "short" } },
+      ],
+      18: [
+        { name: "timeless body", type: "passive" },
+        { name: "beast spells", type: "passive" },
+      ],
+      20: [
+        { name: "archdruid", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Fighter ──────────────────────────────────────────────────────────────────
+  fighter: {
+    asiLevels: [4, 6, 8, 12, 14, 16, 19],
+    levels: {
+      1: [
+        { name: "fighting style", type: "passive" },
+        { name: "second wind", type: "active", gameplayEffects: { usesPerRest: 1, restType: "short" } },
+      ],
+      2: [
+        { name: "action surge", type: "active", gameplayEffects: { usesPerRest: 1, restType: "short" } },
+      ],
+      5: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
+      ],
+      9: [
+        { name: "indomitable", type: "passive", gameplayEffects: { usesPerRest: 1, restType: "long" } },
+      ],
+      11: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 3 } },
+      ],
+      13: [
+        { name: "indomitable", type: "passive", gameplayEffects: { usesPerRest: 2, restType: "long" } },
+      ],
+      17: [
+        { name: "action surge", type: "active", gameplayEffects: { usesPerRest: 2, restType: "short" } },
+        { name: "indomitable", type: "passive", gameplayEffects: { usesPerRest: 3, restType: "long" } },
+      ],
+      20: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 4 } },
+      ],
+    },
+  },
+
+  // ── Monk ─────────────────────────────────────────────────────────────────────
+  monk: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "unarmored defense", type: "passive", gameplayEffects: { acFormula: "10 + dex + wis" } },
+        { name: "martial arts", type: "passive", gameplayEffects: { dieType: "d4" } },
+      ],
+      2: [
+        { name: "ki", type: "active", gameplayEffects: { resourcePool: { name: "ki", perLevel: 1 } } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 10 } },
+      ],
+      3: [
+        { name: "deflect missiles", type: "reaction" },
+      ],
+      4: [
+        { name: "slow fall", type: "reaction" },
+      ],
+      5: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
+        { name: "stunning strike", type: "active" },
+        { name: "martial arts", type: "passive", gameplayEffects: { dieType: "d6" } },
+      ],
+      6: [
+        { name: "ki-empowered strikes", type: "passive" },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 15 } },
+      ],
+      7: [
+        { name: "evasion", type: "passive", gameplayEffects: { evasion: true } },
+        { name: "stillness of mind", type: "active" },
+      ],
+      9: [
+        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 20 } },
+      ],
+      10: [
+        { name: "purity of body", type: "passive", gameplayEffects: { immunities: ["disease", "poison"] } },
+      ],
+      11: [
+        { name: "martial arts", type: "passive", gameplayEffects: { dieType: "d8" } },
+      ],
+      13: [
+        { name: "tongue of the sun and moon", type: "passive" },
+      ],
+      14: [
+        { name: "diamond soul", type: "passive", gameplayEffects: { saveProficiencies: ["all"] } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 25 } },
+      ],
+      15: [
+        { name: "timeless body", type: "passive" },
+      ],
+      17: [
+        { name: "martial arts", type: "passive", gameplayEffects: { dieType: "d10" } },
+      ],
+      18: [
+        { name: "empty body", type: "active" },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 30 } },
+      ],
+      20: [
+        { name: "perfect self", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Paladin ──────────────────────────────────────────────────────────────────
+  paladin: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "divine sense", type: "active" },
+        { name: "lay on hands", type: "active", gameplayEffects: { healPoolPerLevel: 5 } },
+      ],
+      2: [
+        { name: "fighting style", type: "passive" },
+        { name: "spellcasting", type: "passive" },
+        { name: "divine smite", type: "active" },
+      ],
+      3: [
+        { name: "divine health", type: "passive", gameplayEffects: { immunities: ["disease"] } },
+      ],
+      5: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
+      ],
+      6: [
+        { name: "aura of protection", type: "passive" },
+      ],
+      10: [
+        { name: "aura of courage", type: "passive" },
+      ],
+      11: [
+        { name: "improved divine smite", type: "passive", gameplayEffects: { bonusDamage: "1d8 radiant" } },
+      ],
+      14: [
+        { name: "cleansing touch", type: "active" },
+      ],
+    },
+  },
+
+  // ── Ranger ───────────────────────────────────────────────────────────────────
+  ranger: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "favored enemy", type: "passive" },
+        { name: "natural explorer", type: "passive" },
+      ],
+      2: [
+        { name: "fighting style", type: "passive" },
+        { name: "spellcasting", type: "passive" },
+      ],
+      3: [
+        { name: "primeval awareness", type: "active" },
+      ],
+      5: [
+        { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
+      ],
+      6: [
+        { name: "favored enemy", type: "passive" },
+        { name: "natural explorer", type: "passive" },
+      ],
+      8: [
+        { name: "land's stride", type: "passive" },
+      ],
+      10: [
+        { name: "hide in plain sight", type: "active" },
+        { name: "natural explorer", type: "passive" },
+      ],
+      14: [
+        { name: "vanish", type: "passive" },
+        { name: "favored enemy", type: "passive" },
+      ],
+      18: [
+        { name: "feral senses", type: "passive" },
+      ],
+      20: [
+        { name: "foe slayer", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Rogue ────────────────────────────────────────────────────────────────────
+  rogue: {
+    asiLevels: [4, 8, 10, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "expertise", type: "passive", gameplayEffects: { expertiseSlots: 2 } },
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 1 } },
+        { name: "thieves' cant", type: "passive" },
+      ],
+      2: [
+        { name: "cunning action", type: "active" },
+      ],
+      3: [
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 2 } },
+      ],
+      5: [
+        { name: "uncanny dodge", type: "reaction" },
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 3 } },
+      ],
+      6: [
+        { name: "expertise", type: "passive", gameplayEffects: { expertiseSlots: 2 } },
+      ],
+      7: [
+        { name: "evasion", type: "passive", gameplayEffects: { evasion: true } },
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 4 } },
+      ],
+      9: [
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 5 } },
+      ],
+      11: [
+        { name: "reliable talent", type: "passive", gameplayEffects: { minCheckRoll: 10 } },
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 6 } },
+      ],
+      13: [
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 7 } },
+      ],
+      14: [
+        { name: "blindsense", type: "passive" },
+      ],
+      15: [
+        { name: "slippery mind", type: "passive", gameplayEffects: { saveProficiencies: ["wisdom"] } },
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 8 } },
+      ],
+      17: [
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 9 } },
+      ],
+      18: [
+        { name: "elusive", type: "passive" },
+      ],
+      19: [
+        { name: "sneak attack", type: "passive", gameplayEffects: { sneakAttackDice: 10 } },
+      ],
+      20: [
+        { name: "stroke of luck", type: "active", gameplayEffects: { usesPerRest: 1, restType: "short" } },
+      ],
+    },
+  },
+
+  // ── Sorcerer ─────────────────────────────────────────────────────────────────
+  sorcerer: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "spellcasting", type: "passive" },
+      ],
+      2: [
+        { name: "font of magic", type: "active", gameplayEffects: { resourcePool: { name: "sorcery points", perLevel: 1 } } },
+      ],
+      3: [
+        { name: "metamagic", type: "active" },
+      ],
+      10: [
+        { name: "metamagic", type: "active" },
+      ],
+      17: [
+        { name: "metamagic", type: "active" },
+      ],
+      20: [
+        { name: "sorcerous restoration", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Warlock ──────────────────────────────────────────────────────────────────
+  warlock: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "pact magic", type: "passive" },
+      ],
+      2: [
+        { name: "eldritch invocations", type: "passive" },
+      ],
+      3: [
+        { name: "pact boon", type: "passive" },
+      ],
+      11: [
+        { name: "mystic arcanum", type: "passive" },
+      ],
+      13: [
+        { name: "mystic arcanum", type: "passive" },
+      ],
+      15: [
+        { name: "mystic arcanum", type: "passive" },
+      ],
+      17: [
+        { name: "mystic arcanum", type: "passive" },
+      ],
+      20: [
+        { name: "eldritch master", type: "active", gameplayEffects: { usesPerRest: 1, restType: "long" } },
+      ],
+    },
+  },
+
+  // ── Wizard ───────────────────────────────────────────────────────────────────
+  wizard: {
+    asiLevels: [4, 8, 12, 16, 19],
+    levels: {
+      1: [
+        { name: "spellcasting", type: "passive" },
+        { name: "arcane recovery", type: "active", gameplayEffects: { usesPerRest: 1, restType: "long" } },
+      ],
+      18: [
+        { name: "spell mastery", type: "passive" },
+      ],
+      20: [
+        { name: "signature spells", type: "passive" },
+      ],
+    },
   },
 };

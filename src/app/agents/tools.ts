@@ -68,13 +68,17 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         description:
           "XP awarded for quest completion, clever roleplay, or milestone moments. Do NOT include monster kill XP — that is handled automatically.",
       },
-      weapon_damage: {
-        type: "object",
+      weapons_gained: {
+        type: "array",
         description:
-          "For each weapon in items_gained, provide its damage breakdown keyed by the exact item name.",
-        additionalProperties: {
+          "Weapons gained. Creates a combat-ready weapon ability.",
+        items: {
           type: "object",
           properties: {
+            name: {
+              type: "string",
+              description: "Weapon name, e.g. 'Longsword +1'.",
+            },
             dice: {
               type: "string",
               description: "Damage dice, e.g. '1d8', '2d6'.",
@@ -90,8 +94,12 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
               description:
                 "Flat bonus beyond the ability modifier, e.g. 1 for a +1 magic weapon.",
             },
+            damageType: {
+              type: "string",
+              description: "Damage type, e.g. 'slashing', 'piercing'.",
+            },
           },
-          required: ["dice", "stat", "bonus"],
+          required: ["name", "dice", "stat", "bonus"],
         },
       },
       feature_choice_updates: {
@@ -158,7 +166,7 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
 
 /**
  * Slimmed-down version of UPDATE_GAME_STATE_TOOL for combat.
- * Omits fields irrelevant during combat (location, scene, weapon_damage,
+ * Omits fields irrelevant during combat (location, scene, weapons_gained,
  * feature_choice_updates, spells_learned/removed, cantrips_learned, xp_gained).
  * Saves ~400 input tokens per API call.
  */

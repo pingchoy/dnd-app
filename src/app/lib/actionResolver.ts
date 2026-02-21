@@ -270,14 +270,17 @@ export function resolveAttack(
   player: PlayerState,
   activeNPCs: NPC[],
 ): ParsedRollResult {
-  // Find weapon in player's weaponDamage
-  const weaponEntry = Object.entries(player.weaponDamage).find(([name]) =>
-    fuzzyMatch(name, input.weapon),
-  );
-  if (!weaponEntry) {
+  // Find weapon in player's abilities
+  const weaponAbility = (player.abilities ?? [])
+    .filter(a => a.type === "weapon")
+    .find(a => fuzzyMatch(a.name, input.weapon));
+  if (!weaponAbility || !weaponAbility.damageRoll) {
     return markImpossible(`Weapon "${input.weapon}" not found in inventory`);
   }
-  const [weaponName, weaponStat] = weaponEntry;
+
+  const weaponName = weaponAbility.name;
+  const weaponStatType = weaponAbility.weaponStat ?? "str";
+  const weaponBonus = weaponAbility.weaponBonus ?? 0;
 
   // Find target NPC
   const target = activeNPCs.find((npc) => fuzzyMatch(npc.name, input.target));
@@ -294,7 +297,7 @@ export function resolveAttack(
 
   // Compute attack modifier
   const { mod: abilityMod, label: abilityLabel } = getWeaponAbilityMod(
-    weaponStat.stat,
+    weaponStatType,
     player.stats,
   );
   const proficient = isWeaponProficient(
@@ -302,7 +305,6 @@ export function resolveAttack(
     player.weaponProficiencies ?? [],
   );
   const profBonus = proficient ? getProficiencyBonus(player.level) : 0;
-  const weaponBonus = weaponStat.bonus;
   const totalMod = abilityMod + profBonus + weaponBonus;
   const total = d20 + totalMod;
 
@@ -321,7 +323,7 @@ export function resolveAttack(
     const breakdown: DamageBreakdown[] = [];
 
     // Weapon damage (crit doubles dice count, not flat bonus)
-    let diceExpr = weaponStat.dice;
+    let diceExpr = weaponAbility.damageRoll;
     if (isNat20) {
       diceExpr = doubleDice(diceExpr);
     }
@@ -333,7 +335,7 @@ export function resolveAttack(
       rolls: weaponRoll.rolls,
       flatBonus,
       subtotal: weaponRoll.total + flatBonus,
-      damageType: "piercing", // default; could be enriched with weapon type data
+      damageType: weaponAbility.damageType ?? "piercing",
     });
 
     // Extra damage sources (Sneak Attack, etc.)

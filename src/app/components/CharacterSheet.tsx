@@ -3,7 +3,7 @@
 import { useState } from "react";
 import MarkdownProse from "./MarkdownProse";
 import SpellTag from "./SpellTag";
-import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatWeaponDamage, toDisplayCase } from "../lib/gameTypes";
+import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatAbilityDamage, toDisplayCase } from "../lib/gameTypes";
 
 
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
@@ -253,8 +253,8 @@ export default function CharacterSheet({ player }: Props) {
             ) : (
               <ul className="space-y-1.5">
                 {player.inventory.map((item, i) => {
-                  const weaponStat = player.weaponDamage[item];
-                  const damage = weaponStat ? formatWeaponDamage(weaponStat, player.stats) : null;
+                  const weaponAbility = player.abilities?.find(a => a.type === "weapon" && a.name === item);
+                  const damage = weaponAbility ? formatAbilityDamage(weaponAbility, player.stats) : null;
                   return (
                     <li key={i} className="font-crimson text-sm text-ink/90 flex items-center gap-1.5">
                       <span className="text-gold-dark flex-shrink-0">◆</span>

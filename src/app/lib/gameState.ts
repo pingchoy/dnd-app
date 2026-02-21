@@ -28,7 +28,7 @@ import {
 export type {
   CharacterStats,
   CharacterFeature,
-  WeaponStat,
+  GameplayEffects,
   PlayerState,
   NPC,
   StoryState,
@@ -46,7 +46,7 @@ export {
   formatModifier,
   getModifier,
   getProficiencyBonus,
-  formatWeaponDamage,
+  formatAbilityDamage,
   toDisplayCase,
   XP_THRESHOLDS,
   xpForLevel,
@@ -62,15 +62,16 @@ import {
   PlayerState,
   StoryState,
   GameState,
-  WeaponStat,
   StoredEncounter,
   PendingLevelUp,
   PendingLevelData,
+  Ability,
+  WeaponRange,
   FEATURE_CHOICE_OPTIONS,
   formatModifier,
   getModifier,
   getProficiencyBonus,
-  formatWeaponDamage,
+  formatAbilityDamage,
   xpForLevel,
   XP_THRESHOLDS,
 } from "./gameTypes";
@@ -103,9 +104,9 @@ function buildStatLines(p: PlayerState, compact: boolean): string[] {
   }
 
   lines.push(
-    ...Object.entries(p.weaponDamage).map(
-      ([name, ws]) => `Weapon: ${name} — ${formatWeaponDamage(ws, p.stats)} (${ws.dice} base, stat: ${ws.stat}, bonus: ${ws.bonus})`,
-    ),
+    ...(p.abilities ?? [])
+      .filter(a => a.type === "weapon")
+      .map(a => `Weapon: ${a.name} — ${formatAbilityDamage(a, p.stats)} (${a.damageRoll} base, stat: ${a.weaponStat ?? "str"}, bonus: ${a.weaponBonus ?? 0})`),
   );
   lines.push(`Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`);
 
@@ -222,7 +223,6 @@ let state: GameState = {
     inventory: [],
     conditions: [],
     gold: 0,
-    weaponDamage: {},
   },
   story: {
     campaignTitle: "",
@@ -302,7 +302,14 @@ export interface StateChanges {
   notable_event?: string;
   gold_delta?: number;
   xp_gained?: number;
-  weapon_damage?: Record<string, WeaponStat>;
+  weapons_gained?: Array<{
+    name: string;
+    dice: string;
+    stat: "str" | "dex" | "finesse" | "none";
+    bonus: number;
+    range?: WeaponRange;
+    damageType?: string;
+  }>;
   /** Update chosenOption on existing class features, keyed by feature name. */
   feature_choice_updates?: Record<string, string>;
   /** Set spell slot usage. Keys are spell level strings, values are the NEW total used count. */
@@ -394,13 +401,32 @@ export function applyStateChanges(changes: StateChanges): void {
       if (!p.cantrips.includes(cantrip)) p.cantrips.push(cantrip);
     }
   }
-  if (changes.weapon_damage) Object.assign(p.weaponDamage, changes.weapon_damage);
-  // Remove weaponDamage entries for items that were lost
+  if (changes.weapons_gained?.length) {
+    if (!p.abilities) p.abilities = [];
+    for (const w of changes.weapons_gained) {
+      p.abilities.push({
+        id: `weapon:${w.name}`,
+        name: w.name,
+        type: "weapon",
+        weaponStat: w.stat,
+        weaponBonus: w.bonus,
+        damageRoll: w.dice,
+        damageType: w.damageType,
+        weaponRange: w.range,
+        requiresTarget: true,
+      });
+    }
+  }
+  // Remove weapon abilities for items that were lost
   if (changes.items_lost?.length) {
-    for (const lost of changes.items_lost) {
-      for (const key of Object.keys(p.weaponDamage)) {
-        if (key.toLowerCase().includes(lost.toLowerCase())) delete p.weaponDamage[key];
-      }
+    if (p.abilities) {
+      p.abilities = p.abilities.filter(a => {
+        if (a.type !== "weapon") return true;
+        return !changes.items_lost!.some(lost =>
+          a.name.toLowerCase().includes(lost.toLowerCase()) ||
+          lost.toLowerCase().includes(a.name.toLowerCase()),
+        );
+      });
     }
   }
 }
@@ -525,8 +551,8 @@ function levelForXP(xp: number): number {
   return Math.min(level, 20);
 }
 
-/** ASI levels per D&D 5e rules (shared across all classes). */
-const ASI_LEVELS = [4, 8, 12, 16, 19];
+/** Default ASI levels — overridden by class-specific asiLevels from Firestore. */
+const DEFAULT_ASI_LEVELS = [4, 8, 12, 16, 19];
 
 /**
  * Map of features that require player choices at level-up time.
@@ -563,8 +589,9 @@ async function computePendingLevelUp(
     // HP gain: floor(hitDie/2) + 1 + CON mod
     const hpGain = Math.floor(player.hitDie / 2) + 1 + conMod;
 
-    // Check ASI
-    const isASILevel = ASI_LEVELS.includes(lvl);
+    // Check ASI using class-specific schedule from Firestore
+    const asiLevels = classData?.asiLevels ?? DEFAULT_ASI_LEVELS;
+    const isASILevel = asiLevels.includes(lvl);
 
     // Check subclass required: player has no subclass and this is the archetype level
     const requiresSubclass = !player.subclass && classData?.archetypeLevel === lvl;
@@ -590,6 +617,8 @@ async function computePendingLevelUp(
     const newFeatures = rawFeatures.map((f) => ({
       name: f.name,
       description: f.description ?? "",
+      ...(f.type ? { type: f.type } : {}),
+      ...(f.gameplayEffects ? { gameplayEffects: f.gameplayEffects } : {}),
     }));
 
     // Feature choices from the LEVELUP_CHOICE_FEATURES map
@@ -806,15 +835,23 @@ export async function applyLevelUp(
       state.player.maxHP,
     );
 
-    // Add class features (deduplicate by name)
+    // Add class features or update existing ones (for scaling features like
+    // Brutal Critical 1→2→3, Extra Attack 2→3→4, Sneak Attack dice, etc.)
     for (const feat of levelData.newFeatures) {
       if (feat.name === "Ability Score Improvement") continue;
-      if (!state.player.features.some((f) => f.name === feat.name)) {
+      const existing = state.player.features.find((f) => f.name === feat.name);
+      if (existing) {
+        // Feature re-listed at higher level — update its effects
+        if (feat.gameplayEffects) {
+          existing.gameplayEffects = feat.gameplayEffects;
+        }
+      } else {
         const chosenOption = choice?.featureChoices?.[feat.name];
         state.player.features.push({
           name: feat.name,
           level: lvl,
           ...(chosenOption ? { chosenOption } : {}),
+          ...(feat.gameplayEffects ? { gameplayEffects: feat.gameplayEffects } : {}),
         });
       }
     }

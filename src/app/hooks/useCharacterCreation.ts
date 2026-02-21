@@ -458,7 +458,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         spellsToChoose = levelData.spellsKnown;
       } else if (hasSpellSlots) {
         // Prepared caster (Cleric, Druid, Paladin, Wizard) — ability_mod + level
-        const raw = cls.spellcastingAbility || cls.primaryAbility || "";
+        const raw = cls.spellcastingAbility || "";
         const ability = raw.toLowerCase();
         const abilityKey = (
           ability === "wisdom" || ability === "charisma" || ability === "intelligence"
@@ -536,11 +536,13 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           level: 0, // 0 = racial, not from a class level
           source: selectedRace.name,
         })),
-        ...(levelData?.features ?? []).map((f: { name: string; description: string }) => ({
+        ...(levelData?.features ?? []).map((f: { name: string; description: string; type?: string; gameplayEffects?: Record<string, unknown> }) => ({
           name: f.name,
           description: f.description,
           level: 1,
           source: selectedClass.name,
+          ...(f.type ? { type: f.type as "active" | "passive" | "reaction" } : {}),
+          ...(f.gameplayEffects ? { gameplayEffects: f.gameplayEffects } : {}),
           ...(state.featureChoices[f.name] ? { chosenOption: state.featureChoices[f.name] } : {}),
         })),
         ...(state.selectedArchetype ? [{
@@ -581,15 +583,17 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       ) as keyof import("../lib/gameTypes").CharacterStats | undefined;
 
       // ── Build combat abilities from weapons + cantrips + universal actions ──
-      const weaponDamageMap = (gear?.weaponDamage ?? {}) as Record<string, { dice: string; stat: string; bonus: number; range?: WeaponRange }>;
+      const srdWeapons = (gear?.weapons ?? []) as Array<{ name: string; dice: string; stat: string; bonus: number; range?: WeaponRange }>;
 
-      const weaponAbilities: Ability[] = Object.entries(weaponDamageMap).map(([name, ws]) => ({
-        id: `weapon:${name}`,
-        name,
+      const weaponAbilities: Ability[] = srdWeapons.map(w => ({
+        id: `weapon:${w.name}`,
+        name: w.name,
         type: "weapon" as const,
-        weaponRange: ws.range,
+        weaponRange: w.range,
+        weaponStat: w.stat as "str" | "dex" | "finesse" | "none",
+        weaponBonus: w.bonus,
         requiresTarget: true,
-        damageRoll: ws.dice,
+        damageRoll: w.dice,
       }));
 
       const cantripAbilities: Ability[] = state.selectedCantrips.map(slug => {
@@ -690,7 +694,6 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         inventory: gear?.inventory ?? [],
         conditions: [],
         gold: gear?.gold ?? 0,
-        weaponDamage: gear?.weaponDamage ?? {},
         abilities,
         ...(state.selectedArchetype ? { subclass: state.selectedArchetype.name } : {}),
         // Spellcasting (only for casters)

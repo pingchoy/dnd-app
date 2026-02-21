@@ -190,7 +190,7 @@ function buildClassifierContext(
     `${player.name} | ${player.race} ${player.characterClass} Lv${player.level}`,
     `Features: ${player.features.map((f) => f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name).join(", ")}`,
     `Inventory: ${player.inventory.join(", ")}`,
-    `Weapons: ${Object.keys(player.weaponDamage).join(", ")}`,
+    `Weapons: ${(player.abilities ?? []).filter(a => a.type === "weapon").map(a => a.name).join(", ")}`,
     `Conditions: ${player.conditions.length ? player.conditions.join(", ") : "none"}`,
   ];
 

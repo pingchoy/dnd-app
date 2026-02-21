@@ -20,6 +20,7 @@
 import { adminDb } from "./firebaseAdmin";
 import type {
   Ability,
+  GameplayEffects,
   PlayerState,
   StoryState,
   ConversationTurn,
@@ -35,6 +36,8 @@ export interface SRDFeature {
   name: string;
   description: string;
   level?: number;
+  type?: "active" | "passive" | "reaction";
+  gameplayEffects?: GameplayEffects;
 }
 
 /** Flavour / lore sections from Open5e (age, alignment, languages, etc.) */
@@ -85,7 +88,6 @@ export interface SRDClass {
   skillChoices: number;
   /** Pool of skill options available to this class */
   skillOptions: string[];
-  primaryAbility: string;
   archetypes: SRDArchetype[];
   /** Level at which the player chooses their archetype (1, 2, or 3) */
   archetypeLevel: number;
@@ -97,6 +99,8 @@ export interface SRDClass {
   armorProficiencies: string[];
   /** Class description / flavour text from the SRD. */
   description?: string;
+  /** Class-specific ASI levels (default [4,8,12,16,19]; Fighter/Rogue differ). */
+  asiLevels?: number[];
 }
 
 export interface SRDClassLevel {
@@ -115,7 +119,7 @@ export interface SRDClassLevel {
 export interface SRDStartingEquipment {
   slug: string;
   inventory: string[];
-  weaponDamage: Record<string, { dice: string; stat: string; bonus: number; range?: import("./gameTypes").WeaponRange }>;
+  weapons: Array<{ name: string; dice: string; stat: string; bonus: number; range?: import("./gameTypes").WeaponRange }>;
   gold: number;
 }
 

@@ -67,6 +67,10 @@ export interface Ability {
   usesPerRest?: number;
   /** Short or long rest recharge (informational). */
   restType?: "short" | "long";
+  /** Ability modifier type for weapons (str/dex/finesse/none). */
+  weaponStat?: "str" | "dex" | "finesse" | "none";
+  /** Flat bonus to attack/damage for weapons (e.g. +1 magic weapon). */
+  weaponBonus?: number;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -80,6 +84,74 @@ export interface CharacterStats {
   charisma: number;
 }
 
+export interface GameplayEffects {
+  // ─── Offense ───
+  /** Total attacks per Attack action (Extra Attack: 2/3/4). */
+  numAttacks?: number;
+  /** Flat bonus to attack rolls (Archery style: +2). */
+  attackBonus?: number;
+  /** Flat melee damage bonus (Rage: +2/+3/+4). */
+  meleeDamageBonus?: number;
+  /** Extra weapon dice on crits (Brutal Critical: 1/2/3). */
+  critBonusDice?: number;
+  /** Bonus damage on every hit, e.g. "1d8 radiant" (Improved Divine Smite). */
+  bonusDamage?: string;
+  /** Number of Sneak Attack dice (Rogue: 1–10). */
+  sneakAttackDice?: number;
+
+  // ─── Defense ───
+  /** Flat AC bonus (Defense style: +1). */
+  acBonus?: number;
+  /** Unarmored AC formula ("10 + dex + con" or "10 + dex + wis"). */
+  acFormula?: string;
+  /** Damage resistances while active (Rage). */
+  resistances?: string[];
+  /** Conditions/types immune to (disease, poison). */
+  immunities?: string[];
+  /** DEX save: success=0 damage, fail=half. */
+  evasion?: boolean;
+
+  // ─── Movement ───
+  /** Walking speed bonus in feet (+10, +15, etc). */
+  speedBonus?: number;
+
+  // ─── Saves & Checks ───
+  /** Advantage on saves of this type ("dexterity"). */
+  saveAdvantage?: string;
+  /** Advantage on initiative rolls. */
+  initiativeAdvantage?: boolean;
+  /** Half proficiency on non-proficient checks. */
+  halfProficiency?: boolean;
+  /** Minimum d20 on proficient checks (Reliable Talent: 10). */
+  minCheckRoll?: number;
+  /** Proficiency in additional saves (["wisdom"] or ["all"]). */
+  saveProficiencies?: string[];
+
+  // ─── Resources ───
+  /** Resource pool name + per-level amount (Ki, Sorcery Points). */
+  resourcePool?: { name: string; perLevel: number };
+  /** Healing pool HP per level (Lay on Hands: 5). */
+  healPoolPerLevel?: number;
+
+  // ─── Proficiency ───
+  /** Number of expertise slots gained. */
+  expertiseSlots?: number;
+
+  // ─── Stats ───
+  /** Permanent stat bonuses (Primal Champion: +4 STR/CON). */
+  statBonuses?: Record<string, number>;
+
+  // ─── Usage ───
+  /** Uses per rest period. Omit for stat-dependent or unlimited uses. */
+  usesPerRest?: number;
+  /** Rest type that recharges this feature. */
+  restType?: "short" | "long";
+
+  // ─── Dice ───
+  /** Die type for the feature's scaling effect (Bardic Inspiration: "d6"→"d12"). */
+  dieType?: string;
+}
+
 export interface CharacterFeature {
   name: string;
   description?: string;
@@ -90,14 +162,8 @@ export interface CharacterFeature {
   scalingFormula?: string;
   /** Player's chosen option for features that require a choice (e.g. Favored Enemy). */
   chosenOption?: string;
-}
-
-/** Stored separately from a flat string so modifiers stay live as stats change. */
-export interface WeaponStat {
-  dice: string;
-  stat: "str" | "dex" | "finesse" | "none";
-  bonus: number;
-  range?: WeaponRange;  // parsed from SRD or set by DM
+  /** Typed mechanical effects for this feature. */
+  gameplayEffects?: GameplayEffects;
 }
 
 export interface PlayerState {
@@ -121,7 +187,6 @@ export interface PlayerState {
   inventory: string[];
   conditions: string[];
   gold: number;
-  weaponDamage: Record<string, WeaponStat>;
   subclass?: string;
   // ─── Movement ───
   speed?: number; // walking speed in feet (default 30)
@@ -151,7 +216,7 @@ export interface PendingLevelData {
   level: number;
   hpGain: number;
   proficiencyBonus: number;
-  newFeatures: Array<{ name: string; description: string }>;
+  newFeatures: Array<{ name: string; description: string; type?: "active" | "passive" | "reaction"; gameplayEffects?: GameplayEffects }>;
   newSubclassFeatures: Array<{ name: string; description: string }>;
   spellSlots?: Record<string, number>;
   maxCantrips?: number;
@@ -273,14 +338,16 @@ export function getProficiencyBonus(level: number): number {
   return Math.ceil(level / 4) + 1;
 }
 
-export function formatWeaponDamage(weapon: WeaponStat, stats: CharacterStats): string {
+/** Format weapon damage from an Ability for display (e.g. "1d8+3"). */
+export function formatAbilityDamage(ability: Ability, stats: CharacterStats): string {
+  if (!ability.damageRoll) return "";
   const strMod = getModifier(stats.strength);
   const dexMod = getModifier(stats.dexterity);
-  let mod = weapon.bonus;
-  if (weapon.stat === "str") mod += strMod;
-  else if (weapon.stat === "dex") mod += dexMod;
-  else if (weapon.stat === "finesse") mod += Math.max(strMod, dexMod);
-  return mod === 0 ? weapon.dice : `${weapon.dice}${mod >= 0 ? "+" : ""}${mod}`;
+  let mod = ability.weaponBonus ?? 0;
+  if (ability.weaponStat === "str") mod += strMod;
+  else if (ability.weaponStat === "dex") mod += dexMod;
+  else if (ability.weaponStat === "finesse") mod += Math.max(strMod, dexMod);
+  return mod === 0 ? ability.damageRoll : `${ability.damageRoll}${mod >= 0 ? "+" : ""}${mod}`;
 }
 
 /** XP required to reach each level (index 0 = level 1). */

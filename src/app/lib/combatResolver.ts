@@ -23,7 +23,6 @@ import {
   DamageBreakdown,
   CharacterStats,
   Ability,
-  WeaponStat,
 } from "./gameTypes";
 import { isWeaponProficient } from "./dnd5eData";
 import {
@@ -79,11 +78,15 @@ export interface NPCTurnResult {
  */
 export function resolveWeaponAttack(
   player: PlayerState,
-  weaponName: string,
-  weapon: WeaponStat,
+  ability: Ability,
   target: NPC,
   positions?: Map<string, GridPosition>,
 ): ParsedRollResult {
+  const weaponName = ability.name;
+  const weaponStat = ability.weaponStat ?? "str";
+  const weaponBonus = ability.weaponBonus ?? 0;
+  const diceBase = ability.damageRoll!;
+
   // Compute positional modifiers if positions are available
   let advType: "advantage" | "disadvantage" | "normal" = "normal";
   const advNotes: string[] = [];
@@ -91,7 +94,7 @@ export function resolveWeaponAttack(
     const playerPos = positions.get("player");
     const targetPos = positions.get(target.id);
     if (playerPos && targetPos) {
-      const attackType = weapon.range?.type === "ranged" ? "ranged" : "melee";
+      const attackType = ability.weaponRange?.type === "ranged" ? "ranged" : "melee";
       const mods = getPositionalModifiers(
         playerPos, targetPos, attackType,
         target.conditions, player.conditions,
@@ -108,10 +111,9 @@ export function resolveWeaponAttack(
   const isNat1 = d20 === 1;
   const isNat20 = d20 === 20;
 
-  const { mod: abilityMod, label: abilityLabel } = getWeaponAbilityMod(weapon.stat, player.stats);
+  const { mod: abilityMod, label: abilityLabel } = getWeaponAbilityMod(weaponStat, player.stats);
   const proficient = isWeaponProficient(weaponName, player.weaponProficiencies ?? []);
   const profBonus = proficient ? getProficiencyBonus(player.level) : 0;
-  const weaponBonus = weapon.bonus;
   const totalMod = abilityMod + profBonus + weaponBonus;
   const total = d20 + totalMod;
 
@@ -124,7 +126,7 @@ export function resolveWeaponAttack(
 
   let damage: ParsedRollResult["damage"] = undefined;
   if (hit) {
-    let diceExpr = weapon.dice;
+    let diceExpr = diceBase;
     if (isNat20) {
       diceExpr = doubleDice(diceExpr);
     }
@@ -136,7 +138,7 @@ export function resolveWeaponAttack(
       rolls: weaponRoll.rolls,
       flatBonus,
       subtotal: weaponRoll.total + flatBonus,
-      damageType: "piercing",
+      damageType: ability.damageType ?? "piercing",
     }];
 
     damage = {
@@ -415,9 +417,7 @@ export function resolvePlayerAction(
 
   // Weapon attacks
   if (ability.type === "weapon") {
-    const weaponName = ability.id.replace("weapon:", "");
-    const weapon = player.weaponDamage[weaponName];
-    if (!weapon) {
+    if (!ability.damageRoll) {
       return {
         checkType: "IMPOSSIBLE",
         components: "",
@@ -426,11 +426,11 @@ export function resolvePlayerAction(
         total: 0,
         dcOrAc: "N/A",
         success: false,
-        notes: `Weapon "${weaponName}" not found`,
+        notes: `Weapon "${ability.name}" has no damage data`,
         impossible: true,
       };
     }
-    return resolveWeaponAttack(player, weaponName, weapon, targetNPC, positions);
+    return resolveWeaponAttack(player, ability, targetNPC, positions);
   }
 
   // Cantrip / spell / racial attacks
