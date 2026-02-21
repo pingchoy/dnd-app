@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn } from "../lib/gameTypes";
+import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, CombatAbility } from "../lib/gameTypes";
+import type { NPCTurnResult } from "../lib/combatResolver";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -46,6 +47,10 @@ export interface UseChatReturn {
   confirmRoll: () => Promise<void>;
   /** Apply a debug action result: update game state and append a system message. */
   applyDebugResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
+  /** Execute a deterministic combat action (ability bar click). */
+  executeCombatAction: (ability: CombatAbility, targetId?: string) => Promise<void>;
+  /** NPC turn results from the last combat action (shown in dice UI). */
+  pendingNPCResults: NPCTurnResult[] | null;
 }
 
 export function useChat(): UseChatReturn {
@@ -60,6 +65,7 @@ export function useChat(): UseChatReturn {
   const [isNarrating, setIsNarrating] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
+  const [pendingNPCResults, setPendingNPCResults] = useState<NPCTurnResult[] | null>(null);
 
   // On mount: read characterId from localStorage; redirect to creation if missing.
   useEffect(() => {
@@ -186,7 +192,13 @@ export function useChat(): UseChatReturn {
       { role: "assistant", content: "", rollResult: pr.parsed, timestamp: Date.now() },
     ]);
     setPendingRoll(null);
-    await requestNarrative(pr.playerInput, pr);
+
+    // Route to combat narration if this was a combat action
+    if (pendingNPCResults !== null) {
+      await requestCombatNarration(pr.parsed, pendingNPCResults);
+    } else {
+      await requestNarrative(pr.playerInput, pr);
+    }
   }
 
   /** Calls /api/chat and appends the DM response. */
@@ -249,6 +261,89 @@ export function useChat(): UseChatReturn {
     }
   }
 
+  /**
+   * Execute a deterministic combat action via /api/combat/action.
+   * Parks the result in pendingRoll (reuses existing dice UI).
+   * NPC results are stored separately for the narration call.
+   */
+  async function executeCombatAction(ability: CombatAbility, targetId?: string): Promise<void> {
+    if (!characterId || isRolling || isNarrating || pendingRoll) return;
+
+    setIsRolling(true);
+    try {
+      const res = await fetch("/api/combat/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, abilityId: ability.id, targetId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Combat action failed");
+      }
+
+      const data = await res.json();
+
+      // Update game state and encounter immediately (already persisted server-side)
+      setGameState(data.gameState);
+      setEncounter(data.encounter ?? null);
+
+      // Store NPC results for the narration phase
+      setPendingNPCResults(data.npcResults ?? []);
+
+      // Park the player result as a pending roll (reuses DiceRoll component)
+      if (data.playerResult.noCheck) {
+        // Non-targeted actions (Dodge/Dash/Disengage): skip dice UI, go straight to narration
+        await requestCombatNarration(data.playerResult, data.npcResults ?? []);
+      } else {
+        setPendingRoll({
+          playerInput: `[Combat] ${ability.name}${targetId ? ` on target` : ""}`,
+          roll: data.playerResult.dieResult,
+          parsed: data.playerResult,
+          raw: "",
+          rulesCost: 0,
+        });
+      }
+    } catch (err) {
+      console.error("[useChat] executeCombatAction error:", err);
+      appendError();
+    } finally {
+      setIsRolling(false);
+    }
+  }
+
+  /** Narrate combat results via /api/combat/narrate (Haiku only). */
+  async function requestCombatNarration(
+    playerResult: import("../lib/gameTypes").ParsedRollResult,
+    npcResults: NPCTurnResult[],
+  ): Promise<void> {
+    if (!characterId) return;
+    setIsNarrating(true);
+    try {
+      const res = await fetch("/api/combat/narrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, playerResult, npcResults }),
+      });
+
+      if (!res.ok) throw new Error((await res.json()).error ?? "Narration failed");
+
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.narrative, timestamp: Date.now() },
+      ]);
+      setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
+      setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
+    } catch (err) {
+      console.error("[useChat] requestCombatNarration error:", err);
+      appendError();
+    } finally {
+      setIsNarrating(false);
+      setPendingNPCResults(null);
+    }
+  }
+
   function appendError() {
     setMessages((prev) => [
       ...prev,
@@ -285,5 +380,7 @@ export function useChat(): UseChatReturn {
     sendMessage,
     confirmRoll,
     applyDebugResult,
+    executeCombatAction,
+    pendingNPCResults,
   };
 }

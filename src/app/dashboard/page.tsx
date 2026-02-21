@@ -14,8 +14,8 @@ import CompactChatPanel from "../components/CompactChatPanel";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
-import type { GameState } from "../lib/gameTypes";
-import { feetDistance } from "../lib/combatEnforcement";
+import type { GameState, CombatAbility } from "../lib/gameTypes";
+import { feetDistance, validateAttackRange, checkSpellRange } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
   label: string;
@@ -55,6 +55,8 @@ export default function Dashboard() {
     sendMessage,
     confirmRoll,
     applyDebugResult,
+    executeCombatAction,
+    pendingNPCResults,
   } = useChat();
 
   const [userInput, setUserInput] = useState("");
@@ -62,11 +64,23 @@ export default function Dashboard() {
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const [combatChatOpen, setCombatChatOpen] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
+  const [selectedAbility, setSelectedAbility] = useState<CombatAbility | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pendingRoll, isRolling, isNarrating]);
+
+  // Escape key clears targeting mode
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selectedAbility) {
+        setSelectedAbility(null);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedAbility]);
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = encounter?.activeNPCs ?? [];
@@ -139,6 +153,51 @@ export default function Dashboard() {
   const { player, story } = gameState;
   const pendingLevelUp = player.pendingLevelUp ?? null;
   const isBusy = isRolling || isNarrating || !!pendingRoll;
+
+  /** Handle ability bar click: non-targeted abilities execute immediately, targeted ones enter targeting mode. */
+  const handleSelectAbility = (ability: CombatAbility) => {
+    if (isBusy) return;
+    if (!ability.requiresTarget) {
+      setSelectedAbility(null);
+      executeCombatAction(ability);
+      return;
+    }
+    if (selectedAbility?.id === ability.id) {
+      setSelectedAbility(null);
+    } else {
+      setSelectedAbility(ability);
+    }
+  };
+
+  /** Handle target click on the combat grid during targeting mode. */
+  const handleTargetSelected = (targetId: string) => {
+    if (!selectedAbility || isBusy) return;
+
+    const playerPos = positions.get("player");
+    const npcPos = positions.get(targetId);
+
+    if (playerPos && npcPos) {
+      let rangeCheck;
+      if (selectedAbility.type === "weapon") {
+        rangeCheck = validateAttackRange(playerPos, npcPos, selectedAbility.weaponRange);
+      } else if (selectedAbility.srdRange) {
+        rangeCheck = checkSpellRange(playerPos, npcPos, selectedAbility.srdRange);
+      } else {
+        rangeCheck = validateAttackRange(playerPos, npcPos);
+      }
+
+      if (!rangeCheck.inRange) {
+        setRangeWarning(rangeCheck.reason ?? "Target is out of range");
+        setTimeout(() => setRangeWarning(null), 4000);
+        return;
+      }
+    }
+
+    const ability = selectedAbility;
+    setSelectedAbility(null);
+    setRangeWarning(null);
+    executeCombatAction(ability, targetId);
+  };
 
   function handleLevelUpComplete(newState: GameState) {
     applyDebugResult(
@@ -280,17 +339,24 @@ export default function Dashboard() {
                   positions={positions}
                   onMoveToken={moveToken}
                   gridSize={gridSize}
+                  targetingAbility={selectedAbility}
+                  onTargetSelected={handleTargetSelected}
+                  abilities={player.combatAbilities ?? []}
+                  selectedAbility={selectedAbility}
+                  onSelectAbility={handleSelectAbility}
+                  abilityBarDisabled={isBusy}
                 />
               </OrnateFrame>
 
               {/* Collapsible chat overlay */}
               {combatChatOpen ? (
                 <div
-                  className="absolute bottom-2 left-0 right-0 z-30 flex flex-col"
+                  className="absolute bottom-0 left-0 right-0 z-30 flex flex-col"
                   style={{ maxHeight: "45%" }}
                 >
+                  <OrnateFrame className="overflow-hidden">
                     <div
-                      className="flex flex-col bg-dungeon/95 backdrop-blur-sm border border-gold/30 rounded-lg"
+                      className="flex flex-col bg-dungeon/95 backdrop-blur-sm"
                       style={{ maxHeight: "40vh" }}
                     >
                       {/* Chat header with hide button */}
@@ -327,6 +393,7 @@ export default function Dashboard() {
                         disabled={isBusy}
                       />
                     </div>
+                  </OrnateFrame>
                 </div>
               ) : (
                 <button

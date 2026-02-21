@@ -101,7 +101,7 @@ export function serializePlayerState(p: PlayerState): string {
     lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
 
     if (p.cantrips?.length) {
-      lines.push(`Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.join(", ")}`);
+      lines.push(`Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
     }
     if (p.knownSpells?.length) {
       lines.push(`Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.join(", ")}`);
@@ -177,7 +177,7 @@ export function serializeCombatPlayerState(p: PlayerState): string {
     lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
 
     if (p.cantrips?.length) {
-      lines.push(`Cantrips: ${p.cantrips.join(", ")}`);
+      lines.push(`Cantrips: ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
     }
     if (p.knownSpells?.length) {
       lines.push(`Spells: ${p.knownSpells.join(", ")}`);
@@ -706,7 +706,7 @@ export async function loadGameState(characterId: string): Promise<GameState> {
       encounter = enc;
     } else {
       // Encounter was completed or missing — clear the stale reference
-      state.story.activeEncounterId = undefined;
+      delete state.story.activeEncounterId;
     }
   }
 
@@ -752,7 +752,7 @@ export async function applyStateChangesAndPersist(
     } else {
       // Combat is over — complete the encounter and clear the link
       await completeEncounterDoc(encounter.id);
-      state.story.activeEncounterId = undefined;
+      delete state.story.activeEncounterId;
       encounter = null;
     }
   }

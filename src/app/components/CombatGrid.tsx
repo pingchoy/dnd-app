@@ -1,10 +1,14 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import type { NPC, PlayerState, GridPosition } from "../lib/gameTypes";
+import type { NPC, PlayerState, GridPosition, CombatAbility } from "../lib/gameTypes";
+import { toDisplayCase } from "../lib/gameTypes";
 import {
   cellsInRange,
   validateMovement,
+  validateAttackRange,
+  checkSpellRange,
+  feetDistance,
   DEFAULT_MELEE_REACH,
 } from "../lib/combatEnforcement";
 
@@ -14,6 +18,18 @@ interface Props {
   positions: Map<string, GridPosition>;
   onMoveToken: (id: string, pos: GridPosition) => void;
   gridSize: number;
+  /** When set, grid enters targeting mode: shows range overlay, highlights valid targets. */
+  targetingAbility?: CombatAbility | null;
+  /** Called when a valid target is clicked during targeting mode. */
+  onTargetSelected?: (targetId: string) => void;
+  /** Combat abilities to display in the overlay bar. */
+  abilities?: CombatAbility[];
+  /** Currently selected ability (for highlight state). */
+  selectedAbility?: CombatAbility | null;
+  /** Called when an ability button is clicked. */
+  onSelectAbility?: (ability: CombatAbility) => void;
+  /** Whether the ability bar buttons are disabled (during busy states). */
+  abilityBarDisabled?: boolean;
 }
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -55,6 +71,7 @@ interface DrawState {
   dragPixel: { x: number; y: number } | null;
   dragOrigin: GridPosition | null;
   playerSpeed: number;
+  targetingAbility: CombatAbility | null;
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -67,6 +84,26 @@ function getInitials(name: string): string {
 
 function clampScale(s: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+}
+
+/** Format a compact range tag for an ability button. */
+function abilityRangeTag(ability: CombatAbility): string {
+  if (ability.type === "action") return "Self";
+  if (ability.weaponRange) {
+    const r = ability.weaponRange;
+    if (r.type === "melee") return `${r.reach ?? 5} ft`;
+    if (r.type === "ranged") return `${r.shortRange ?? 30} ft`;
+    if (r.type === "both") return `${r.reach ?? 5}/${r.shortRange ?? 20} ft`;
+  }
+  if (ability.srdRange) {
+    const lower = ability.srdRange.toLowerCase();
+    if (lower === "self" || lower.startsWith("self ")) return "Self";
+    if (lower === "touch") return "Touch";
+    const feetMatch = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
+    if (feetMatch) return `${feetMatch[1]} ft`;
+    return ability.srdRange;
+  }
+  return "5 ft";
 }
 
 /**
@@ -177,6 +214,12 @@ export default function CombatGrid({
   positions,
   onMoveToken,
   gridSize,
+  targetingAbility = null,
+  onTargetSelected,
+  abilities = [],
+  selectedAbility = null,
+  onSelectAbility,
+  abilityBarDisabled = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -226,6 +269,7 @@ export default function CombatGrid({
     dragPixel: null,
     dragOrigin: null,
     playerSpeed: player.speed ?? DEFAULT_SPEED,
+    targetingAbility: null,
   });
 
   // Keep stateRef in sync every render
@@ -248,6 +292,7 @@ export default function CombatGrid({
       dragPixel,
       dragOrigin,
       playerSpeed: player.speed ?? DEFAULT_SPEED,
+      targetingAbility,
     };
   });
 
@@ -314,9 +359,49 @@ export default function CombatGrid({
         }
       }
 
-      // 1b) Melee reach overlay — faint gold on cells within melee reach of player
+      // 1b) Range overlay — targeting ability range or default melee reach
       const pPos = s.positions.get("player");
-      if (pPos) {
+      if (pPos && s.targetingAbility) {
+        // Targeting mode: show ability range
+        let rangeFeet = DEFAULT_MELEE_REACH;
+        let longRangeFeet: number | undefined;
+
+        if (s.targetingAbility.weaponRange) {
+          const wr = s.targetingAbility.weaponRange;
+          if (wr.type === "melee") {
+            rangeFeet = wr.reach ?? DEFAULT_MELEE_REACH;
+          } else if (wr.type === "ranged") {
+            rangeFeet = wr.shortRange ?? 30;
+            longRangeFeet = wr.longRange;
+          } else if (wr.type === "both") {
+            rangeFeet = wr.shortRange ?? wr.reach ?? 20;
+            longRangeFeet = wr.longRange;
+          }
+        } else if (s.targetingAbility.srdRange) {
+          const lower = s.targetingAbility.srdRange.toLowerCase();
+          if (lower === "touch") rangeFeet = 5;
+          else {
+            const fm = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
+            if (fm) rangeFeet = parseInt(fm[1]);
+          }
+        }
+
+        // Draw long range cells (amber) if applicable
+        if (longRangeFeet && longRangeFeet > rangeFeet) {
+          const longCells = cellsInRange(pPos, longRangeFeet, s.gridSize);
+          ctx!.fillStyle = "rgba(217, 119, 6, 0.06)";
+          for (const rc of longCells) {
+            ctx!.fillRect(rc.col * s.cellStep, rc.row * s.cellStep, s.cellSize, s.cellSize);
+          }
+        }
+        // Draw normal range cells (green)
+        const normalCells = cellsInRange(pPos, rangeFeet, s.gridSize);
+        ctx!.fillStyle = "rgba(34, 197, 94, 0.1)";
+        for (const rc of normalCells) {
+          ctx!.fillRect(rc.col * s.cellStep, rc.row * s.cellStep, s.cellSize, s.cellSize);
+        }
+      } else if (pPos) {
+        // Default melee reach overlay
         const reachCells = cellsInRange(pPos, DEFAULT_MELEE_REACH, s.gridSize);
         ctx!.fillStyle = "rgba(201, 168, 76, 0.08)";
         for (const rc of reachCells) {
@@ -345,6 +430,40 @@ export default function CombatGrid({
         if (!pos) continue;
         const cx = pos.col * s.cellStep + s.cellSize / 2;
         const cy = pos.row * s.cellStep + s.cellSize / 2;
+
+        // Targeting highlight: pulsing ring around hostile NPCs in range
+        if (s.targetingAbility && npc.disposition === "hostile" && npc.currentHp > 0 && pPos) {
+          const dist = Math.max(Math.abs(pos.row - pPos.row), Math.abs(pos.col - pPos.col)) * FEET_PER_SQUARE;
+          let inRange = false;
+          if (s.targetingAbility.weaponRange) {
+            const wr = s.targetingAbility.weaponRange;
+            const maxRange = wr.longRange ?? wr.shortRange ?? wr.reach ?? DEFAULT_MELEE_REACH;
+            inRange = dist <= maxRange;
+          } else if (s.targetingAbility.srdRange) {
+            const lower = s.targetingAbility.srdRange.toLowerCase();
+            if (lower === "touch") inRange = dist <= 5;
+            else {
+              const fm = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
+              if (fm) inRange = dist <= parseInt(fm[1]);
+              else inRange = true;
+            }
+          } else {
+            inRange = dist <= DEFAULT_MELEE_REACH;
+          }
+
+          if (inRange) {
+            const radius = s.cellSize * 0.4;
+            const ringPulse = (Math.sin((now % 1500) / 1500 * Math.PI * 2) + 1) / 2;
+            ctx!.save();
+            ctx!.beginPath();
+            ctx!.arc(cx, cy, radius + 3 + ringPulse * 2, 0, Math.PI * 2);
+            ctx!.strokeStyle = `rgba(239, 68, 68, ${0.5 + ringPulse * 0.4})`;
+            ctx!.lineWidth = 2;
+            ctx!.stroke();
+            ctx!.restore();
+          }
+        }
+
         drawToken(ctx!, cx, cy, s.cellSize, getInitials(npc.name), npc.currentHp, npc.maxHp, npc.disposition, 0);
       }
 
@@ -522,7 +641,15 @@ export default function CombatGrid({
 
       if (e.button === 0) {
         const hit = hitTest(vx, vy);
-        if (hit === "player") {
+
+        // Targeting mode: clicking an NPC selects it as target
+        if (targetingAbility && hit && hit !== "player") {
+          e.preventDefault();
+          onTargetSelected?.(hit);
+          return;
+        }
+
+        if (hit === "player" && !targetingAbility) {
           // Drag player token — record origin cell for measurement
           e.preventDefault();
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -544,7 +671,7 @@ export default function CombatGrid({
         }
       }
     },
-    [offset, hitTest, viewportToGrid, positions],
+    [offset, hitTest, viewportToGrid, positions, targetingAbility, onTargetSelected],
   );
 
   const handlePointerMove = useCallback(
@@ -568,11 +695,17 @@ export default function CombatGrid({
       if (!dragId) {
         const hit = hitTest(vx, vy);
         if (canvasRef.current) {
-          canvasRef.current.style.cursor = hit === "player" ? "grab" : "";
+          if (targetingAbility) {
+            // Targeting mode: crosshair on hostiles, default elsewhere
+            const isHostile = hit && hit !== "player" && activeNPCs.some(n => n.id === hit && n.currentHp > 0);
+            canvasRef.current.style.cursor = isHostile ? "crosshair" : "default";
+          } else {
+            canvasRef.current.style.cursor = hit === "player" ? "grab" : "";
+          }
         }
       }
     },
-    [isPanning, dragId, hitTest, viewportToGrid],
+    [isPanning, dragId, hitTest, viewportToGrid, targetingAbility, activeNPCs],
   );
 
   const handlePointerUp = useCallback(
@@ -714,6 +847,38 @@ export default function CombatGrid({
           <button onClick={resetView} title="Reset view" style={{ fontSize: 11 }}>⟲</button>
         </div>
 
+        {/* Ability bar — right side, vertically centered */}
+        {abilities.length > 0 && (
+          <div className="combat-ability-bar">
+            {/* Targeting hint */}
+            {selectedAbility && selectedAbility.requiresTarget && (
+              <div className="combat-ability-hint">
+                Select target…
+              </div>
+            )}
+            {abilities.map((ability) => {
+              const isSelected = selectedAbility?.id === ability.id;
+              const range = abilityRangeTag(ability);
+              return (
+                <button
+                  key={ability.id}
+                  onClick={() => onSelectAbility?.(ability)}
+                  disabled={abilityBarDisabled}
+                  className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
+                  title={`${toDisplayCase(ability.name)} (${range})`}
+                >
+                  <span className="combat-ability-name">
+                    {toDisplayCase(ability.name)}
+                  </span>
+                  <span className="combat-ability-range">
+                    {range}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Viewport */}
         <div
           ref={containerRef}
@@ -736,7 +901,7 @@ export default function CombatGrid({
       <div className="flex-shrink-0 border-t border-gold/20 px-3 py-1.5 flex flex-wrap gap-x-3 gap-y-1 overflow-x-auto">
         <span className="flex items-center gap-1.5 font-cinzel text-[10px] text-parchment/70 tracking-wide whitespace-nowrap">
           <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-          {player.name} {player.currentHP}/{player.maxHP}
+          {player.name}
         </span>
         {activeNPCs.map((npc) => {
           const color =
@@ -750,7 +915,7 @@ export default function CombatGrid({
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${color} inline-block ${npc.currentHp <= 0 ? "opacity-30" : ""}`} />
-              {npc.name} {npc.currentHp}/{npc.maxHp}
+              {npc.name}
             </span>
           );
         })}

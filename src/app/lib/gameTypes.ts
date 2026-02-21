@@ -30,6 +30,24 @@ export interface SRDWeaponData {
   properties: string[];   // ["reach", "thrown (range 30/120)", "ammunition (range 80/320)"]
 }
 
+// ─── Combat Ability Types ────────────────────────────────────────────────────
+
+export type SpellAttackType = "ranged" | "melee" | "save" | "auto" | "none";
+
+export interface CombatAbility {
+  id: string;                    // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
+  name: string;
+  type: "weapon" | "cantrip" | "spell" | "action";
+  spellLevel?: number;           // 0=cantrip, 1+=leveled
+  attackType?: SpellAttackType;  // how this ability targets
+  saveAbility?: string;          // "dexterity" for Sacred Flame etc.
+  srdRange?: string;             // SRD range string ("120 feet", "Touch", "Self")
+  weaponRange?: WeaponRange;     // parsed range for weapons
+  requiresTarget: boolean;       // false for Self spells, Dodge, Dash, Disengage
+  damageDice?: string;           // "1d10" — used for resolution
+  damageType?: string;           // "fire", "piercing"
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CharacterStats {
@@ -94,6 +112,8 @@ export interface PlayerState {
   maxKnownSpells?: number;
   spellSlots?: Record<string, number>;
   spellSlotsUsed?: Record<string, number>;
+  // ─── Combat abilities (built at character creation from weapons + cantrips + actions) ───
+  combatAbilities?: CombatAbility[];
   // ─── Level-up wizard (set when XP crosses a threshold) ───
   pendingLevelUp?: PendingLevelUp;
 }

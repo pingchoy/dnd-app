@@ -4,7 +4,9 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
 import { getModifier, xpForLevel } from "../lib/gameTypes";
-import type { CharacterStats, CharacterFeature, StoryState } from "../lib/gameTypes";
+import type { CharacterStats, CharacterFeature, StoryState, CombatAbility, WeaponRange } from "../lib/gameTypes";
+import { SRD_CANTRIP_DATA } from "../lib/dnd5eData";
+import { parseSpellRange } from "../lib/combatEnforcement";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
 
 // ─── Point Buy ────────────────────────────────────────────────────────────────
@@ -592,6 +594,46 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         selectedClass.spellcastingAbility?.toLowerCase() || undefined
       ) as keyof import("../lib/gameTypes").CharacterStats | undefined;
 
+      // ── Build combat abilities from weapons + cantrips + universal actions ──
+      const weaponDamageMap = (gear?.weaponDamage ?? {}) as Record<string, { dice: string; stat: string; bonus: number; range?: WeaponRange }>;
+
+      const weaponAbilities: CombatAbility[] = Object.entries(weaponDamageMap).map(([name, ws]) => ({
+        id: `weapon:${name}`,
+        name,
+        type: "weapon" as const,
+        weaponRange: ws.range,
+        requiresTarget: true,
+        damageDice: ws.dice,
+      }));
+
+      const cantripAbilities: CombatAbility[] = state.selectedCantrips.map(slug => {
+        const spell = state.availableCantrips.find(c => c.slug === slug);
+        const cantripData = SRD_CANTRIP_DATA[slug];
+        const parsedRange = parseSpellRange(spell?.range ?? "self");
+        return {
+          id: `cantrip:${slug}`,
+          name: spell?.name ?? slug,
+          type: "cantrip" as const,
+          spellLevel: 0,
+          srdRange: spell?.range,
+          attackType: cantripData?.attackType ?? "ranged",
+          saveAbility: cantripData?.saveAbility,
+          requiresTarget: cantripData
+            ? (cantripData.attackType !== "none" && cantripData.attackType !== "auto")
+            : parsedRange.type !== "self",
+          damageDice: cantripData?.damageDice,
+          damageType: cantripData?.damageType,
+        };
+      });
+
+      const universalAbilities: CombatAbility[] = [
+        { id: "action:dodge", name: "Dodge", type: "action", requiresTarget: false },
+        { id: "action:dash", name: "Dash", type: "action", requiresTarget: false },
+        { id: "action:disengage", name: "Disengage", type: "action", requiresTarget: false },
+      ];
+
+      const combatAbilities = [...weaponAbilities, ...cantripAbilities, ...universalAbilities];
+
       const player = {
         name: characterName.trim(),
         gender: state.selectedGender,
@@ -614,6 +656,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         conditions: [],
         gold: gear?.gold ?? 0,
         weaponDamage: gear?.weaponDamage ?? {},
+        combatAbilities,
         ...(state.selectedArchetype ? { subclass: state.selectedArchetype.name } : {}),
         // Spellcasting (only for casters)
         ...(state.isSpellcaster && spellcastingAbility ? {

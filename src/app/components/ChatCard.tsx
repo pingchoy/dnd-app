@@ -17,10 +17,14 @@ export default function ChatCard({ message, playerName = "You" }: Props) {
   const isDM = message.role === "assistant";
 
   return (
-    <div className={`animate-fade-in flex gap-4 mt-5 ${isDM ? "" : "flex-row-reverse"}`}>
+    <div
+      className={`animate-fade-in flex gap-4 mt-5 ${isDM ? "" : "flex-row-reverse"}`}
+    >
       {/* Avatar */}
       <div className="flex-shrink-0">
-        <div className={`relative w-11 h-11 rounded-full overflow-hidden border-2 ${isDM ? "border-gold" : "border-[#6b7280]"} shadow-lg`}>
+        <div
+          className={`relative w-11 h-11 rounded-full overflow-hidden border-2 ${isDM ? "border-gold" : "border-[#6b7280]"} shadow-lg`}
+        >
           <img
             src={
               isDM
@@ -34,19 +38,29 @@ export default function ChatCard({ message, playerName = "You" }: Props) {
       </div>
 
       {/* Message card */}
-      <div className={`flex-1 min-w-0 rounded-md overflow-hidden border-l-4 ${isDM ? "card-parchment border-gold-dark" : "card-parchment-player border-[#6b7280]"}`}>
-        <div className={`px-4 pt-3 pb-1 border-b ${isDM ? "border-gold-dark/30" : "border-gray-300/60"}`}>
-          <span className={`font-cinzel text-xs tracking-widest uppercase ${isDM ? "text-gold-dark" : "text-[#5a5a5a]"}`}>
+      <div
+        className={`flex-1 min-w-0 rounded-md overflow-hidden border-l-4 ${isDM ? "card-parchment border-gold-dark" : "card-parchment-player border-[#6b7280]"}`}
+      >
+        <div
+          className={`px-4 pt-3 pb-1 border-b ${isDM ? "border-gold-dark/30" : "border-gray-300/60"}`}
+        >
+          <span
+            className={`font-cinzel text-xs tracking-widest uppercase ${isDM ? "text-gold-dark" : "text-[#5a5a5a]"}`}
+          >
             {isDM ? "✦ Dungeon Master ✦" : playerName}
           </span>
         </div>
-        <div className="px-4 py-3 text-ink text-[1.05rem] leading-relaxed prose prose-stone max-w-none
+        <div
+          className="px-4 py-3 text-ink text-[1.05rem] leading-relaxed prose prose-stone max-w-none
           prose-strong:text-ink prose-strong:font-semibold
           prose-em:italic prose-em:text-ink/80
           prose-p:my-2 prose-p:leading-relaxed
           prose-ul:my-2 prose-ul:pl-5 prose-li:my-0.5
-          prose-hr:border-gold-dark/30">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          prose-hr:border-gold-dark/30"
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
         </div>
       </div>
     </div>

@@ -112,7 +112,7 @@ export interface SRDClassLevel {
 export interface SRDStartingEquipment {
   slug: string;
   inventory: string[];
-  weaponDamage: Record<string, { dice: string; stat: string; bonus: number }>;
+  weaponDamage: Record<string, { dice: string; stat: string; bonus: number; range?: import("./gameTypes").WeaponRange }>;
   gold: number;
 }
 

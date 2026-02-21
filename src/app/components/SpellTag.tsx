@@ -198,7 +198,7 @@ export default function SpellTag({ name, className }: Props) {
         className={`cursor-pointer hover:brightness-110 transition-all ${className}`}
         onClick={handleClick}
       >
-        {toDisplayCase(name)}
+        {toDisplayCase(name.replace(/-/g, " "))}
       </span>
 
       {open && <SpellModal name={name} onClose={handleClose} />}

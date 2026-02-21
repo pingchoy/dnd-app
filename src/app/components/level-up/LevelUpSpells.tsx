@@ -171,15 +171,15 @@ export default function LevelUpSpells({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {availableCantrips.map((spell) => {
-              const isKnown = alreadyKnownCantrips.includes(spell.name);
+              const isKnown = alreadyKnownCantrips.includes(spell.slug);
               return (
                 <SpellCard
                   key={spell.slug}
                   spell={spell}
-                  isSelected={selectedCantrips.includes(spell.name)}
+                  isSelected={selectedCantrips.includes(spell.slug)}
                   isKnown={isKnown}
                   disabled={selectedCantrips.length >= totalCantripSlots}
-                  onToggle={() => onToggleCantrip(spell.name)}
+                  onToggle={() => onToggleCantrip(spell.slug)}
                   onExpand={() => setExpandedSpell(spell)}
                 />
               );

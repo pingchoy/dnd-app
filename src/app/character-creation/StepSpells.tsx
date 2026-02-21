@@ -212,9 +212,9 @@ export default function StepSpells({
                 <SpellCard
                   key={spell.slug}
                   spell={spell}
-                  isSelected={selectedCantrips.includes(spell.name)}
+                  isSelected={selectedCantrips.includes(spell.slug)}
                   disabled={selectedCantrips.length >= cantripsToChoose}
-                  onToggle={() => onToggleCantrip(spell.name)}
+                  onToggle={() => onToggleCantrip(spell.slug)}
                   onExpand={() => setExpandedSpell(spell)}
                 />
               ))}
