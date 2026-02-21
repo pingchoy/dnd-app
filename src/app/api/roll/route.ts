@@ -5,6 +5,9 @@
  * Checks if the player's action is contested, runs the rules agent if so,
  * and returns the parsed result for the frontend to display interactively.
  *
+ * Also writes the roll result to the messages subcollection so other
+ * players (future multiplayer) can see it via their Firestore listener.
+ *
  * The DM agent is NOT called here — that happens in /api/chat once the
  * player has seen and acknowledged the roll result.
  */
@@ -14,8 +17,9 @@ import {
   getRulesOutcome,
   isContestedAction,
 } from "../../agents/rulesAgent";
-import { loadGameState, getActiveNPCs } from "../../lib/gameState";
+import { loadGameState, getActiveNPCs, getSessionId } from "../../lib/gameState";
 import { MODELS, calculateCost } from "../../lib/anthropic";
+import { addMessage } from "../../lib/messageStore";
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,6 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const gameState = await loadGameState(characterId);
+    const sessionId = getSessionId();
     const outcome = await getRulesOutcome(playerInput, gameState.player, getActiveNPCs());
     const rulesCost = calculateCost(
       MODELS.UTILITY,
@@ -45,11 +50,19 @@ export async function POST(req: NextRequest) {
       outcome.outputTokens,
     );
 
+    // Write roll result to messages subcollection for real-time listeners
+    await addMessage(sessionId, {
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+      rollResult: outcome.parsed,
+    });
+
     return NextResponse.json({
       isContested: true,
       roll: outcome.roll,
       parsed: outcome.parsed,
-      raw: outcome.raw,       // passed back to /api/chat so the DM sees the result
+      raw: outcome.raw,
       rulesCost,
       tokensUsed: {
         input: outcome.inputTokens,

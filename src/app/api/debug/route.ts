@@ -11,7 +11,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
-  addConversationTurn,
   awardXPAsync,
   createNPC,
   getEncounter,
@@ -20,12 +19,11 @@ import {
   loadGameState,
   setEncounter,
   xpForLevel,
-  PERSISTENCE_HISTORY_WINDOW,
 } from "../../lib/gameState";
 import { saveCharacterState, querySRD } from "../../lib/characterStore";
 import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
 import { getNPCStats } from "../../agents/npcAgent";
-import { HISTORY_WINDOW } from "../../lib/anthropic";
+import { addMessage } from "../../lib/messageStore";
 
 export async function POST(req: NextRequest) {
   // Gate: only active when NEXT_PUBLIC_DEMIGOD_MODE is "true"
@@ -98,13 +96,17 @@ export async function POST(req: NextRequest) {
         }
 
         const message = "[DEMIGOD] A hostile Goblin materializes before you!";
-        addConversationTurn("assistant", message, HISTORY_WINDOW);
+        const sessionId = getSessionId();
+        await addMessage(sessionId, {
+          role: "assistant",
+          content: message,
+          timestamp: Date.now(),
+        });
 
-        // Persist updated state (with new encounter + conversation turn)
+        // Persist updated state
         await saveCharacterState(characterId, {
           player: gameState.player,
           story: getGameState().story,
-          conversationHistory: getGameState().conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
         });
 
         return NextResponse.json({
@@ -139,13 +141,17 @@ export async function POST(req: NextRequest) {
 
         const updatedState = getGameState();
         const message = `[DEMIGOD] Divine power surges through you! Gained ${xpNeeded} XP. Complete the level-up wizard to advance!`;
-        addConversationTurn("assistant", message, HISTORY_WINDOW);
+        const sessionId = getSessionId();
+        await addMessage(sessionId, {
+          role: "assistant",
+          content: message,
+          timestamp: Date.now(),
+        });
 
-        // Persist with updated conversation
+        // Persist updated state
         await saveCharacterState(characterId, {
           player: updatedState.player,
           story: updatedState.story,
-          conversationHistory: updatedState.conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
         });
 
         return NextResponse.json({

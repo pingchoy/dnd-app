@@ -10,16 +10,16 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   getGameState,
   getEncounter,
+  getSessionId,
   loadGameState,
-  addConversationTurn,
   serializeCombatPlayerState,
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
+import { addMessage, getRecentMessages } from "../../../lib/messageStore";
 import {
   anthropic,
   MODELS,
   MAX_TOKENS,
-  HISTORY_WINDOW,
   calculateCost,
 } from "../../../lib/anthropic";
 import type { ParsedRollResult } from "../../../lib/gameTypes";
@@ -113,13 +113,13 @@ Use **bold** for actions and damage. Use *italics* for sensory details. No heade
     const userMessage = `${sceneContext}\n\n${playerTurnText}${npcTurnsText}`;
 
     // Include last conversation turn for tonal continuity
+    const sessionId = getSessionId();
+    const recentMsgs = await getRecentMessages(sessionId, 2);
     const historyMessages: Anthropic.MessageParam[] =
-      gameState.conversationHistory
-        .slice(-2)
-        .map((turn) => ({
-          role: turn.role as "user" | "assistant",
-          content: turn.content,
-        }));
+      recentMsgs.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
 
     const response = await anthropic.messages.create({
       model: MODELS.UTILITY,
@@ -133,12 +133,14 @@ Use **bold** for actions and damage. Use *italics* for sensory details. No heade
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("\n");
 
-    // Add narrative to conversation history and persist
-    addConversationTurn("assistant", narrative, HISTORY_WINDOW);
+    await addMessage(sessionId, {
+      role: "assistant",
+      content: narrative,
+      timestamp: Date.now(),
+    });
 
     await saveCharacterState(characterId, {
       story: gameState.story,
-      conversationHistory: gameState.conversationHistory,
     });
 
     const inputTokens = response.usage.input_tokens;

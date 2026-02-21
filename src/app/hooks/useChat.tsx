@@ -2,8 +2,17 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  type Unsubscribe,
+} from "firebase/firestore";
+import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { GameState, StoredEncounter, OPENING_NARRATIVE, ConversationTurn, Ability, CombatSSEEvent } from "../lib/gameTypes";
+import { StoredEncounter, OPENING_NARRATIVE, Ability, StoredMessage } from "../lib/gameTypes";
+import type { GameState } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -38,7 +47,7 @@ export interface UseChatReturn {
   isNarrating: boolean;
   /** True while /api/roll is in-flight (before dice UI appears). */
   isRolling: boolean;
-  /** True while the turn-by-turn combat loop is processing (SSE streaming). */
+  /** True while the turn-by-turn combat loop is processing. */
   isCombatProcessing: boolean;
   totalTokens: number;
   estimatedCostUsd: number;
@@ -71,9 +80,13 @@ export function useChat(): UseChatReturn {
   // Combat floating label callback (set by dashboard, called on hit/miss results)
   const combatLabelRef = useRef<((tokenId: string, hit: boolean, damage: number) => void) | null>(null);
 
-  // SSE connection management
-  const eventSourceRef = useRef<EventSource | null>(null);
+  // Track which roll message IDs have already been animated (one-time animation)
+  const animatedRollIds = useRef(new Set<string>());
   const characterIdRef = useRef<string | null>(null);
+  // Session ID for Firestore message subscription
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Ref to track snapshot unsubscribe
+  const unsubRef = useRef<Unsubscribe | null>(null);
 
   // Keep characterId ref in sync
   useEffect(() => {
@@ -99,24 +112,10 @@ export function useChat(): UseChatReturn {
         const gs: GameState = data.gameState;
         setGameState(gs);
         setEncounter(data.encounter ?? null);
-
-        if (gs.conversationHistory.length === 0) {
-          // Brand-new character — show the opening narrative
-          setMessages([{ role: "assistant", content: OPENING_NARRATIVE, timestamp: Date.now() }]);
-        } else {
-          // Returning character — rebuild UI messages from persisted history
-          setMessages(
-            gs.conversationHistory.map((t: ConversationTurn) => ({
-              role: t.role,
-              content: t.content,
-              timestamp: t.timestamp,
-            })),
-          );
-        }
+        setSessionId(data.sessionId ?? null);
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
-        // Character not found or error — send back to character select
         router.replace("/characters");
       })
       .finally(() => setIsLoading(false));
@@ -124,128 +123,45 @@ export function useChat(): UseChatReturn {
   }, []);
 
   /**
-   * SSE combat stream — opens when an active encounter with hostiles exists,
-   * closes on combat_end or when the encounter changes.
+   * Real-time Firestore listener for the messages subcollection.
+   * Replaces the old SSE combat stream + manual message state management.
+   * Messages are the single source of truth — all narratives, roll results,
+   * and combat turn narrations arrive through this listener.
    */
-  const handleCombatEvent = useCallback((data: CombatSSEEvent) => {
-    switch (data.type) {
-      case "round_start":
-        // Round display updated via state_update
-        break;
-
-      case "player_turn":
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: data.narrative,
-          timestamp: Date.now(),
-        }]);
-        break;
-
-      case "npc_turn":
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: data.narrative,
-          timestamp: Date.now(),
-        }]);
-        // Show floating HIT/MISS label on the attacked token
-        combatLabelRef.current?.(data.targetId, data.hit, data.damage);
-        break;
-
-      case "state_update":
-        setGameState(data.gameState);
-        setEncounter(data.encounter);
-        break;
-
-      case "round_end":
-        setTotalTokens(t => t + (data.tokensUsed ?? 0));
-        setEstimatedCostUsd(c => c + (data.costUsd ?? 0));
-        setIsCombatProcessing(false);
-        break;
-
-      case "player_dead":
-        setIsCombatProcessing(false);
-        break;
-
-      case "combat_end": {
-        setIsCombatProcessing(false);
-        // Close SSE connection
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-        // Refetch final game state (encounter completed, activeEncounterId cleared)
-        const cId = characterIdRef.current;
-        if (cId) {
-          fetch(`/api/chat?characterId=${encodeURIComponent(cId)}`)
-            .then(res => res.json())
-            .then(refreshData => {
-              setGameState(refreshData.gameState);
-              setEncounter(refreshData.encounter ?? null);
-            })
-            .catch(err => console.error("[useChat] Failed to refresh after combat end:", err));
-        }
-        break;
-      }
-
-      case "error":
-        console.error("[SSE] Server error:", data.message);
-        setIsCombatProcessing(false);
-        break;
-    }
-  }, []);
-
-  // Open/close SSE connection based on encounter state
   useEffect(() => {
-    const hasHostiles = encounter?.activeNPCs?.some(
-      n => n.disposition === "hostile" && n.currentHp > 0,
-    );
-    const shouldConnect = encounter?.id && encounter.status === "active" && hasHostiles;
+    if (!sessionId) return;
 
-    if (!shouldConnect) {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+    // Clean up previous subscription if any
+    unsubRef.current?.();
+
+    const db = getClientDb();
+    const messagesRef = collection(db, "sessions", sessionId, "messages");
+    const messagesQuery = query(messagesRef, orderBy("timestamp", "asc"));
+
+    const unsub = onSnapshot(messagesQuery, (snapshot) => {
+      const msgs: ChatMessage[] = snapshot.docs.map((doc) => {
+        const data = doc.data() as StoredMessage;
+        return {
+          role: data.role,
+          content: data.content,
+          timestamp: data.timestamp,
+          rollResult: data.rollResult,
+        };
+      });
+
+      if (msgs.length === 0) {
+        // Brand-new session — show opening narrative
+        setMessages([{ role: "assistant", content: OPENING_NARRATIVE, timestamp: Date.now() }]);
+      } else {
+        setMessages(msgs);
       }
-      return;
-    }
+    }, (err) => {
+      console.error("[useChat] Firestore messages listener error:", err);
+    });
 
-    // Already connected — don't reopen
-    if (eventSourceRef.current) return;
-
-    console.log(`[useChat] Opening SSE connection for encounter ${encounter.id}`);
-    const es = new EventSource(`/api/combat/stream?encounterId=${encounter.id}`);
-    eventSourceRef.current = es;
-
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as CombatSSEEvent;
-        handleCombatEvent(data);
-      } catch (err) {
-        console.error("[SSE] Failed to parse event:", err);
-      }
-    };
-
-    es.onerror = () => {
-      console.error("[SSE] Connection error — closing");
-      es.close();
-      eventSourceRef.current = null;
-      setIsCombatProcessing(false);
-    };
-
-    return () => {
-      es.close();
-      eventSourceRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [encounter?.id, encounter?.status, handleCombatEvent]);
-
-  // Clean up SSE on unmount
-  useEffect(() => {
-    return () => {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-    };
-  }, []);
+    unsubRef.current = unsub;
+    return () => unsub();
+  }, [sessionId]);
 
   // Safety timeout: if isCombatProcessing stays true for 30s, reset it
   useEffect(() => {
@@ -261,7 +177,7 @@ export function useChat(): UseChatReturn {
   async function sendMessage(input: string): Promise<void> {
     if (!input.trim() || isRolling || isNarrating || pendingRoll || isCombatProcessing || !characterId) return;
 
-    // Show the player's message immediately
+    // Show the player's message optimistically (will be replaced by Firestore listener)
     setMessages((prev) => [...prev, { role: "user", content: input, timestamp: Date.now() }]);
     setIsRolling(true);
 
@@ -333,16 +249,15 @@ export function useChat(): UseChatReturn {
   async function confirmRoll(): Promise<void> {
     if (!pendingRoll) return;
     const pr = pendingRoll;
-    // Persist the roll as a historical card in the chat before clearing it
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: "", rollResult: pr.parsed, timestamp: Date.now() },
-    ]);
+    // Roll result is already in subcollection (written by /api/roll), no need to add locally
     setPendingRoll(null);
     await requestNarrative(pr.playerInput, pr);
   }
 
-  /** Calls /api/chat and appends the DM response. */
+  /**
+   * Calls /api/chat. Narrative arrives via Firestore listener, not from the response.
+   * Response provides updated game state and encounter data.
+   */
   async function requestNarrative(
     playerInput: string,
     roll: PendingRoll | null,
@@ -386,12 +301,9 @@ export function useChat(): UseChatReturn {
 
       const data = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.narrative, timestamp: Date.now() },
-      ]);
-      setGameState(data.gameState);
-      setEncounter(data.encounter ?? null);
+      // Narrative arrives via Firestore listener — just update game state from response
+      if (data.gameState) setGameState(data.gameState);
+      if (data.encounter !== undefined) setEncounter(data.encounter ?? null);
       setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
       setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
     } catch (err) {
@@ -405,8 +317,8 @@ export function useChat(): UseChatReturn {
   /**
    * Execute a combat action via the ability bar.
    * Phase 1: POST /api/combat/action resolves the player's roll (deterministic, instant).
-   * Shows the roll result as a chat card, then immediately triggers Phase 2
-   * (narration + NPC turns via SSE) without requiring user interaction.
+   * Phase 2: POST /api/combat/continue triggers narration + NPC turns.
+   * All narrations arrive via the Firestore messages listener.
    */
   async function executeCombatAction(ability: Ability, targetId?: string): Promise<void> {
     if (!characterId || isRolling || isNarrating || pendingRoll || isCombatProcessing) return;
@@ -430,16 +342,6 @@ export function useChat(): UseChatReturn {
       setGameState(data.gameState);
       setEncounter(data.encounter ?? null);
 
-      // Show the roll result as a historical dice card in chat (unless it's a non-roll action)
-      if (!data.playerResult.noCheck) {
-        setMessages(prev => [...prev, {
-          role: "assistant" as const,
-          content: "",
-          rollResult: data.playerResult,
-          timestamp: Date.now(),
-        }]);
-      }
-
       // Show floating HIT/MISS label on the targeted NPC
       if (targetId && !data.playerResult.noCheck) {
         combatLabelRef.current?.(
@@ -460,8 +362,9 @@ export function useChat(): UseChatReturn {
   }
 
   /**
-   * Phase 2: Trigger narration + NPC turns via SSE.
-   * Called after the player confirms their roll in the dice UI.
+   * Phase 2: Trigger narration + NPC turns.
+   * Narration messages arrive via the Firestore messages listener.
+   * Response provides final game state and encounter data.
    */
   async function requestCombatContinue(
     playerResult: ParsedRollResult,
@@ -480,11 +383,29 @@ export function useChat(): UseChatReturn {
         const data = await res.json();
         throw new Error(data.error ?? "Combat continue failed");
       }
-      // SSE events handle all UI updates (narratives, state, round_end)
+
+      const data = await res.json();
+
+      // Update game state and encounter from response
+      if (data.gameState) setGameState(data.gameState);
+      if (data.encounter !== undefined) setEncounter(data.encounter ?? null);
+      setTotalTokens((t) => t + (data.tokensUsed ?? 0));
+      setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
+
+      // If combat ended, refetch to get clean state
+      if (data.combatEnded) {
+        const refreshRes = await fetch(`/api/chat?characterId=${encodeURIComponent(characterId)}`);
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          setGameState(refreshData.gameState);
+          setEncounter(refreshData.encounter ?? null);
+        }
+      }
     } catch (err) {
       console.error("[useChat] requestCombatContinue error:", err);
-      setIsCombatProcessing(false);
       appendError();
+    } finally {
+      setIsCombatProcessing(false);
     }
   }
 
@@ -499,16 +420,17 @@ export function useChat(): UseChatReturn {
     ]);
   }
 
-  function applyDebugResult(newState: GameState, message: string, newEncounter?: StoredEncounter | null): void {
+  const applyDebugResult = useCallback((newState: GameState, message: string, newEncounter?: StoredEncounter | null): void => {
     setGameState(newState);
     if (newEncounter !== undefined) {
       setEncounter(newEncounter);
     }
+    // Debug messages appear locally — they're not persisted to subcollection
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: message, timestamp: Date.now() },
     ]);
-  }
+  }, []);
 
   return {
     messages,

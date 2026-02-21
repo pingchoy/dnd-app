@@ -303,7 +303,6 @@ export interface ConversationTurn {
 export interface GameState {
   player: PlayerState;
   story: StoryState;
-  conversationHistory: ConversationTurn[];
 }
 
 // ─── Firestore V2 Storage Types ───────────────────────────────────────────────
@@ -344,10 +343,34 @@ export interface StoredEncounter {
 export interface StoredSession {
   id?: string;
   story: StoryState;
-  conversationHistory: ConversationTurn[];
   characterIds: string[];
   createdAt?: number;
   updatedAt?: number;
+}
+
+// ─── Messages Subcollection Types ────────────────────────────────────────────
+
+/** Individual message document (sessions/{sessionId}/messages/{messageId}). */
+export interface StoredMessage {
+  id?: string;
+  role: "user" | "assistant";
+  content: string;
+  characterId?: string;
+  timestamp: number;
+  rollResult?: ParsedRollResult;
+}
+
+// ─── Action Queue Types ──────────────────────────────────────────────────────
+
+/** Action document (sessions/{sessionId}/actions/{actionId}). */
+export interface StoredAction {
+  id?: string;
+  characterId: string;
+  type: "chat" | "roll" | "combat_action" | "combat_continue";
+  payload: Record<string, unknown>;
+  status: "pending" | "processing" | "completed" | "failed";
+  createdAt: number;
+  processedAt?: number;
 }
 
 /** Lightweight summary for the character select page. */
@@ -362,18 +385,6 @@ export interface CharacterSummary {
   campaignTitle: string;
   updatedAt: number;
 }
-
-// ─── Combat SSE Event Types ──────────────────────────────────────────────────
-
-export type CombatSSEEvent =
-  | { type: "round_start"; round: number }
-  | { type: "player_turn"; playerId: string; narrative: string }
-  | { type: "npc_turn"; npcId: string; narrative: string; targetId: string; hit: boolean; damage: number }
-  | { type: "round_end"; round: number; tokensUsed: number; costUsd: number }
-  | { type: "state_update"; gameState: GameState; encounter: StoredEncounter }
-  | { type: "player_dead"; playerId: string; narrative: string }
-  | { type: "combat_end" }
-  | { type: "error"; message: string };
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 

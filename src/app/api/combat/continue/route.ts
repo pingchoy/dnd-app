@@ -1,32 +1,35 @@
 /**
  * POST /api/combat/continue
  *
- * Phase 2 of turn-by-turn combat: narration + NPC turns via SSE.
+ * Phase 2 of turn-by-turn combat: narration + NPC turns.
  * Called after the player confirms their roll in the dice UI.
  *
+ * Previously used SSE via combatEventBus to stream events to the frontend.
+ * Now writes narration messages to the Firestore messages subcollection —
+ * the frontend picks them up via an onSnapshot listener.
+ *
  * Flow:
- * 1. Narrate player turn (Haiku) → push player_turn SSE event
+ * 1. Narrate player turn (Haiku) → write message to subcollection
  * 2. Loop through hostile NPCs in turnOrder:
  *    - Pre-roll this NPC's attack
- *    - Narrate (Haiku) → push npc_turn SSE event
+ *    - Narrate (Haiku) → write message to subcollection
  *    - Apply damage to player, persist state
- *    - If player HP <= 0, push player_dead and stop
- * 3. After all NPCs: push round_end, increment round, reset currentTurnIndex
+ *    - If player HP <= 0, stop
+ * 3. After all NPCs: increment round, reset currentTurnIndex
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import {
   getGameState,
   getEncounter,
+  getSessionId,
   loadGameState,
-  addConversationTurn,
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
 import { saveEncounterState, completeEncounter } from "../../../lib/encounterStore";
 import { resolveNPCTurn } from "../../../lib/combatResolver";
 import type { ParsedRollResult } from "../../../lib/gameTypes";
-import { HISTORY_WINDOW } from "../../../lib/anthropic";
-import { combatEventBus } from "../../../lib/combatEventBus";
+import { addMessage } from "../../../lib/messageStore";
 import { narratePlayerTurn, narrateNPCTurn } from "../../../agents/turnNarrator";
 
 interface CombatContinueBody {
@@ -52,6 +55,7 @@ export async function POST(req: NextRequest) {
     // Load game state + encounter from Firestore
     const gameState = await loadGameState(characterId);
     const encounter = getEncounter();
+    const sessionId = getSessionId();
 
     if (!encounter || encounter.status !== "active") {
       return NextResponse.json(
@@ -74,8 +78,6 @@ export async function POST(req: NextRequest) {
 
     // ── Player turn narration ───────────────────────────────────────────────
 
-    combatEventBus.emit(encounterId, { type: "round_start", round: encounter.round });
-
     // Set currentTurnIndex to player (0)
     encounter.currentTurnIndex = 0;
 
@@ -90,12 +92,10 @@ export async function POST(req: NextRequest) {
     roundTokens += playerNarration.inputTokens + playerNarration.outputTokens;
     roundCost += playerNarration.costUsd;
 
-    addConversationTurn("assistant", playerNarration.narrative, HISTORY_WINDOW);
-
-    combatEventBus.emit(encounterId, {
-      type: "player_turn",
-      playerId: "player",
-      narrative: playerNarration.narrative,
+    await addMessage(sessionId, {
+      role: "assistant",
+      content: playerNarration.narrative,
+      timestamp: Date.now(),
     });
 
     // Advance to first NPC
@@ -106,7 +106,6 @@ export async function POST(req: NextRequest) {
       saveCharacterState(characterId, {
         player: gameState.player,
         story: gameState.story,
-        conversationHistory: gameState.conversationHistory,
       }),
       saveEncounterState(encounterId, {
         activeNPCs: encounter.activeNPCs,
@@ -116,12 +115,6 @@ export async function POST(req: NextRequest) {
         currentTurnIndex: encounter.currentTurnIndex,
       }),
     ]);
-
-    combatEventBus.emit(encounterId, {
-      type: "state_update",
-      gameState: getGameState(),
-      encounter,
-    });
 
     // ── NPC turns (sequential, one at a time) ───────────────────────────────
 
@@ -160,15 +153,10 @@ export async function POST(req: NextRequest) {
       roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
       roundCost += npcNarration.costUsd;
 
-      addConversationTurn("assistant", npcNarration.narrative, HISTORY_WINDOW);
-
-      combatEventBus.emit(encounterId, {
-        type: "npc_turn",
-        npcId: npc.id,
-        narrative: npcNarration.narrative,
-        targetId: "player",
-        hit: npcResult.hit,
-        damage: npcResult.damage,
+      await addMessage(sessionId, {
+        role: "assistant",
+        content: npcNarration.narrative,
+        timestamp: Date.now(),
       });
 
       // Persist after each NPC turn
@@ -176,7 +164,6 @@ export async function POST(req: NextRequest) {
         saveCharacterState(characterId, {
           player: gameState.player,
           story: gameState.story,
-          conversationHistory: gameState.conversationHistory,
         }),
         saveEncounterState(encounterId, {
           activeNPCs: encounter.activeNPCs,
@@ -187,21 +174,16 @@ export async function POST(req: NextRequest) {
         }),
       ]);
 
-      combatEventBus.emit(encounterId, {
-        type: "state_update",
-        gameState: getGameState(),
-        encounter,
-      });
-
       // Check for player death
       if (player.currentHP <= 0) {
         console.log(`[Combat Continue] Player died during ${npc.name}'s turn`);
-        combatEventBus.emit(encounterId, {
-          type: "player_dead",
-          playerId: "player",
-          narrative: npcNarration.narrative,
+        return NextResponse.json({
+          ok: true,
+          gameState: getGameState(),
+          encounter,
+          tokensUsed: roundTokens,
+          estimatedCostUsd: roundCost,
         });
-        return NextResponse.json({ ok: true });
       }
     }
 
@@ -218,21 +200,16 @@ export async function POST(req: NextRequest) {
       await saveCharacterState(characterId, {
         player: gameState.player,
         story: gameState.story,
-        conversationHistory: gameState.conversationHistory,
       });
 
-      combatEventBus.emit(encounterId, {
-        type: "state_update",
+      return NextResponse.json({
+        ok: true,
+        combatEnded: true,
         gameState: getGameState(),
         encounter: { ...encounter, status: "completed" },
-      });
-      combatEventBus.emit(encounterId, {
-        type: "round_end",
-        round: encounter.round,
         tokensUsed: roundTokens,
-        costUsd: roundCost,
+        estimatedCostUsd: roundCost,
       });
-      combatEventBus.emit(encounterId, { type: "combat_end" });
     } else {
       encounter.round += 1;
       encounter.currentTurnIndex = 0;
@@ -250,21 +227,14 @@ export async function POST(req: NextRequest) {
         currentTurnIndex: 0,
       });
 
-      combatEventBus.emit(encounterId, {
-        type: "round_end",
-        round: encounter.round,
-        tokensUsed: roundTokens,
-        costUsd: roundCost,
-      });
-
-      combatEventBus.emit(encounterId, {
-        type: "state_update",
+      return NextResponse.json({
+        ok: true,
         gameState: getGameState(),
         encounter,
+        tokensUsed: roundTokens,
+        estimatedCostUsd: roundCost,
       });
     }
-
-    return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[/api/combat/continue] Error:", err);
     return NextResponse.json(

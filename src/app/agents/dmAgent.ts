@@ -25,6 +25,7 @@ import {
   serializeStoryState,
   updateNPC,
 } from "../lib/gameState";
+import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
 import { handleSRDQuery } from "./agentUtils";
 import {
@@ -101,6 +102,7 @@ export async function getDMResponse(
   playerInput: string,
   gameState: GameState,
   rulesOutcome: RulesOutcome | null,
+  sessionId: string,
 ): Promise<DMResponse> {
   // Prepend dynamic game state so the static system prompt + tools stay fully cacheable
   let userContent = `CAMPAIGN STATE:\n${serializeStoryState(gameState.story)}\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
@@ -110,10 +112,10 @@ export async function getDMResponse(
     userContent += `\n\n[Player roll result — d20 was ${rulesOutcome.roll}]\n${rulesOutcome.raw}`;
   }
 
+  // Fetch recent messages from subcollection for agent context window
+  const recentMessages = await getRecentMessages(sessionId, DM_HISTORY_ENTRIES);
   const historyMessages: Anthropic.MessageParam[] =
-    gameState.conversationHistory
-      .slice(-DM_HISTORY_ENTRIES)
-      .map((turn) => ({ role: turn.role, content: turn.content }));
+    recentMessages.map((m) => ({ role: m.role, content: m.content }));
 
   const messages: Anthropic.MessageParam[] = [
     ...historyMessages,

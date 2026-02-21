@@ -23,7 +23,6 @@ import type {
   GameplayEffects,
   PlayerState,
   StoryState,
-  ConversationTurn,
   CharacterSummary,
   StoredCharacterV2,
   StoredSession,
@@ -135,7 +134,6 @@ export interface StoredCharacter {
   sessionId: string;
   player: PlayerState;
   story: StoryState;
-  conversationHistory: ConversationTurn[];
   createdAt?: number;
   updatedAt?: number;
 }
@@ -153,7 +151,6 @@ export async function createSession(
   const ref = adminDb.collection("sessions").doc();
   await ref.set({
     story,
-    conversationHistory: [],
     characterIds: [characterId],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -230,7 +227,6 @@ export async function loadCharacter(id: string): Promise<StoredCharacter | null>
     sessionId: charData.sessionId,
     player: charData.player,
     story: session.story,
-    conversationHistory: session.conversationHistory,
     createdAt: charData.createdAt,
     updatedAt: charData.updatedAt,
   };
@@ -263,10 +259,9 @@ export async function saveCharacterState(
     );
   }
 
-  // Story + conversation changes → session doc
+  // Story changes → session doc
   const sessionUpdates: Record<string, unknown> = {};
   if (updates.story) sessionUpdates.story = updates.story;
-  if (updates.conversationHistory) sessionUpdates.conversationHistory = updates.conversationHistory;
 
   if (Object.keys(sessionUpdates).length > 0) {
     sessionUpdates.updatedAt = now;

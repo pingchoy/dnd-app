@@ -32,7 +32,6 @@ export type {
   PlayerState,
   NPC,
   StoryState,
-  ConversationTurn,
   GameState,
   PendingLevelUp,
   PendingLevelData,
@@ -196,7 +195,7 @@ export function serializeCombatPlayerState(p: PlayerState): string {
 }
 
 /** Max conversation entries persisted (20 user + 20 assistant turns). */
-export const PERSISTENCE_HISTORY_WINDOW = 40;
+
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
 
@@ -256,7 +255,6 @@ let state: GameState = {
     importantNPCs: [],
     recentEvents: [],
   },
-  conversationHistory: [],
 };
 
 /** SessionId for the current character — set by loadGameState(). */
@@ -292,17 +290,6 @@ export function setEncounter(enc: StoredEncounter | null): void {
 /** Returns the active NPCs from the current encounter, or an empty array if no encounter. */
 export function getActiveNPCs(): NPC[] {
   return encounter?.activeNPCs ?? [];
-}
-
-export function addConversationTurn(
-  role: "user" | "assistant",
-  content: string,
-  historyWindow: number,
-): void {
-  state.conversationHistory.push({ role, content, timestamp: Date.now() });
-  if (state.conversationHistory.length > historyWindow * 2) {
-    state.conversationHistory = state.conversationHistory.slice(-historyWindow * 2);
-  }
 }
 
 // ─── Player state changes ─────────────────────────────────────────────────────
@@ -728,7 +715,6 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   state = {
     player: stored.player,
     story: stored.story,
-    conversationHistory: stored.conversationHistory,
   };
 
   // Hydrate encounter if one is active
@@ -765,7 +751,6 @@ async function persistState(characterId: string): Promise<void> {
   await saveCharacterState(characterId, {
     player: state.player,
     story: state.story,
-    conversationHistory: state.conversationHistory.slice(-PERSISTENCE_HISTORY_WINDOW),
   });
 }
 

@@ -12,15 +12,15 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getGameState,
   getEncounter,
+  getSessionId,
   loadGameState,
   updateNPC,
-  addConversationTurn,
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
 import { saveEncounterState } from "../../../lib/encounterStore";
 import { resolvePlayerAction } from "../../../lib/combatResolver";
 import type { GridPosition } from "../../../lib/gameTypes";
-import { HISTORY_WINDOW } from "../../../lib/anthropic";
+import { addMessage } from "../../../lib/messageStore";
 
 interface CombatActionBody {
   characterId: string;
@@ -97,17 +97,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Add player action to conversation history
-    let actionDesc = `[Combat] I use ${ability.name}`;
-    if (targetNPC) actionDesc += ` on ${targetNPC.name}`;
-    addConversationTurn("user", actionDesc, HISTORY_WINDOW);
+    // Write to messages subcollection (roll result visible via real-time listener)
+    const sessionId = getSessionId();
+    await addMessage(sessionId, {
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+      rollResult: playerResult,
+    });
 
     // Persist state after player action
     await Promise.all([
       saveCharacterState(characterId, {
         player: gameState.player,
         story: gameState.story,
-        conversationHistory: gameState.conversationHistory,
       }),
       saveEncounterState(encounterId, {
         activeNPCs: encounter.activeNPCs,

@@ -14,13 +14,14 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropic, MAX_TOKENS, MODELS } from "../lib/anthropic";
-import type { ConversationTurn, StoredEncounter } from "../lib/gameTypes";
+import type { StoredEncounter } from "../lib/gameTypes";
 import type { PlayerState } from "../lib/gameTypes";
 import {
   StateChanges,
   serializeCombatPlayerState,
   serializeActiveNPCs,
 } from "../lib/gameState";
+import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
 import { handleSRDQuery } from "./agentUtils";
 import type { DMResponse } from "./dmAgent";
@@ -36,7 +37,6 @@ import {
 export interface CombatContext {
   player: PlayerState;
   encounter: StoredEncounter;
-  conversationHistory: ConversationTurn[];
 }
 
 // ─── Combat system prompt ─────────────────────────────────────────────────────
@@ -79,8 +79,9 @@ export async function getCombatResponse(
   playerInput: string,
   context: CombatContext,
   rulesOutcome: RulesOutcome | null,
+  sessionId: string,
 ): Promise<DMResponse> {
-  const { player, encounter, conversationHistory } = context;
+  const { player, encounter } = context;
 
   // Early exit: player is already at 0 HP — no API call needed
   if (player.currentHP <= 0) {
@@ -105,11 +106,10 @@ export async function getCombatResponse(
     userContent += `\n\n[Player roll result — d20 was ${rulesOutcome.roll}]\n${rulesOutcome.raw}`;
   }
 
-  // Minimal history: last 2 entries (1 user/assistant pair)
+  // Minimal history: last 2 entries (1 user/assistant pair) from messages subcollection
+  const recentMessages = await getRecentMessages(sessionId, COMBAT_HISTORY_ENTRIES);
   const historyMessages: Anthropic.MessageParam[] =
-    conversationHistory
-      .slice(-COMBAT_HISTORY_ENTRIES)
-      .map((turn) => ({ role: turn.role, content: turn.content }));
+    recentMessages.map((m) => ({ role: m.role, content: m.content }));
 
   const messages: Anthropic.MessageParam[] = [
     ...historyMessages,
