@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { SRDRace } from "../lib/characterStore";
-import { toDisplayCase } from "../lib/gameTypes";
+import { toDisplayCase, HIDDEN_RACIAL_TRAITS } from "../lib/gameTypes";
 import { OrnateFrame } from "./OrnateFrame";
 
 interface Props {
@@ -171,12 +171,14 @@ function RaceDetailModal({ race, onClose }: RaceDetailModalProps) {
             </div>
 
             {/* Right column: traits */}
-            {race.traits.length > 0 && (
+            {race.traits.filter((t) => !HIDDEN_RACIAL_TRAITS.has(t.name.toLowerCase())).length > 0 && (
               <div className="space-y-3">
                 <h3 className="font-cinzel text-sm text-parchment/50 tracking-widest uppercase">
                   Racial Traits
                 </h3>
-                {race.traits.map((t) => (
+                {race.traits
+                  .filter((t) => !HIDDEN_RACIAL_TRAITS.has(t.name.toLowerCase()))
+                  .map((t) => (
                   <div key={t.name}>
                     <div className="font-cinzel text-sm text-parchment font-semibold">
                       {toDisplayCase(t.name)}
@@ -298,9 +300,10 @@ export default function StepRace({ races, selectedRace, onSelect }: Props) {
                         <span>·</span>
                         <span>Size {sizeCategory(race.size)}</span>
                       </div>
-                      {race.traits.length > 0 && (
+                      {race.traits.filter((t) => !HIDDEN_RACIAL_TRAITS.has(t.name.toLowerCase())).length > 0 && (
                         <div className="font-crimson text-sm text-parchment/60 mt-1 line-clamp-2">
                           {race.traits
+                            .filter((t) => !HIDDEN_RACIAL_TRAITS.has(t.name.toLowerCase()))
                             .map((t) => toDisplayCase(t.name))
                             .join(" · ")}
                         </div>
