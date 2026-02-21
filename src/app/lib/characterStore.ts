@@ -119,7 +119,7 @@ export interface SRDClassLevel {
 export interface SRDStartingEquipment {
   slug: string;
   inventory: string[];
-  weapons: Array<{ name: string; dice: string; stat: string; bonus: number; range?: import("./gameTypes").WeaponRange }>;
+  weapons: Array<{ name: string; dice: string; stat: string; bonus: number; range?: import("./gameTypes").AbilityRange }>;
   gold: number;
 }
 

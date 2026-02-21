@@ -94,7 +94,7 @@ export function resolveWeaponAttack(
     const playerPos = positions.get("player");
     const targetPos = positions.get(target.id);
     if (playerPos && targetPos) {
-      const attackType = ability.weaponRange?.type === "ranged" ? "ranged" : "melee";
+      const attackType = ability.range?.type === "ranged" ? "ranged" : "melee";
       const mods = getPositionalModifiers(
         playerPos, targetPos, attackType,
         target.conditions, player.conditions,

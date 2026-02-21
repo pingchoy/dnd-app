@@ -68,7 +68,7 @@ import {
   PendingLevelUp,
   PendingLevelData,
   Ability,
-  WeaponRange,
+  AbilityRange,
   FEATURE_CHOICE_OPTIONS,
   FIGHTING_STYLE_EFFECTS,
   formatModifier,
@@ -330,7 +330,7 @@ export interface StateChanges {
     dice: string;
     stat: "str" | "dex" | "finesse" | "none";
     bonus: number;
-    range?: WeaponRange;
+    range?: AbilityRange;
     damageType?: string;
   }>;
   /** Update chosenOption on existing class features, keyed by feature name. */
@@ -435,7 +435,7 @@ export function applyStateChanges(changes: StateChanges): void {
         weaponBonus: w.bonus,
         damageRoll: w.dice,
         damageType: w.damageType,
-        weaponRange: w.range,
+        range: w.range,
         requiresTarget: true,
       });
     }

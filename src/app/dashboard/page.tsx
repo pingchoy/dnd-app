@@ -15,7 +15,7 @@ import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
 import type { GameState, Ability } from "../lib/gameTypes";
-import { feetDistance, validateAttackRange, checkSpellRange } from "../lib/combatEnforcement";
+import { feetDistance, validateAttackRange } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
   label: string;
@@ -177,14 +177,7 @@ export default function Dashboard() {
     const npcPos = positions.get(targetId);
 
     if (playerPos && npcPos) {
-      let rangeCheck;
-      if (selectedAbility.type === "weapon") {
-        rangeCheck = validateAttackRange(playerPos, npcPos, selectedAbility.weaponRange);
-      } else if (selectedAbility.srdRange) {
-        rangeCheck = checkSpellRange(playerPos, npcPos, selectedAbility.srdRange);
-      } else {
-        rangeCheck = validateAttackRange(playerPos, npcPos);
-      }
+      const rangeCheck = validateAttackRange(playerPos, npcPos, selectedAbility.range);
 
       if (!rangeCheck.inRange) {
         setRangeWarning(rangeCheck.reason ?? "Target is out of range");

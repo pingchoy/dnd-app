@@ -7,7 +7,6 @@ import {
   cellsInRange,
   validateMovement,
   validateAttackRange,
-  checkSpellRange,
   feetDistance,
   DEFAULT_MELEE_REACH,
 } from "../lib/combatEnforcement";
@@ -91,21 +90,15 @@ function clampScale(s: number): number {
 /** Format a compact range tag for an ability button. */
 function abilityRangeTag(ability: Ability): string {
   if (ability.type === "action") return "Self";
-  if (ability.weaponRange) {
-    const r = ability.weaponRange;
-    if (r.type === "melee") return `${r.reach ?? 5} ft`;
-    if (r.type === "ranged") return `${r.shortRange ?? 30} ft`;
-    if (r.type === "both") return `${r.reach ?? 5}/${r.shortRange ?? 20} ft`;
+  const r = ability.range;
+  if (!r) return "5 ft";
+  switch (r.type) {
+    case "self":   return "Self";
+    case "touch":  return "Touch";
+    case "melee":  return `${r.reach ?? 5} ft`;
+    case "ranged": return `${r.shortRange ?? 30} ft`;
+    case "both":   return `${r.reach ?? 5}/${r.shortRange ?? 20} ft`;
   }
-  if (ability.srdRange) {
-    const lower = ability.srdRange.toLowerCase();
-    if (lower === "self" || lower.startsWith("self ")) return "Self";
-    if (lower === "touch") return "Touch";
-    const feetMatch = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
-    if (feetMatch) return `${feetMatch[1]} ft`;
-    return ability.srdRange;
-  }
-  return "5 ft";
 }
 
 /**
@@ -372,23 +365,26 @@ export default function CombatGrid({
         let rangeFeet = DEFAULT_MELEE_REACH;
         let longRangeFeet: number | undefined;
 
-        if (s.targetingAbility.weaponRange) {
-          const wr = s.targetingAbility.weaponRange;
-          if (wr.type === "melee") {
-            rangeFeet = wr.reach ?? DEFAULT_MELEE_REACH;
-          } else if (wr.type === "ranged") {
-            rangeFeet = wr.shortRange ?? 30;
-            longRangeFeet = wr.longRange;
-          } else if (wr.type === "both") {
-            rangeFeet = wr.shortRange ?? wr.reach ?? 20;
-            longRangeFeet = wr.longRange;
-          }
-        } else if (s.targetingAbility.srdRange) {
-          const lower = s.targetingAbility.srdRange.toLowerCase();
-          if (lower === "touch") rangeFeet = 5;
-          else {
-            const fm = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
-            if (fm) rangeFeet = parseInt(fm[1]);
+        const ar = s.targetingAbility.range;
+        if (ar) {
+          switch (ar.type) {
+            case "self":
+              rangeFeet = 0;
+              break;
+            case "touch":
+              rangeFeet = ar.reach ?? DEFAULT_MELEE_REACH;
+              break;
+            case "melee":
+              rangeFeet = ar.reach ?? DEFAULT_MELEE_REACH;
+              break;
+            case "ranged":
+              rangeFeet = ar.shortRange ?? 30;
+              longRangeFeet = ar.longRange;
+              break;
+            case "both":
+              rangeFeet = ar.shortRange ?? ar.reach ?? 20;
+              longRangeFeet = ar.longRange;
+              break;
           }
         }
 
@@ -441,18 +437,10 @@ export default function CombatGrid({
         if (s.targetingAbility && npc.disposition === "hostile" && npc.currentHp > 0 && pPos) {
           const dist = Math.max(Math.abs(pos.row - pPos.row), Math.abs(pos.col - pPos.col)) * FEET_PER_SQUARE;
           let inRange = false;
-          if (s.targetingAbility.weaponRange) {
-            const wr = s.targetingAbility.weaponRange;
-            const maxRange = wr.longRange ?? wr.shortRange ?? wr.reach ?? DEFAULT_MELEE_REACH;
-            inRange = dist <= maxRange;
-          } else if (s.targetingAbility.srdRange) {
-            const lower = s.targetingAbility.srdRange.toLowerCase();
-            if (lower === "touch") inRange = dist <= 5;
-            else {
-              const fm = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
-              if (fm) inRange = dist <= parseInt(fm[1]);
-              else inRange = true;
-            }
+          const tr = s.targetingAbility.range;
+          if (tr) {
+            const maxRange = tr.longRange ?? tr.shortRange ?? tr.reach ?? DEFAULT_MELEE_REACH;
+            inRange = tr.type === "self" || dist <= maxRange;
           } else {
             inRange = dist <= DEFAULT_MELEE_REACH;
           }

@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
 import { getModifier, xpForLevel, FEATURE_CHOICE_OPTIONS, FIGHTING_STYLE_EFFECTS } from "../lib/gameTypes";
-import type { CharacterStats, CharacterFeature, StoryState, Ability, SpellAttackType, SpellScalingEntry, WeaponRange } from "../lib/gameTypes";
+import type { CharacterStats, CharacterFeature, StoryState, Ability, SpellAttackType, SpellScalingEntry, AbilityRange } from "../lib/gameTypes";
 
 import { parseSpellRange } from "../lib/combatEnforcement";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
@@ -592,13 +592,13 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
       ) as keyof import("../lib/gameTypes").CharacterStats | undefined;
 
       // ── Build combat abilities from weapons + cantrips + universal actions ──
-      const srdWeapons = (gear?.weapons ?? []) as Array<{ name: string; dice: string; stat: string; bonus: number; range?: WeaponRange }>;
+      const srdWeapons = (gear?.weapons ?? []) as Array<{ name: string; dice: string; stat: string; bonus: number; range?: AbilityRange }>;
 
       const weaponAbilities: Ability[] = srdWeapons.map(w => ({
         id: `weapon:${w.name}`,
         name: w.name,
         type: "weapon" as const,
-        weaponRange: w.range,
+        range: w.range,
         weaponStat: w.stat as "str" | "dex" | "finesse" | "none",
         weaponBonus: w.bonus,
         requiresTarget: true,
@@ -630,7 +630,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           name: spell?.name ?? slug,
           type: "cantrip" as const,
           spellLevel: 0,
-          srdRange: spell?.range,
+          range: parsedRange,
           attackType,
           saveAbility: spell?.savingThrowAbility,
           requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",
@@ -662,7 +662,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           name: spell?.name ?? slug,
           type: "spell" as const,
           spellLevel: spell?.level ?? 1,
-          srdRange: spell?.range,
+          range: parsedRange,
           attackType,
           saveAbility: spell?.savingThrowAbility,
           requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",

@@ -14,13 +14,12 @@ export interface GridPosition {
   col: number;
 }
 
-export interface WeaponRange {
-  type: "melee" | "ranged" | "both";  // "both" = thrown weapons
-  reach?: number;       // melee reach in feet (default 5)
+export interface AbilityRange {
+  type: "melee" | "ranged" | "both" | "self" | "touch";  // "both" = thrown weapons
+  reach?: number;       // melee/touch reach in feet (default 5)
   shortRange?: number;  // normal range in feet for ranged/thrown
   longRange?: number;   // max range (disadvantage beyond short)
 }
-
 export interface SRDWeaponData {
   slug: string;
   name: string;
@@ -52,8 +51,7 @@ export interface Ability {
   saveAbility?: string;          // "dexterity" for Sacred Flame etc.
   /** Ability score used to compute save DC (DC = 8 + prof + this mod). e.g. "constitution" for Breath Weapon. */
   saveDCAbility?: string;
-  srdRange?: string;             // SRD range string ("120 feet", "Touch", "Self")
-  weaponRange?: WeaponRange;     // parsed range for weapons
+  range?: AbilityRange;           // unified parsed range (weapons, spells, cantrips)
   requiresTarget: boolean;       // false for Self spells, Dodge, Dash, Disengage
   damageRoll?: string;           // "1d10" — current damage (updated at level-up for cantrips)
   damageType?: string;           // "fire", "piercing"

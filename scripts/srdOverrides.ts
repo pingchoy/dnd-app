@@ -73,7 +73,7 @@ export const RACE_OVERRIDES: Record<string, RaceOverride> = {
         saveDCAbility: "constitution",
         damageRoll: "2d6",
         damageType: "fire",
-        srdRange: "15 feet",
+        range: { type: "ranged", shortRange: 15 },
         requiresTarget: true,
         usesPerRest: 1,
         restType: "short",

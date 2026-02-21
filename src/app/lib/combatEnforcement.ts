@@ -7,7 +7,7 @@
  * No React, no server imports — safe for client and server.
  */
 
-import type { GridPosition, WeaponRange } from "./gameTypes";
+import type { GridPosition, AbilityRange } from "./gameTypes";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ export function cellsInRange(
 export function parseWeaponRange(
   category: string,
   properties: string[],
-): WeaponRange {
+): AbilityRange {
   const lowerCategory = category.toLowerCase();
   const isMelee = lowerCategory.includes("melee");
   const isRanged = lowerCategory.includes("ranged");
@@ -112,30 +112,27 @@ export function parseWeaponRange(
   };
 }
 
-/** Parse SRD spell range string ("30 feet", "Touch", "Self", "1 mile"). */
-export function parseSpellRange(rangeStr: string): {
-  type: "self" | "touch" | "ranged";
-  feet?: number;
-} {
+/** Parse SRD spell range string ("30 feet", "Touch", "Self", "1 mile") into an AbilityRange. */
+export function parseSpellRange(rangeStr: string): AbilityRange {
   const lower = rangeStr.toLowerCase().trim();
 
   if (lower === "self" || lower.startsWith("self ")) {
     return { type: "self" };
   }
   if (lower === "touch") {
-    return { type: "touch", feet: 5 };
+    return { type: "touch", reach: 5 };
   }
 
   // Match "N feet" or "N foot"
   const feetMatch = lower.match(/^(\d+)\s*(?:feet|foot|ft)/);
   if (feetMatch) {
-    return { type: "ranged", feet: parseInt(feetMatch[1]) };
+    return { type: "ranged", shortRange: parseInt(feetMatch[1]) };
   }
 
   // Match "N mile(s)" — convert to feet
   const mileMatch = lower.match(/^(\d+)\s*mile/);
   if (mileMatch) {
-    return { type: "ranged", feet: parseInt(mileMatch[1]) * 5280 };
+    return { type: "ranged", shortRange: parseInt(mileMatch[1]) * 5280 };
   }
 
   // Fallback: treat as ranged with unknown distance
@@ -195,68 +192,40 @@ export function checkRangedRange(
   };
 }
 
-/** Check spell range (parses SRD range string). */
-export function checkSpellRange(
-  caster: GridPosition,
-  target: GridPosition,
-  srdRangeStr: string,
-): RangeCheck {
-  const parsed = parseSpellRange(srdRangeStr);
-  const dist = feetDistance(caster, target);
-
-  if (parsed.type === "self") {
-    return { inRange: true, distance: 0 };
-  }
-  if (parsed.type === "touch") {
-    const inRange = dist <= 5;
-    return {
-      inRange,
-      distance: dist,
-      reason: inRange ? undefined : `Target is ${dist} ft away (touch spell requires 5 ft)`,
-    };
-  }
-  if (parsed.feet != null) {
-    const inRange = dist <= parsed.feet;
-    return {
-      inRange,
-      distance: dist,
-      reason: inRange ? undefined : `Target is ${dist} ft away (spell range: ${parsed.feet} ft)`,
-    };
-  }
-  // Unknown range — assume in range
-  return { inRange: true, distance: dist };
-}
-
-/** Unified range check from a WeaponRange object. */
+/** Unified range check from an AbilityRange object. */
 export function validateAttackRange(
   attacker: GridPosition,
   target: GridPosition,
-  weaponRange?: WeaponRange,
+  range?: AbilityRange,
 ): RangeCheck {
-  if (!weaponRange) {
+  if (!range) {
     // No range data — fall back to default melee
     return checkMeleeRange(attacker, target, DEFAULT_MELEE_REACH);
   }
 
-  switch (weaponRange.type) {
+  switch (range.type) {
+    case "self":
+      return { inRange: true, distance: 0 };
+    case "touch":
+      return checkMeleeRange(attacker, target, range.reach ?? DEFAULT_MELEE_REACH);
     case "melee":
-      return checkMeleeRange(attacker, target, weaponRange.reach);
+      return checkMeleeRange(attacker, target, range.reach);
     case "ranged":
       return checkRangedRange(
         attacker,
         target,
-        weaponRange.shortRange ?? 30,
-        weaponRange.longRange ?? 120,
+        range.shortRange ?? 30,
+        range.longRange ?? range.shortRange ?? 30,
       );
     case "both": {
       // Thrown weapons: try melee first, then ranged
-      const melee = checkMeleeRange(attacker, target, weaponRange.reach);
+      const melee = checkMeleeRange(attacker, target, range.reach);
       if (melee.inRange) return melee;
       return checkRangedRange(
         attacker,
         target,
-        weaponRange.shortRange ?? 20,
-        weaponRange.longRange ?? 60,
+        range.shortRange ?? 20,
+        range.longRange ?? 60,
       );
     }
   }
