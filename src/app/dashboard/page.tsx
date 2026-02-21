@@ -11,6 +11,7 @@ import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
 import CombatGrid from "../components/CombatGrid";
 import CompactChatPanel from "../components/CompactChatPanel";
+import TurnOrderBar from "../components/TurnOrderBar";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
@@ -49,6 +50,7 @@ export default function Dashboard() {
     isLoading,
     isRolling,
     isNarrating,
+    isCombatProcessing,
     totalTokens,
     estimatedCostUsd,
     characterId,
@@ -56,7 +58,6 @@ export default function Dashboard() {
     confirmRoll,
     applyDebugResult,
     executeCombatAction,
-    pendingNPCResults,
   } = useChat();
 
   const [userInput, setUserInput] = useState("");
@@ -69,7 +70,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingRoll, isRolling, isNarrating]);
+  }, [messages, pendingRoll, isRolling, isNarrating, isCombatProcessing]);
 
   // Escape key clears targeting mode
   useEffect(() => {
@@ -152,7 +153,7 @@ export default function Dashboard() {
 
   const { player, story } = gameState;
   const pendingLevelUp = player.pendingLevelUp ?? null;
-  const isBusy = isRolling || isNarrating || !!pendingRoll;
+  const isBusy = isRolling || isNarrating || !!pendingRoll || isCombatProcessing;
 
   /** Handle ability bar click: non-targeted abilities execute immediately, targeted ones enter targeting mode. */
   const handleSelectAbility = (ability: Ability) => {
@@ -331,6 +332,14 @@ export default function Dashboard() {
           {inCombat ? (
             /* ── Combat layout: grid fills entire left side, chat overlays ── */
             <div className="flex-1 overflow-hidden flex flex-col relative">
+              {/* Turn order bar — top of combat area */}
+              {encounter?.turnOrder && (
+                <TurnOrderBar
+                  turnOrder={encounter.turnOrder}
+                  currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                  activeNPCs={activeNPCs}
+                />
+              )}
               {/* Combat grid — fills entire area */}
               <OrnateFrame className="flex-1 overflow-hidden">
                 <CombatGrid

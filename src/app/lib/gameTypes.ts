@@ -330,6 +330,10 @@ export interface StoredEncounter {
   positions: Record<string, GridPosition>;
   gridSize: number;
   round: number;
+  /** Turn order: ["player", npcId1, npcId2, ...]. Player always first. */
+  turnOrder: string[];
+  /** Index into turnOrder for whose turn it is (0 = player). */
+  currentTurnIndex: number;
   /** Snapshot of location at encounter start (for combat agent narration). */
   location: string;
   /** Snapshot of scene at encounter start (for combat agent narration). */
@@ -360,6 +364,18 @@ export interface CharacterSummary {
   campaignTitle: string;
   updatedAt: number;
 }
+
+// ─── Combat SSE Event Types ──────────────────────────────────────────────────
+
+export type CombatSSEEvent =
+  | { type: "round_start"; round: number }
+  | { type: "player_turn"; playerId: string; narrative: string }
+  | { type: "npc_turn"; npcId: string; narrative: string }
+  | { type: "round_end"; round: number }
+  | { type: "state_update"; gameState: GameState; encounter: StoredEncounter }
+  | { type: "player_dead"; playerId: string; narrative: string }
+  | { type: "combat_end" }
+  | { type: "error"; message: string };
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
