@@ -183,7 +183,8 @@ interface V2Class {
   desc: string;
   hit_dice: string;
   caster_type: string;
-  subclass_of: string | null;
+  /** v2 API returns an object { key, name, url } for subclasses, null for base classes. */
+  subclass_of: { key: string; name: string; url: string } | null;
   saving_throws: Array<{ name: string }>;
   features: V2ClassFeature[];
 }
@@ -412,9 +413,9 @@ async function seedClasses(): Promise<V2Class[]> {
     // Saving throws from structured API field
     const savingThrows = cls.saving_throws.map((s) => s.name);
 
-    // Archetypes from subclasses (v2 API has empty top-level desc, compose from features)
+    // Archetypes from subclasses (v2 API subclass_of is { key, name, url })
     const archetypes = subclasses
-      .filter((sc) => sc.subclass_of === cls.key)
+      .filter((sc) => sc.subclass_of?.key === cls.key)
       .map((sc) => ({
         slug: stripKeyPrefix(sc.key),
         name: sc.name,
@@ -458,6 +459,10 @@ async function seedClasses(): Promise<V2Class[]> {
   });
 
   await batchWrite("srdClasses", docs);
+  for (const d of docs) {
+    const count = (d.data.archetypes as unknown[]).length;
+    console.log(`    ${d.id}: ${count} archetype${count !== 1 ? "s" : ""}`);
+  }
   console.log(`  ✓ ${docs.length} classes seeded`);
 
   return baseClasses;

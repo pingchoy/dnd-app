@@ -42,6 +42,11 @@ export default function LevelUpSubclass({
         </p>
       </div>
 
+      {archetypes.length === 0 && (
+        <p className="text-center font-crimson text-parchment/40 italic text-base py-8">
+          No archetypes found. SRD data may need to be re-seeded.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {archetypes.map((arch) => {
           const isSelected = selectedSubclass === arch.slug;

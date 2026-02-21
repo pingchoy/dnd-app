@@ -1,11 +1,39 @@
 "use client";
 
+import { useState } from "react";
 import type { PendingLevelUp, PlayerState } from "../../lib/gameTypes";
 import { getProficiencyBonus, toDisplayCase } from "../../lib/gameTypes";
 
 interface Props {
   pending: PendingLevelUp;
   player: PlayerState;
+}
+
+/** A single feature row with a truncated description and expandable full text. */
+function FeatureRow({ name, description }: { name: string; description?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDescription = description && description.length > 0;
+  const isTruncated = hasDescription && description.length > 150;
+  const preview = isTruncated ? description.slice(0, 150) + "…" : description;
+
+  return (
+    <div className="font-crimson text-base text-parchment/70">
+      <span className="text-parchment/90">{toDisplayCase(name)}</span>
+      {hasDescription && (
+        <span className="text-parchment/40 ml-1">
+          — {expanded ? description : preview}
+          {isTruncated && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-gold/60 hover:text-gold text-xs font-cinzel tracking-wide transition-colors ml-1.5"
+            >
+              {expanded ? "hide" : "see more"}
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export default function LevelUpSummary({ pending, player }: Props) {
@@ -76,18 +104,7 @@ export default function LevelUpSummary({ pending, player }: Props) {
                 </span>
                 <div className="mt-1 space-y-1">
                   {levelData.newFeatures.map((f) => (
-                    <div
-                      key={f.name}
-                      className="font-crimson text-base text-parchment/70"
-                    >
-                      <span className="text-parchment/90">{toDisplayCase(f.name)}</span>
-                      {f.description && (
-                        <span className="text-parchment/40 ml-1">
-                          — {f.description.split("\n")[0].slice(0, 120)}
-                          {f.description.length > 120 ? "…" : ""}
-                        </span>
-                      )}
-                    </div>
+                    <FeatureRow key={f.name} name={f.name} description={f.description} />
                   ))}
                 </div>
               </div>
@@ -101,12 +118,7 @@ export default function LevelUpSummary({ pending, player }: Props) {
                 </span>
                 <div className="mt-1 space-y-1">
                   {levelData.newSubclassFeatures.map((f) => (
-                    <div
-                      key={f.name}
-                      className="font-crimson text-base text-parchment/70"
-                    >
-                      <span className="text-parchment/90">{toDisplayCase(f.name)}</span>
-                    </div>
+                    <FeatureRow key={f.name} name={f.name} description={f.description} />
                   ))}
                 </div>
               </div>

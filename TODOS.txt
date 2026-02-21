@@ -1,0 +1,10 @@
+- Make it so that end of combat doesn't immediately close the combat page
+    - Display loot from the fight (if any)
+- Fix level up wizard
+- Make battle maps for combat grid background
+- Give tokens pictures
+- Add in AOE markers
+- Make lobby system so multiple players can join a session
+- Create ai generated plot story which they will guide the user through
+    - Perhaps have a list of plot points and storylines that they will take the player through
+- Subclasses have their own features... Have to implement this similar to current features I think?
