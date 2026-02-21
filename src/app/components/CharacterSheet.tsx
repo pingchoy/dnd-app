@@ -1,9 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import MarkdownProse from "./MarkdownProse";
 import SpellTag from "./SpellTag";
-import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatAbilityDamage, toDisplayCase, HIDDEN_RACIAL_TRAITS } from "../lib/gameTypes";
+import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatAbilityDamage, toDisplayCase, HIDDEN_RACIAL_TRAITS, LORE_RACIAL_TRAITS } from "../lib/gameTypes";
+
+/** Pluralize D&D race names for display headings. */
+const RACE_PLURALS: Record<string, string> = {
+  elf: "elves", dwarf: "dwarves", halfling: "halflings", gnome: "gnomes",
+  human: "humans", tiefling: "tieflings", dragonborn: "dragonborn",
+  "half-elf": "half-elves", "half-orc": "half-orcs",
+};
+
+function pluralizeRace(race: string): string {
+  return toDisplayCase(RACE_PLURALS[race.toLowerCase()] ?? race + "s");
+}
 
 
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
@@ -149,6 +161,242 @@ function ClassFeatures({ features }: FeatureListProps) {
   );
 }
 
+interface RightColumnTabsProps {
+  player: PlayerState;
+  allSkills: [string, keyof PlayerState["stats"]][];
+  prof: number;
+}
+
+function RightColumnTabs({ player, allSkills, prof }: RightColumnTabsProps) {
+  const isCaster = !!player.spellcastingAbility;
+
+  const loreFeatures = useMemo(
+    () => player.features.filter(
+      (f) => (f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0)
+        && LORE_RACIAL_TRAITS.has(f.name.toLowerCase())
+        && f.description,
+    ),
+    [player.features, player.race],
+  );
+
+  const tabs = useMemo(() => {
+    const list: { label: string; key: string }[] = [
+      { label: "Stats & Traits", key: "stats" },
+      { label: "Class Features", key: "class" },
+    ];
+    if (isCaster) list.push({ label: "Spellcasting", key: "spells" });
+    if (loreFeatures.length > 0) list.push({ label: `About ${pluralizeRace(player.race)}`, key: "lore" });
+    return list;
+  }, [isCaster, loreFeatures.length, player.race]);
+
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col">
+      <TabGroup className="flex-1 flex flex-col overflow-hidden">
+        <TabList className="flex-shrink-0 flex gap-1 border-b border-gold-dark/20 px-5 pt-3">
+          {tabs.map((t) => (
+            <Tab
+              key={t.key}
+              className="font-cinzel text-sm tracking-wide px-3 py-2 -mb-px border-b-2 outline-none transition-colors
+                data-[selected]:text-gold data-[selected]:border-gold
+                text-ink/50 border-transparent hover:text-ink/80 cursor-pointer"
+            >
+              {t.label}
+            </Tab>
+          ))}
+        </TabList>
+
+        <TabPanels className="flex-1 overflow-y-auto scroll-pane">
+          {/* Tab 1: Stats & Traits */}
+          <TabPanel className="px-5 py-4 space-y-5">
+            {/* Skills */}
+            <section>
+              <SectionHeading>Skills</SectionHeading>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {allSkills.map(([skill, ability]) => {
+                  const isProficient = player.skillProficiencies.some(
+                    (s) => s.toLowerCase() === skill.toLowerCase(),
+                  );
+                  const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
+                  return (
+                    <div key={skill} className="flex items-center gap-1.5 font-crimson text-sm text-ink/90">
+                      <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
+                      <span className="truncate">{skill}</span>
+                      <span className="text-ink/50 text-sm ml-0.5 flex-shrink-0">({ability.slice(0, 3).toUpperCase()})</span>
+                      <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-success-dark" : "text-red-700"}`}>{formatModifier(mod)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Proficiencies */}
+            <section>
+              <SectionHeading>Proficiencies</SectionHeading>
+              <div className="space-y-2">
+                <div>
+                  <span className="font-cinzel text-sm text-ink/50 tracking-wide">Weapons: </span>
+                  <span className="font-crimson text-sm text-ink/90">
+                    {(player.weaponProficiencies ?? []).length > 0
+                      ? (player.weaponProficiencies ?? []).map(toDisplayCase).join(", ")
+                      : "None"}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-cinzel text-sm text-ink/50 tracking-wide">Armor: </span>
+                  <span className="font-crimson text-sm text-ink/90">
+                    {(player.armorProficiencies ?? []).length > 0
+                      ? (player.armorProficiencies ?? []).map(toDisplayCase).join(", ")
+                      : "None"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <RacialTraits
+              features={player.features.filter(
+                (f) => (f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0)
+                  && !HIDDEN_RACIAL_TRAITS.has(f.name.toLowerCase())
+                  && !LORE_RACIAL_TRAITS.has(f.name.toLowerCase())
+              )}
+            />
+          </TabPanel>
+
+          {/* Tab 2: Class Features */}
+          <TabPanel className="px-5 py-4 space-y-5">
+            <ClassFeatures
+              features={player.features.filter(
+                (f) => f.source?.toLowerCase() !== player.race.toLowerCase() && f.level !== 0
+              )}
+            />
+          </TabPanel>
+
+          {/* Tab 3: Spellcasting (only rendered for casters) */}
+          {isCaster && (
+            <TabPanel className="px-5 py-4 space-y-5">
+              <section>
+                <SectionHeading>Spellcasting</SectionHeading>
+                <div className="space-y-3">
+                  <div className="flex gap-4 font-crimson text-sm text-ink/90">
+                    <span>
+                      Ability:{" "}
+                      <strong className="capitalize">{toDisplayCase(player.spellcastingAbility!)}</strong>
+                    </span>
+                    <span>
+                      Save DC:{" "}
+                      <strong>
+                        {8 + prof + getModifier(player.stats[player.spellcastingAbility!])}
+                      </strong>
+                    </span>
+                    <span>
+                      Spell Attack:{" "}
+                      <strong>
+                        {formatModifier(prof + getModifier(player.stats[player.spellcastingAbility!]))}
+                      </strong>
+                    </span>
+                  </div>
+
+                  {player.cantrips && player.cantrips.length > 0 && (
+                    <div>
+                      <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                        Cantrips ({player.cantrips.length}/{player.maxCantrips ?? player.cantrips.length})
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {player.cantrips.map((c) => (
+                          <SpellTag
+                            key={c}
+                            name={c}
+                            className="font-crimson text-sm bg-dungeon-mid text-parchment/80 border border-gold/30 rounded px-2 py-0.5"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {player.knownSpells && player.knownSpells.length > 0 && (
+                    <div>
+                      <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                        Spells ({player.knownSpells.length}/{player.maxKnownSpells ?? player.knownSpells.length})
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {player.knownSpells.map((s) => (
+                          <SpellTag
+                            key={s}
+                            name={s}
+                            className="font-crimson text-sm bg-dungeon-mid text-gold-light border border-gold/40 rounded px-2 py-0.5 shadow-sm shadow-gold/10"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {player.spellSlots && Object.keys(player.spellSlots).length > 0 && (
+                    <div>
+                      <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                        Spell Slots
+                      </div>
+                      <div className="space-y-1">
+                        {Object.entries(player.spellSlots)
+                          .sort(([a], [b]) => Number(a) - Number(b))
+                          .map(([lvl, total]) => {
+                            const used = player.spellSlotsUsed?.[lvl] ?? 0;
+                            const remaining = total - used;
+                            return (
+                              <div key={lvl} className="flex items-center gap-2">
+                                <span className="font-cinzel text-sm text-ink/50 w-8">
+                                  Lv{lvl}
+                                </span>
+                                <div className="flex gap-1">
+                                  {Array.from({ length: total }).map((_, i) => (
+                                    <span
+                                      key={i}
+                                      className={`w-4 h-4 rounded-full border-2 ${
+                                        i < remaining
+                                          ? "bg-gold border-gold-dark"
+                                          : "bg-transparent border-ink/20"
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="font-crimson text-sm text-ink/40 ml-1">
+                                  {remaining}/{total}
+                                </span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </TabPanel>
+          )}
+
+          {/* Tab 4: About {Race} (only rendered when lore features exist) */}
+          {loreFeatures.length > 0 && (
+            <TabPanel className="px-5 py-4 space-y-5">
+              <section>
+                <SectionHeading>About {pluralizeRace(player.race)}</SectionHeading>
+                <div className="space-y-3">
+                  {loreFeatures.map((f) => (
+                    <div key={f.name}>
+                      <span className="font-cinzel text-xs text-ink/50 tracking-wide uppercase">
+                        {toDisplayCase(f.name)}
+                      </span>
+                      <p className="font-crimson text-sm text-ink/70 leading-relaxed mt-0.5">
+                        {f.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </TabPanel>
+          )}
+        </TabPanels>
+      </TabGroup>
+    </div>
+  );
+}
+
 interface Props {
   player: PlayerState;
 }
@@ -272,169 +520,8 @@ export default function CharacterSheet({ player }: Props) {
           </section>
         </div>
 
-        {/* ── Right column: text-heavy sections ── */}
-        <div className="flex-1 overflow-y-auto scroll-pane px-5 py-4 space-y-5">
-
-          {/* Skills */}
-          <section>
-            <SectionHeading>Skills</SectionHeading>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {allSkills.map(([skill, ability]) => {
-                const isProficient = player.skillProficiencies.some(
-                  (s) => s.toLowerCase() === skill.toLowerCase(),
-                );
-                const mod = getModifier(player.stats[ability]) + (isProficient ? prof : 0);
-                return (
-                  <div key={skill} className="flex items-center gap-1.5 font-crimson text-sm text-ink/90">
-                    <span className={`w-3 h-3 rounded-full border flex-shrink-0 ${isProficient ? "bg-gold border-gold-dark" : "border-ink/40"}`} />
-                    <span className="truncate">{skill}</span>
-                    <span className="text-ink/50 text-sm ml-0.5 flex-shrink-0">({ability.slice(0, 3).toUpperCase()})</span>
-                    <span className={`ml-auto font-bold flex-shrink-0 ${mod >= 0 ? "text-success-dark" : "text-red-700"}`}>{formatModifier(mod)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Proficiencies */}
-          <section>
-            <SectionHeading>Proficiencies</SectionHeading>
-            <div className="space-y-2">
-              <div>
-                <span className="font-cinzel text-sm text-ink/50 tracking-wide">Weapons: </span>
-                <span className="font-crimson text-sm text-ink/90">
-                  {(player.weaponProficiencies ?? []).length > 0
-                    ? (player.weaponProficiencies ?? []).map(toDisplayCase).join(", ")
-                    : "None"}
-                </span>
-              </div>
-              <div>
-                <span className="font-cinzel text-sm text-ink/50 tracking-wide">Armor: </span>
-                <span className="font-crimson text-sm text-ink/90">
-                  {(player.armorProficiencies ?? []).length > 0
-                    ? (player.armorProficiencies ?? []).map(toDisplayCase).join(", ")
-                    : "None"}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <RacialTraits
-            features={player.features.filter(
-              (f) => (f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0)
-                && !HIDDEN_RACIAL_TRAITS.has(f.name.toLowerCase())
-            )}
-          />
-
-          <ClassFeatures
-            features={player.features.filter(
-              (f) => f.source?.toLowerCase() !== player.race.toLowerCase() && f.level !== 0
-            )}
-          />
-
-          {/* Spellcasting (casters only) */}
-          {player.spellcastingAbility && (
-            <section>
-              <SectionHeading>Spellcasting</SectionHeading>
-              <div className="space-y-3">
-                {/* Spellcasting ability, DC, attack */}
-                <div className="flex gap-4 font-crimson text-sm text-ink/90">
-                  <span>
-                    Ability:{" "}
-                    <strong className="capitalize">{toDisplayCase(player.spellcastingAbility)}</strong>
-                  </span>
-                  <span>
-                    Save DC:{" "}
-                    <strong>
-                      {8 + prof + getModifier(player.stats[player.spellcastingAbility])}
-                    </strong>
-                  </span>
-                  <span>
-                    Spell Attack:{" "}
-                    <strong>
-                      {formatModifier(prof + getModifier(player.stats[player.spellcastingAbility]))}
-                    </strong>
-                  </span>
-                </div>
-
-                {/* Cantrips */}
-                {player.cantrips && player.cantrips.length > 0 && (
-                  <div>
-                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
-                      Cantrips ({player.cantrips.length}/{player.maxCantrips ?? player.cantrips.length})
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {player.cantrips.map((c) => (
-                        <SpellTag
-                          key={c}
-                          name={c}
-                          className="font-crimson text-sm bg-dungeon-mid text-parchment/80 border border-gold/30 rounded px-2 py-0.5"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Known/Prepared spells */}
-                {player.knownSpells && player.knownSpells.length > 0 && (
-                  <div>
-                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
-                      Spells ({player.knownSpells.length}/{player.maxKnownSpells ?? player.knownSpells.length})
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {player.knownSpells.map((s) => (
-                        <SpellTag
-                          key={s}
-                          name={s}
-                          className="font-crimson text-sm bg-dungeon-mid text-gold-light border border-gold/40 rounded px-2 py-0.5 shadow-sm shadow-gold/10"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Spell slots */}
-                {player.spellSlots && Object.keys(player.spellSlots).length > 0 && (
-                  <div>
-                    <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
-                      Spell Slots
-                    </div>
-                    <div className="space-y-1">
-                      {Object.entries(player.spellSlots)
-                        .sort(([a], [b]) => Number(a) - Number(b))
-                        .map(([lvl, total]) => {
-                          const used = player.spellSlotsUsed?.[lvl] ?? 0;
-                          const remaining = total - used;
-                          return (
-                            <div key={lvl} className="flex items-center gap-2">
-                              <span className="font-cinzel text-sm text-ink/50 w-8">
-                                Lv{lvl}
-                              </span>
-                              <div className="flex gap-1">
-                                {Array.from({ length: total }).map((_, i) => (
-                                  <span
-                                    key={i}
-                                    className={`w-4 h-4 rounded-full border-2 ${
-                                      i < remaining
-                                        ? "bg-gold border-gold-dark"
-                                        : "bg-transparent border-ink/20"
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                              <span className="font-crimson text-sm text-ink/40 ml-1">
-                                {remaining}/{total}
-                              </span>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-        </div>
+        {/* ── Right column: tabbed sections ── */}
+        <RightColumnTabs player={player} allSkills={allSkills} prof={prof} />
       </div>
     </div>
   );

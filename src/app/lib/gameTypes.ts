@@ -396,8 +396,15 @@ export function xpForLevel(level: number): number {
   return XP_THRESHOLDS[Math.max(0, level - 1)] ?? 0;
 }
 
-/** Racial traits that are already surfaced as discrete stats (speed, ASI) — hide from trait lists. */
-export const HIDDEN_RACIAL_TRAITS = new Set(["ability score increase", "speed"]);
+/** Racial traits already surfaced as discrete stats — fully hidden from all trait lists. */
+export const HIDDEN_RACIAL_TRAITS = new Set([
+  "ability score increase", "speed",
+]);
+
+/** Racial traits that are lore/flavour — hidden from the main trait list, shown in a dedicated lore section. */
+export const LORE_RACIAL_TRAITS = new Set([
+  "age", "alignment", "size", "languages",
+]);
 
 /** Title-case a lowercase D&D term for display. Handles hyphens and minor words. */
 export function toDisplayCase(s: string): string {

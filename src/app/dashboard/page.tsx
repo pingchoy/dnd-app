@@ -403,7 +403,9 @@ export default function Dashboard() {
             <OrnateFrame className="flex-1 overflow-hidden">
               <div className="tome-container flex-1 overflow-hidden flex flex-col">
                 <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-                  {messages.map((message, idx) => (
+                  {messages
+                    .filter((m) => !(m.role === "user" && m.content.startsWith("[Combat]")))
+                    .map((message, idx) => (
                     <ChatCard
                       key={idx}
                       message={message}
