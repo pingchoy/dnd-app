@@ -406,35 +406,35 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
     asiLevels: [4, 8, 12, 16, 19],
     levels: {
       1: [
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 2, restType: "long" } },
-        { name: "unarmored defense", type: "passive", gameplayEffects: { acFormula: "10 + dex + con" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 2, restType: "long" } },
+        { name: "unarmored defense", type: "passive", gameplayEffects: { condition: "unarmored", acFormula: "10 + dex + con" } },
       ],
       2: [
         { name: "reckless attack", type: "active" },
         { name: "danger sense", type: "passive", gameplayEffects: { saveAdvantage: "dexterity" } },
       ],
       3: [
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 3, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 3, restType: "long" } },
       ],
       5: [
         { name: "extra attack", type: "passive", gameplayEffects: { numAttacks: 2 } },
         { name: "fast movement", type: "passive", gameplayEffects: { speedBonus: 10 } },
       ],
       6: [
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 2, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
       ],
       7: [
         { name: "feral instinct", type: "passive", gameplayEffects: { initiativeAdvantage: true } },
       ],
       9: [
         { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 1 } },
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 4, restType: "long" } },
       ],
       11: [
         { name: "relentless rage", type: "passive" },
       ],
       12: [
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 3, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
       ],
       13: [
         { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 2 } },
@@ -443,18 +443,18 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
         { name: "persistent rage", type: "passive" },
       ],
       16: [
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 5, restType: "long" } },
       ],
       17: [
         { name: "brutal critical", type: "passive", gameplayEffects: { critBonusDice: 3 } },
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 6, restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], usesPerRest: 6, restType: "long" } },
       ],
       18: [
         { name: "indomitable might", type: "passive" },
       ],
       20: [
         { name: "primal champion", type: "passive", gameplayEffects: { statBonuses: { strength: 4, constitution: 4 } } },
-        { name: "rage", type: "active", gameplayEffects: { meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], restType: "long" } },
+        { name: "rage", type: "active", gameplayEffects: { condition: "raging", meleeDamageBonus: 4, resistances: ["bludgeoning", "piercing", "slashing"], restType: "long" } },
       ],
     },
   },
@@ -595,12 +595,12 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
     asiLevels: [4, 8, 12, 16, 19],
     levels: {
       1: [
-        { name: "unarmored defense", type: "passive", gameplayEffects: { acFormula: "10 + dex + wis" } },
+        { name: "unarmored defense", type: "passive", gameplayEffects: { condition: "unarmored", acFormula: "10 + dex + wis" } },
         { name: "martial arts", type: "passive", gameplayEffects: { dieType: "d4" } },
       ],
       2: [
         { name: "ki", type: "active", gameplayEffects: { resourcePool: { name: "ki", perLevel: 1 } } },
-        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 10 } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { condition: "unarmored", speedBonus: 10 } },
       ],
       3: [
         { name: "deflect missiles", type: "reaction" },
@@ -615,14 +615,14 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
       ],
       6: [
         { name: "ki-empowered strikes", type: "passive" },
-        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 15 } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { condition: "unarmored", speedBonus: 15 } },
       ],
       7: [
         { name: "evasion", type: "passive", gameplayEffects: { evasion: true } },
         { name: "stillness of mind", type: "active" },
       ],
       9: [
-        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 20 } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { condition: "unarmored", speedBonus: 20 } },
       ],
       10: [
         { name: "purity of body", type: "passive", gameplayEffects: { immunities: ["disease", "poison"] } },
@@ -635,7 +635,7 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
       ],
       14: [
         { name: "diamond soul", type: "passive", gameplayEffects: { saveProficiencies: ["all"] } },
-        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 25 } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { condition: "unarmored", speedBonus: 25 } },
       ],
       15: [
         { name: "timeless body", type: "passive" },
@@ -645,7 +645,7 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
       ],
       18: [
         { name: "empty body", type: "active" },
-        { name: "unarmored movement", type: "passive", gameplayEffects: { speedBonus: 30 } },
+        { name: "unarmored movement", type: "passive", gameplayEffects: { condition: "unarmored", speedBonus: 30 } },
       ],
       20: [
         { name: "perfect self", type: "passive" },

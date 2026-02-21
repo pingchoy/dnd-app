@@ -54,6 +54,8 @@ export {
   rollD20,
   getWeaponAbilityMod,
   doubleDice,
+  applyEffects,
+  FIGHTING_STYLE_EFFECTS,
 } from "./gameTypes";
 
 import {
@@ -68,12 +70,14 @@ import {
   Ability,
   WeaponRange,
   FEATURE_CHOICE_OPTIONS,
+  FIGHTING_STYLE_EFFECTS,
   formatModifier,
   getModifier,
   getProficiencyBonus,
   formatAbilityDamage,
   xpForLevel,
   XP_THRESHOLDS,
+  applyEffects,
 } from "./gameTypes";
 
 /**
@@ -223,6 +227,25 @@ let state: GameState = {
     inventory: [],
     conditions: [],
     gold: 0,
+    baseArmorClass: 10,
+    baseSpeed: 30,
+    activeConditions: [],
+    numAttacks: 1,
+    meleeAttackBonus: 0,
+    rangedAttackBonus: 0,
+    spellAttackBonus: 0,
+    meleeDamageBonus: 0,
+    rangedDamageBonus: 0,
+    critBonusDice: 0,
+    bonusDamage: [],
+    resistances: [],
+    immunities: [],
+    evasion: false,
+    saveAdvantages: [],
+    initiativeAdvantage: false,
+    halfProficiency: false,
+    minCheckRoll: 0,
+    bonusSaveProficiencies: [],
   },
   story: {
     campaignTitle: "",
@@ -720,6 +743,20 @@ export async function loadGameState(characterId: string): Promise<GameState> {
     }
   }
 
+  // Backfill base values for existing characters that predate the effects system
+  if (state.player.baseArmorClass == null) {
+    state.player.baseArmorClass = state.player.armorClass;
+  }
+  if (state.player.baseSpeed == null) {
+    state.player.baseSpeed = state.player.speed ?? 30;
+  }
+  if (!state.player.activeConditions) {
+    state.player.activeConditions = [];
+  }
+
+  // Aggregate gameplay effects from features onto PlayerState
+  applyEffects(state.player);
+
   return state;
 }
 
@@ -742,6 +779,8 @@ export async function applyStateChangesAndPersist(
   characterId: string,
 ): Promise<void> {
   applyStateChanges(changes);
+  // Re-aggregate effects in case conditions changed
+  applyEffects(state.player);
   // Check for level-up regardless of source (xp_gained field or NPC kill XP)
   await awardXPAsync(characterId, 0);
 
@@ -847,11 +886,17 @@ export async function applyLevelUp(
         }
       } else {
         const chosenOption = choice?.featureChoices?.[feat.name];
+        // For fighting style, apply the chosen style's gameplay effects
+        let effects = feat.gameplayEffects;
+        if (feat.name.toLowerCase() === "fighting style" && chosenOption) {
+          const styleEffects = FIGHTING_STYLE_EFFECTS[chosenOption.toLowerCase()];
+          if (styleEffects) effects = styleEffects;
+        }
         state.player.features.push({
           name: feat.name,
           level: lvl,
           ...(chosenOption ? { chosenOption } : {}),
-          ...(feat.gameplayEffects ? { gameplayEffects: feat.gameplayEffects } : {}),
+          ...(effects ? { gameplayEffects: effects } : {}),
         });
       }
     }

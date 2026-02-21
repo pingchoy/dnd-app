@@ -85,13 +85,27 @@ export interface CharacterStats {
 }
 
 export interface GameplayEffects {
+  /**
+   * When this effect is active. Defaults to "always" if omitted.
+   * Known conditions: "always", "raging", "unarmored", "concentrating:<spell>",
+   * "wielding_shield", "wearing_heavy_armor", "wielding_onehanded",
+   * "wielding_twohanded", "first_turn", "wild_shaped".
+   */
+  condition?: string;
+
   // ─── Offense ───
   /** Total attacks per Attack action (Extra Attack: 2/3/4). */
   numAttacks?: number;
-  /** Flat bonus to attack rolls (Archery style: +2). */
-  attackBonus?: number;
+  /** Flat bonus to melee attack rolls. */
+  meleeAttackBonus?: number;
+  /** Flat bonus to ranged attack rolls (Archery style: +2). */
+  rangedAttackBonus?: number;
+  /** Flat bonus to spell attack rolls. */
+  spellAttackBonus?: number;
   /** Flat melee damage bonus (Rage: +2/+3/+4). */
   meleeDamageBonus?: number;
+  /** Flat ranged damage bonus. */
+  rangedDamageBonus?: number;
   /** Extra weapon dice on crits (Brutal Critical: 1/2/3). */
   critBonusDice?: number;
   /** Bonus damage on every hit, e.g. "1d8 radiant" (Improved Divine Smite). */
@@ -190,6 +204,30 @@ export interface PlayerState {
   subclass?: string;
   // ─── Movement ───
   speed?: number; // walking speed in feet (default 30)
+  // ─── Base values (set at creation / level-up, never modified by applyEffects) ───
+  baseArmorClass?: number;
+  baseSpeed?: number;
+  // ─── Active conditions (tracks current character state for effect aggregation) ───
+  activeConditions?: string[];
+  // ─── Aggregated offense (computed by applyEffects from feature gameplayEffects) ───
+  numAttacks?: number;             // default 1
+  meleeAttackBonus?: number;       // default 0
+  rangedAttackBonus?: number;      // default 0
+  spellAttackBonus?: number;       // default 0
+  meleeDamageBonus?: number;       // default 0
+  rangedDamageBonus?: number;      // default 0
+  critBonusDice?: number;          // default 0
+  bonusDamage?: string[];          // default []
+  // ─── Aggregated defense (computed by applyEffects) ───
+  resistances?: string[];          // default []
+  immunities?: string[];           // default []
+  evasion?: boolean;               // default false
+  // ─── Aggregated saves & checks (computed by applyEffects) ───
+  saveAdvantages?: string[];       // default [] — abilities with save advantage (e.g. "dexterity")
+  initiativeAdvantage?: boolean;   // default false
+  halfProficiency?: boolean;       // default false
+  minCheckRoll?: number;           // default 0
+  bonusSaveProficiencies?: string[]; // separate from base savingThrowProficiencies
   // ─── Spellcasting (optional — non-casters carry none of these) ───
   spellcastingAbility?: keyof CharacterStats;
   cantrips?: string[];
@@ -502,7 +540,150 @@ export interface ParsedRollResult {
   };
 }
 
+// ─── Effect Aggregation ─────────────────────────────────────────────────────
+
+/**
+ * Parse an acFormula like "10 + dex + con" into a computed AC value.
+ * Recognizes ability abbreviations (str, dex, con, int, wis, cha).
+ */
+function computeACFromFormula(formula: string, stats: CharacterStats): number {
+  const abilityMap: Record<string, keyof CharacterStats> = {
+    str: "strength", dex: "dexterity", con: "constitution",
+    int: "intelligence", wis: "wisdom", cha: "charisma",
+  };
+  const parts = formula.split("+").map(p => p.trim().toLowerCase());
+  let ac = 0;
+  for (const part of parts) {
+    const num = parseInt(part);
+    if (!isNaN(num)) {
+      ac += num;
+    } else if (abilityMap[part]) {
+      ac += getModifier(stats[abilityMap[part]]);
+    }
+  }
+  return ac;
+}
+
+/**
+ * Aggregate gameplayEffects from all active features onto PlayerState.
+ *
+ * Pure function — mutates only the derived/aggregated fields on `player`.
+ * Runs at the start of each request after loading from Firestore.
+ *
+ * Merge rules:
+ *  - numAttacks: Math.max (doesn't stack)
+ *  - Bonuses (attack, damage, AC, speed): sum
+ *  - Lists (resistances, immunities, saveProficiencies): concat + dedupe
+ *  - Booleans (evasion, initiativeAdvantage, halfProficiency): OR
+ *  - acFormula: last-wins (only one AC calculation formula)
+ *  - minCheckRoll: Math.max
+ */
+export function applyEffects(player: PlayerState): void {
+  const baseAC = player.baseArmorClass ?? player.armorClass;
+  const baseSpd = player.baseSpeed ?? player.speed ?? 30;
+
+  // Reset derived fields to base/default values
+  player.armorClass = baseAC;
+  player.speed = baseSpd;
+  player.numAttacks = 1;
+  player.meleeAttackBonus = 0;
+  player.rangedAttackBonus = 0;
+  player.spellAttackBonus = 0;
+  player.meleeDamageBonus = 0;
+  player.rangedDamageBonus = 0;
+  player.critBonusDice = 0;
+  player.bonusDamage = [];
+  player.resistances = [];
+  player.immunities = [];
+  player.evasion = false;
+  player.saveAdvantages = [];
+  player.initiativeAdvantage = false;
+  player.halfProficiency = false;
+  player.minCheckRoll = 0;
+  player.bonusSaveProficiencies = [];
+
+  const conditions = player.activeConditions ?? [];
+  let acFormula: string | undefined;
+  let acBonus = 0;
+  let speedBonus = 0;
+
+  for (const feature of player.features) {
+    const fx = feature.gameplayEffects;
+    if (!fx) continue;
+
+    const cond = fx.condition ?? "always";
+    if (cond !== "always" && !conditions.includes(cond)) continue;
+
+    // Offense
+    if (fx.numAttacks != null) player.numAttacks = Math.max(player.numAttacks!, fx.numAttacks);
+    if (fx.meleeAttackBonus) player.meleeAttackBonus! += fx.meleeAttackBonus;
+    if (fx.rangedAttackBonus) player.rangedAttackBonus! += fx.rangedAttackBonus;
+    if (fx.spellAttackBonus) player.spellAttackBonus! += fx.spellAttackBonus;
+    if (fx.meleeDamageBonus) player.meleeDamageBonus! += fx.meleeDamageBonus;
+    if (fx.rangedDamageBonus) player.rangedDamageBonus! += fx.rangedDamageBonus;
+    if (fx.critBonusDice) player.critBonusDice! += fx.critBonusDice;
+    if (fx.bonusDamage) player.bonusDamage!.push(fx.bonusDamage);
+
+    // Defense
+    if (fx.acBonus) acBonus += fx.acBonus;
+    if (fx.acFormula) acFormula = fx.acFormula; // last-wins
+    if (fx.resistances?.length) {
+      for (const r of fx.resistances) {
+        if (!player.resistances!.includes(r)) player.resistances!.push(r);
+      }
+    }
+    if (fx.immunities?.length) {
+      for (const im of fx.immunities) {
+        if (!player.immunities!.includes(im)) player.immunities!.push(im);
+      }
+    }
+    if (fx.evasion) player.evasion = true;
+
+    // Movement
+    if (fx.speedBonus) speedBonus += fx.speedBonus;
+
+    // Saves & Checks
+    if (fx.saveAdvantage) {
+      if (!player.saveAdvantages!.includes(fx.saveAdvantage)) {
+        player.saveAdvantages!.push(fx.saveAdvantage);
+      }
+    }
+    if (fx.initiativeAdvantage) player.initiativeAdvantage = true;
+    if (fx.halfProficiency) player.halfProficiency = true;
+    if (fx.minCheckRoll != null) player.minCheckRoll = Math.max(player.minCheckRoll!, fx.minCheckRoll);
+    if (fx.saveProficiencies?.length) {
+      for (const sp of fx.saveProficiencies) {
+        if (!player.bonusSaveProficiencies!.includes(sp)) player.bonusSaveProficiencies!.push(sp);
+      }
+    }
+  }
+
+  // Apply AC: formula overrides base, then add flat bonuses
+  if (acFormula) {
+    player.armorClass = computeACFromFormula(acFormula, player.stats) + acBonus;
+  } else {
+    player.armorClass = baseAC + acBonus;
+  }
+
+  // Apply speed bonus
+  player.speed = baseSpd + speedBonus;
+}
+
 // ─── Feature choice options ──────────────────────────────────────────────────
+
+/**
+ * Gameplay effects for each fighting style choice.
+ * Applied to the "fighting style" feature's gameplayEffects when the player picks one.
+ * Used at character creation and by applyEffects() aggregation.
+ */
+export const FIGHTING_STYLE_EFFECTS: Record<string, GameplayEffects> = {
+  archery:                  { rangedAttackBonus: 2 },
+  defense:                  { acBonus: 1 },
+  dueling:                  { condition: "wielding_onehanded", meleeDamageBonus: 2 },
+  "great weapon fighting":  { condition: "wielding_twohanded" },
+  protection:               { condition: "wielding_shield" },
+  "two-weapon fighting":    {},
+};
 
 /**
  * Shared option data for features that require a player choice.
