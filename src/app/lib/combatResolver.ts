@@ -25,15 +25,12 @@ import {
   Ability,
   WeaponStat,
 } from "./gameTypes";
-import { isWeaponProficient, getCantripDice } from "./dnd5eData";
+import { isWeaponProficient } from "./dnd5eData";
 import {
   getPositionalModifiers,
   CombatModifier,
 } from "./combatEnforcement";
 import type { GridPosition } from "./gameTypes";
-
-/** All SRD cantrips scale at character levels 5, 11, and 17. */
-const CANTRIP_SCALING_LEVELS = [5, 11, 17];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -219,9 +216,6 @@ export function resolveSpellAttack(
   let damage: ParsedRollResult["damage"] = undefined;
   if (hit && ability.damageRoll) {
     let diceExpr = ability.damageRoll;
-    if (ability.type === "cantrip") {
-      diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
-    }
     if (isNat20) {
       diceExpr = doubleDice(diceExpr);
     }
@@ -294,9 +288,7 @@ export function resolveSpellSave(
   let damage: ParsedRollResult["damage"] = undefined;
   if (spellLands && ability.damageRoll) {
     let diceExpr = ability.damageRoll;
-    if (ability.type === "cantrip") {
-      diceExpr = getCantripDice(diceExpr, player.level, CANTRIP_SCALING_LEVELS);
-    } else if (ability.type === "racial" && ability.racialScaling) {
+    if (ability.type === "racial" && ability.racialScaling) {
       // Racial scaling: find the highest threshold at or below the player's level
       const thresholds = Object.keys(ability.racialScaling)
         .map(Number)

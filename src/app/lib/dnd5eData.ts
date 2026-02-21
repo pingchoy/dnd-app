@@ -75,15 +75,6 @@ export const MARTIAL_WEAPONS = new Set([
   "net",
 ]);
 
-/** Scale cantrip dice by character level — dice count increases at 5th, 11th, 17th. */
-export function getCantripDice(baseDice: string, level: number, scalingLevels: number[]): string {
-  const m = baseDice.match(/^(\d+)(d\d+)$/i);
-  if (!m) return baseDice;
-  let count = parseInt(m[1]);
-  for (const threshold of scalingLevels) { if (level >= threshold) count++; }
-  return `${count}${m[2]}`;
-}
-
 // ─── Proficiency helper ──────────────────────────────────────────────────────
 
 /**

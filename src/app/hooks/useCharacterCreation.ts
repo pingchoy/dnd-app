@@ -92,7 +92,6 @@ export interface SpellOption {
   damageRoll?: string;
   damageTypes?: string[];
   upcastScaling?: Record<string, SpellScalingEntry>;
-  cantripScaling?: Record<string, SpellScalingEntry>;
 }
 
 export interface CharacterCreationState {
@@ -624,7 +623,6 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           requiresTarget: attackType !== "none" && attackType !== "auto" && parsedRange.type !== "self",
           damageRoll,
           damageType,
-          cantripScaling: spell?.cantripScaling,
         };
       });
 

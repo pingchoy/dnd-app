@@ -55,12 +55,12 @@ export interface Ability {
   srdRange?: string;             // SRD range string ("120 feet", "Touch", "Self")
   weaponRange?: WeaponRange;     // parsed range for weapons
   requiresTarget: boolean;       // false for Self spells, Dodge, Dash, Disengage
-  damageRoll?: string;           // "1d10" — base damage at minimum spell level
+  damageRoll?: string;           // "1d10" — current damage (updated at level-up for cantrips)
   damageType?: string;           // "fire", "piercing"
+  /** Number of targets/beams (e.g. Eldritch Blast). Updated at level-up for scaling cantrips. */
+  targetCount?: number;
   /** Leveled spells: slot level → scaling overrides. Only breakpoint levels stored. */
   upcastScaling?: Record<string, SpellScalingEntry>;
-  /** Cantrips: player level → scaling overrides (levels 5, 11, 17). */
-  cantripScaling?: Record<string, SpellScalingEntry>;
   /** Racial abilities: character level → scaling overrides (levels 6, 11, 16). */
   racialScaling?: Record<string, SpellScalingEntry>;
   /** How many times this ability can be used per rest (informational). */

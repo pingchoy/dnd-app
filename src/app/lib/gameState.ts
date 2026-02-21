@@ -16,6 +16,7 @@ import {
   getSRDSubclassLevel,
   loadCharacter,
   saveCharacterState,
+  querySRD,
 } from "./characterStore";
 
 import {
@@ -891,6 +892,27 @@ export async function applyLevelUp(
     // Update level
     state.player.level = lvl;
     state.player.xpToNextLevel = xpForLevel(lvl + 1);
+
+    // Scale cantrip damage/targetCount from SRD data at this level
+    if (state.player.abilities?.length) {
+      for (const ability of state.player.abilities) {
+        if (ability.type !== "cantrip") continue;
+        const slug = ability.id.replace("cantrip:", "");
+        const srd = await querySRD("spell", slug);
+        const scaling = srd?.cantripScaling as Record<string, { damageRoll?: string; targetCount?: number }> | undefined;
+        if (!scaling) continue;
+        // Find the highest threshold at or below the new level
+        const best = Object.keys(scaling)
+          .map(Number)
+          .filter((t) => t <= lvl)
+          .sort((a, b) => b - a)[0];
+        if (best != null) {
+          const entry = scaling[String(best)];
+          if (entry.damageRoll) ability.damageRoll = entry.damageRoll;
+          if (entry.targetCount != null) ability.targetCount = entry.targetCount;
+        }
+      }
+    }
   }
 
   // Clear pending level-up
