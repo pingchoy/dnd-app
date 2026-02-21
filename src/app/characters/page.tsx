@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "../hooks/useChat";
 import type { CharacterSummary } from "../lib/gameTypes";
@@ -9,10 +9,8 @@ import CharacterCard from "./CharacterCard";
 /**
  * Character Select Page.
  *
- * On mount:
- * 1. Read dnd_character_ids from localStorage (with migration from single ID)
- * 2. Fetch summaries via GET /api/characters?ids=a,b,c
- * 3. Prune stale IDs (any not returned by API) from localStorage
+ * On mount, fetches ALL character summaries from Firestore via GET /api/characters.
+ * Selecting a character stores its ID in localStorage for the dashboard.
  */
 export default function CharacterSelectPage() {
   const router = useRouter();
@@ -20,53 +18,24 @@ export default function CharacterSelectPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  /** Read (and migrate) the character ID array from localStorage. */
-  const readIds = useCallback((): string[] => {
-    const raw = localStorage.getItem(CHARACTER_IDS_KEY);
-    if (raw) {
-      try {
-        return JSON.parse(raw) as string[];
-      } catch {
-        return [];
-      }
-    }
-    // Migration: seed from single active ID if the array doesn't exist yet
-    const singleId = localStorage.getItem(CHARACTER_ID_KEY);
-    if (singleId) {
-      const ids = [singleId];
-      localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(ids));
-      return ids;
-    }
-    return [];
-  }, []);
-
-  /** Fetch summaries and prune stale IDs. */
+  /** Fetch all character summaries from Firestore. */
   useEffect(() => {
-    const ids = readIds();
-    if (ids.length === 0) {
-      setIsLoading(false);
-      return;
-    }
-
-    fetch(`/api/characters?ids=${ids.join(",")}`)
+    fetch("/api/characters")
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((data: { characters: CharacterSummary[] }) => {
-        const fetched = data.characters;
-        setCharacters(fetched);
+        setCharacters(data.characters);
 
-        // Prune stale IDs — keep only those the API returned
-        const validIds = new Set(fetched.map((c) => c.id));
-        const pruned = ids.filter((id) => validIds.has(id));
-        localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(pruned));
+        // Sync localStorage IDs with what exists in Firestore
+        const validIds = data.characters.map((c) => c.id);
+        localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(validIds));
       })
       .catch((err) => {
         console.error("[CharacterSelect] Failed to load characters:", err);
       })
       .finally(() => setIsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleSelect(id: string) {
@@ -87,12 +56,12 @@ export default function CharacterSelectPage() {
       });
       if (!res.ok) throw new Error("Delete failed");
 
-      // Remove from state
-      setCharacters((prev) => prev.filter((c) => c.id !== id));
-
-      // Remove from localStorage
-      const ids = readIds().filter((i) => i !== id);
-      localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(ids));
+      // Remove from state and sync localStorage
+      setCharacters((prev) => {
+        const updated = prev.filter((c) => c.id !== id);
+        localStorage.setItem(CHARACTER_IDS_KEY, JSON.stringify(updated.map((c) => c.id)));
+        return updated;
+      });
 
       // If the active character was deleted, clear it
       if (localStorage.getItem(CHARACTER_ID_KEY) === id) {

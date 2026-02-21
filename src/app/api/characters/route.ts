@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCharacter, loadCharacterSummaries, deleteCharacter } from "../../lib/characterStore";
+import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, deleteCharacter } from "../../lib/characterStore";
 import type { PlayerState, StoryState } from "../../lib/gameTypes";
 
-/** GET /api/characters?ids=abc,def — fetch lightweight summaries for a set of character IDs. */
+/** GET /api/characters — list all characters, or filter by ?ids=abc,def. */
 export async function GET(request: NextRequest) {
   try {
     const idsParam = request.nextUrl.searchParams.get("ids") ?? "";
     const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20);
 
-    if (ids.length === 0) {
-      return NextResponse.json({ characters: [] });
-    }
+    const characters = ids.length > 0
+      ? await loadCharacterSummaries(ids)
+      : await listAllCharacterSummaries();
 
-    const characters = await loadCharacterSummaries(ids);
     return NextResponse.json({ characters });
   } catch (err) {
     console.error("[/api/characters GET] error:", err);

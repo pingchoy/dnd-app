@@ -332,6 +332,52 @@ export async function loadCharacterSummaries(ids: string[]): Promise<CharacterSu
 }
 
 /**
+ * List ALL character summaries from Firestore, ordered by most recently updated.
+ * Useful for debugging — no localStorage dependency.
+ */
+export async function listAllCharacterSummaries(): Promise<CharacterSummary[]> {
+  const charSnap = await adminDb.collection("characters").orderBy("updatedAt", "desc").get();
+  if (charSnap.empty) return [];
+
+  const validChars: Array<{ id: string; data: StoredCharacterV2 }> = [];
+  const sessionIdSet = new Set<string>();
+
+  for (const doc of charSnap.docs) {
+    const data = doc.data() as StoredCharacterV2;
+    validChars.push({ id: doc.id, data });
+    if (data.sessionId) sessionIdSet.add(data.sessionId);
+  }
+
+  const sessionMap = new Map<string, StoredSession>();
+  const sessionIds = Array.from(sessionIdSet);
+  if (sessionIds.length > 0) {
+    const sessionRefs = sessionIds.map((sid) => adminDb.collection("sessions").doc(sid));
+    const sessionSnaps = await adminDb.getAll(...sessionRefs);
+    for (const snap of sessionSnaps) {
+      if (!snap.exists) continue;
+      sessionMap.set(snap.id, snap.data() as StoredSession);
+    }
+  }
+
+  const results: CharacterSummary[] = [];
+  for (const { id, data } of validChars) {
+    const session = sessionMap.get(data.sessionId);
+    results.push({
+      id,
+      name: data.player.name,
+      race: data.player.race,
+      characterClass: data.player.characterClass,
+      level: data.player.level,
+      currentHP: data.player.currentHP,
+      maxHP: data.player.maxHP,
+      campaignTitle: session?.story.campaignTitle ?? "",
+      updatedAt: (data.updatedAt as number) ?? (data.createdAt as number) ?? 0,
+    });
+  }
+  return results;
+}
+
+/**
  * Delete a character from Firestore.
  * Removes the character from its session's characterIds. If this was the
  * last character in the session, deletes the session too.
