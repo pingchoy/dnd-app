@@ -3,7 +3,7 @@
 import { useState } from "react";
 import MarkdownProse from "./MarkdownProse";
 import SpellTag from "./SpellTag";
-import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatAbilityDamage, toDisplayCase } from "../lib/gameTypes";
+import { PlayerState, formatModifier, getModifier, getProficiencyBonus, formatAbilityDamage, toDisplayCase, HIDDEN_RACIAL_TRAITS } from "../lib/gameTypes";
 
 
 const SKILL_ABILITIES: Record<string, keyof PlayerState["stats"]> = {
@@ -321,7 +321,8 @@ export default function CharacterSheet({ player }: Props) {
 
           <RacialTraits
             features={player.features.filter(
-              (f) => f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0
+              (f) => (f.source?.toLowerCase() === player.race.toLowerCase() || f.level === 0)
+                && !HIDDEN_RACIAL_TRAITS.has(f.name.toLowerCase())
             )}
           />
 
