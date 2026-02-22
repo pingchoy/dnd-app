@@ -5,7 +5,7 @@ import type { PendingLevelUp, PendingLevelData, PlayerState, CharacterStats, Gam
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type LevelUpStep = "summary" | "subclass" | "asi" | "features" | "spells" | "confirm";
+export type LevelUpStep = "summary" | "subclass" | "asi" | "features" | "spells" | "prepare" | "confirm";
 
 export interface SpellOption {
   slug: string;
@@ -67,7 +67,7 @@ export interface UseLevelUpReturn {
   featureChoices: Record<string, string>;
   setFeatureChoice: (featureName: string, choice: string) => void;
   allFeatureChoicesMade: boolean;
-  // Spells
+  // Spells (known casters + cantrip learners)
   availableCantrips: SpellOption[];
   availableSpells: SpellOption[][];
   selectedCantrips: string[];
@@ -79,6 +79,11 @@ export interface UseLevelUpReturn {
   isLoadingSpells: boolean;
   alreadyKnownCantrips: string[];
   alreadyKnownSpells: string[];
+  // Prepare (prepared casters)
+  selectedPreparedSpells: string[];
+  togglePreparedSpell: (name: string) => void;
+  maxPreparedSpells: number;
+  needsPreparation: boolean;
   // Confirm
   isConfirming: boolean;
   confirm: () => Promise<GameState>;
@@ -92,18 +97,29 @@ export function useLevelUp(
   player: PlayerState,
   characterId: string,
 ): UseLevelUpReturn {
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const totalCantripSlots = pending.levels.reduce((sum, l) => sum + l.newCantripSlots, 0);
+  const totalSpellSlots = pending.levels.reduce((sum, l) => sum + l.newSpellSlots, 0);
+  const needsPreparation = pending.levels.some(l => l.maxPreparedSpells != null && l.maxPreparedSpells > 0);
+  // Last level's maxPreparedSpells is the target for the "prepare" step
+  const maxPreparedSpells = pending.levels.reduce(
+    (max, l) => l.maxPreparedSpells != null ? l.maxPreparedSpells : max,
+    player.maxPreparedSpells ?? 0,
+  );
+
   // ── Step computation ────────────────────────────────────────────────────────
   const steps = useMemo<LevelUpStep[]>(() => {
     const s: LevelUpStep[] = ["summary"];
     if (pending.levels.some((l) => l.requiresSubclass)) s.push("subclass");
     if (pending.levels.some((l) => l.isASILevel)) s.push("asi");
     if (pending.levels.some((l) => l.featureChoices.length > 0)) s.push("features");
-    const totalCantrips = pending.levels.reduce((sum, l) => sum + l.newCantripSlots, 0);
-    const totalSpells = pending.levels.reduce((sum, l) => sum + l.newSpellSlots, 0);
-    if (totalCantrips + totalSpells > 0) s.push("spells");
+    // "spells" step: for known casters (incremental learning) and cantrip learners
+    if (totalCantripSlots > 0 || (totalSpellSlots > 0 && !needsPreparation)) s.push("spells");
+    // "prepare" step: for all prepared casters
+    if (needsPreparation) s.push("prepare");
     s.push("confirm");
     return s;
-  }, [pending]);
+  }, [pending, totalCantripSlots, totalSpellSlots, needsPreparation]);
 
   const [stepIndex, setStepIndex] = useState(0);
   const currentStep = steps[stepIndex];
@@ -206,15 +222,13 @@ export function useLevelUp(
     }),
   );
 
-  // ── Spells ──────────────────────────────────────────────────────────────────
+  // ── Spells (known casters + cantrip learners) ─────────────────────────────
   const [availableCantrips, setAvailableCantrips] = useState<SpellOption[]>([]);
   const [availableSpells, setAvailableSpells] = useState<SpellOption[][]>([]);
   const [selectedCantrips, setSelectedCantrips] = useState<string[]>([]);
   const [selectedSpells, setSelectedSpells] = useState<string[]>([]);
   const [isLoadingSpells, setIsLoadingSpells] = useState(false);
 
-  const totalCantripSlots = pending.levels.reduce((sum, l) => sum + l.newCantripSlots, 0);
-  const totalSpellSlots = pending.levels.reduce((sum, l) => sum + l.newSpellSlots, 0);
   const alreadyKnownCantrips = player.cantrips ?? [];
   const alreadyKnownSpells = player.knownSpells ?? [];
 
@@ -265,6 +279,55 @@ export function useLevelUp(
     });
   }
 
+  // ── Prepare (prepared casters) ─────────────────────────────────────────────
+  const [selectedPreparedSpells, setSelectedPreparedSpells] = useState<string[]>(
+    () => player.preparedSpells ?? [],
+  );
+
+  /**
+   * Load available spells for the "prepare" step.
+   * Reuses the same availableSpells state — triggers loadSpells if not yet loaded.
+   */
+  const loadPrepareSpells = useCallback(async () => {
+    // Reuse the same loading mechanism as the "spells" step
+    if (availableSpells.length > 0) return;
+    setIsLoadingSpells(true);
+    try {
+      const classSlug = player.characterClass.toLowerCase();
+      const maxSpellLevel = Math.max(...pending.levels.map((l) => l.maxNewSpellLevel));
+
+      const spellLevelPromises: Promise<SpellOption[]>[] = [];
+      for (let sl = 1; sl <= maxSpellLevel; sl++) {
+        spellLevelPromises.push(
+          fetch(`/api/srd?type=class-spells&classSlug=${classSlug}&level=${sl}`)
+            .then((r) => (r.ok ? r.json() : [])),
+        );
+      }
+
+      // Also load cantrips if the spells step needs them
+      const [cantrips, ...spellsByLevel] = await Promise.all([
+        totalCantripSlots > 0
+          ? fetch(`/api/srd?type=class-spells&classSlug=${classSlug}&level=0`)
+              .then((r) => (r.ok ? r.json() : []))
+          : Promise.resolve([]),
+        ...spellLevelPromises,
+      ]);
+
+      setAvailableCantrips(cantrips);
+      setAvailableSpells(spellsByLevel);
+    } finally {
+      setIsLoadingSpells(false);
+    }
+  }, [availableSpells.length, player.characterClass, pending.levels, totalCantripSlots]);
+
+  function togglePreparedSpell(name: string) {
+    setSelectedPreparedSpells((prev) => {
+      if (prev.includes(name)) return prev.filter((n) => n !== name);
+      if (prev.length >= maxPreparedSpells) return prev;
+      return [...prev, name];
+    });
+  }
+
   // ── Step validation ─────────────────────────────────────────────────────────
   const canGoNext = useMemo(() => {
     switch (currentStep) {
@@ -285,12 +348,14 @@ export function useLevelUp(
           selectedCantrips.length === totalCantripSlots &&
           selectedSpells.length === totalSpellSlots
         );
+      case "prepare":
+        return selectedPreparedSpells.length === maxPreparedSpells;
       case "confirm":
         return true;
       default:
         return false;
     }
-  }, [currentStep, selectedSubclass, asiStates, allFeatureChoicesMade, selectedCantrips, selectedSpells, totalCantripSlots, totalSpellSlots]);
+  }, [currentStep, selectedSubclass, asiStates, allFeatureChoicesMade, selectedCantrips, selectedSpells, totalCantripSlots, totalSpellSlots, selectedPreparedSpells, maxPreparedSpells]);
 
   const canGoBack = stepIndex > 0;
 
@@ -302,6 +367,7 @@ export function useLevelUp(
     if (nextStep === "subclass") loadArchetypes();
     if (nextStep === "asi") loadFeats();
     if (nextStep === "spells") loadSpells();
+    if (nextStep === "prepare") loadPrepareSpells();
     setStepIndex((i) => i + 1);
   }
 
@@ -342,6 +408,8 @@ export function useLevelUp(
           // For simplicity, assign all to the first level that grants slots
           newCantrips: levelData.newCantripSlots > 0 ? selectedCantrips : undefined,
           newSpells: levelData.newSpellSlots > 0 ? selectedSpells : undefined,
+          // Prepared spells: full list assigned to the last level with maxPreparedSpells
+          preparedSpells: levelData.maxPreparedSpells != null ? selectedPreparedSpells : undefined,
         };
       });
 
@@ -401,6 +469,10 @@ export function useLevelUp(
     isLoadingSpells,
     alreadyKnownCantrips,
     alreadyKnownSpells,
+    selectedPreparedSpells,
+    togglePreparedSpell,
+    maxPreparedSpells,
+    needsPreparation,
     isConfirming,
     confirm,
     error,

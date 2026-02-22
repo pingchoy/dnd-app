@@ -10,6 +10,7 @@ import {
   feetDistance,
   DEFAULT_MELEE_REACH,
 } from "../lib/combatEnforcement";
+import { getTokenImageKey, preloadTokenImages, isImageReady } from "../lib/tokenImages";
 
 interface Props {
   player: PlayerState;
@@ -115,8 +116,14 @@ function abilityRangeTag(ability: Ability): string {
 }
 
 /**
- * Draw a single token (circle + initials/skull + HP bar) on the canvas.
+ * Draw a single token on the canvas.
+ *
+ * If a preloaded token image is ready, draws it circle-clipped with a
+ * disposition-colored border ring. Otherwise falls back to the colored
+ * circle with two-letter initials.
+ *
  * `pulse` is 0–1 sine phase used for the player glow; ignored for NPCs.
+ * `tokenImg` is the optional preloaded HTMLImageElement for this token.
  */
 function drawToken(
   ctx: CanvasRenderingContext2D,
@@ -128,11 +135,13 @@ function drawToken(
   maxHp: number,
   disposition: string,
   pulse: number,
+  tokenImg?: HTMLImageElement,
 ) {
   const isDead = currentHp <= 0;
   const c = COLORS[disposition] ?? COLORS.neutral;
   const radius = cellSize * 0.4;
   const fontSize = Math.max(7, Math.min(cellSize * 0.3, 14));
+  const hasImage = tokenImg && isImageReady(tokenImg);
 
   ctx.save();
 
@@ -146,31 +155,64 @@ function drawToken(
     ctx.shadowBlur = blur;
   }
 
-  // Circle fill + stroke
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fillStyle = c.fill;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = c.stroke;
-  ctx.stroke();
+  if (hasImage) {
+    // ── Portrait image token ──
+    // Border ring (slightly larger than the image circle)
+    const ringRadius = radius + 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+    ctx.fillStyle = c.fill;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = c.stroke;
+    ctx.stroke();
 
-  // Reset shadow before text
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
+    // Reset shadow before image
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
 
-  // Initials or skull
-  if (isDead) {
-    ctx.font = `${Math.max(10, cellSize * 0.25)}px serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("\u{1F480}", cx, cy);
+    // Circle-clip the portrait image
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 1, 0, Math.PI * 2);
+    ctx.clip();
+    const imgSize = (radius - 1) * 2;
+    ctx.drawImage(tokenImg, cx - imgSize / 2, cy - imgSize / 2, imgSize, imgSize);
+    ctx.restore();
+
+    // Death skull overlay on top of image
+    if (isDead) {
+      ctx.font = `${Math.max(10, cellSize * 0.25)}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("\u{1F480}", cx, cy);
+    }
   } else {
-    ctx.font = `bold ${fontSize}px Cinzel, Georgia, serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = c.text;
-    ctx.fillText(initials, cx, cy);
+    // ── Fallback: colored circle + initials ──
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = c.fill;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = c.stroke;
+    ctx.stroke();
+
+    // Reset shadow before text
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+
+    if (isDead) {
+      ctx.font = `${Math.max(10, cellSize * 0.25)}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("\u{1F480}", cx, cy);
+    } else {
+      ctx.font = `bold ${fontSize}px Cinzel, Georgia, serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = c.text;
+      ctx.fillText(initials, cx, cy);
+    }
   }
 
   ctx.restore();
@@ -184,6 +226,7 @@ function getDragTokenInfo(s: DrawState): {
   hp: number;
   maxHp: number;
   disposition: string;
+  imagePath: string;
 } | null {
   if (!s.dragId) return null;
   if (s.dragId === "player") {
@@ -192,6 +235,7 @@ function getDragTokenInfo(s: DrawState): {
       hp: s.player.currentHP,
       maxHp: s.player.maxHP,
       disposition: "player",
+      imagePath: getTokenImageKey(s.player.race, "race"),
     };
   }
   const npc = s.activeNPCs.find((n) => n.id === s.dragId);
@@ -201,6 +245,7 @@ function getDragTokenInfo(s: DrawState): {
     hp: npc.currentHp,
     maxHp: npc.maxHp,
     disposition: npc.disposition,
+    imagePath: getTokenImageKey(npc.name, "monster"),
   };
 }
 
@@ -235,6 +280,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef(0);
   const floatingLabelsRef = useRef<FloatingCombatLabel[]>([]);
+  const tokenImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   useImperativeHandle(ref, () => ({
     showCombatResult(tokenId: string, hit: boolean, damage: number) {
@@ -264,9 +310,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   const [viewWidth, setViewWidth] = useState(0);
   const [viewHeight, setViewHeight] = useState(0);
 
-  // Fixed 1000px grid so tokens are large enough for character images.
+  // Fixed 1400px grid so tokens are large enough for character portrait images.
   // The grid may extend beyond the viewport; the player pans/zooms to navigate.
-  const gridDim = 1000;
+  const gridDim = 1400;
   const cellSize = gridDim > 0 ? (gridDim - (gridSize - 1) * GAP) / gridSize : 0;
   const cellStep = cellSize + GAP;
   const centerX = (viewWidth - (gridSize * cellStep - GAP)) / 2;
@@ -317,6 +363,15 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       targetingAbility,
     };
   });
+
+  /* ── Preload token images when NPC list or player race changes ── */
+  useEffect(() => {
+    const entries: { name: string; type: "monster" | "race" }[] = [
+      { name: player.race, type: "race" },
+      ...activeNPCs.map((npc) => ({ name: npc.name, type: "monster" as const })),
+    ];
+    tokenImageCacheRef.current = preloadTokenImages(entries);
+  }, [player.race, activeNPCs]);
 
   /* ── ResizeObserver ── */
   useEffect(() => {
@@ -481,7 +536,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           }
         }
 
-        drawToken(ctx!, cx, cy, s.cellSize, getInitials(npc.name), npc.currentHp, npc.maxHp, npc.disposition, 0);
+        const npcImgPath = getTokenImageKey(npc.name, "monster");
+        const npcImg = tokenImageCacheRef.current.get(npcImgPath);
+        drawToken(ctx!, cx, cy, s.cellSize, getInitials(npc.name), npc.currentHp, npc.maxHp, npc.disposition, 0, npcImg);
       }
 
       // 4) Player token (stationary, hidden while being dragged)
@@ -489,7 +546,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       if (playerPos && s.dragId !== "player") {
         const cx = playerPos.col * s.cellStep + s.cellSize / 2;
         const cy = playerPos.row * s.cellStep + s.cellSize / 2;
-        drawToken(ctx!, cx, cy, s.cellSize, getInitials(s.player.name), s.player.currentHP, s.player.maxHP, "player", pulse);
+        const playerImgPath = getTokenImageKey(s.player.race, "race");
+        const playerImg = tokenImageCacheRef.current.get(playerImgPath);
+        drawToken(ctx!, cx, cy, s.cellSize, getInitials(s.player.name), s.player.currentHP, s.player.maxHP, "player", pulse, playerImg);
       }
 
       // 5) Drag ghost + measurement line
@@ -552,6 +611,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           ctx!.restore();
 
           // Draw the ghost token
+          const ghostImg = tokenImageCacheRef.current.get(info.imagePath);
           ctx!.save();
           ctx!.scale(1.15, 1.15);
           drawToken(
@@ -564,6 +624,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
             info.maxHp,
             info.disposition,
             info.disposition === "player" ? pulse : 0,
+            ghostImg,
           );
           ctx!.restore();
         }

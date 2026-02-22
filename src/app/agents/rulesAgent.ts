@@ -194,7 +194,9 @@ function buildClassifierContext(
     `Conditions: ${player.conditions.length ? player.conditions.join(", ") : "none"}`,
   ];
 
-  if (player.knownSpells?.length) {
+  if (player.preparedSpells?.length) {
+    lines.push(`Prepared spells: ${player.preparedSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
+  } else if (player.knownSpells?.length) {
     lines.push(`Known spells: ${player.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
   }
   if (player.cantrips?.length) {

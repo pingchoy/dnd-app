@@ -390,15 +390,29 @@ export async function deleteCharacter(id: string): Promise<void> {
         const remaining = (session.characterIds ?? []).filter((cid) => cid !== id);
 
         if (remaining.length === 0) {
-          // Last character — delete the session and its encounters
-          const encSnaps = await adminDb
-            .collection("encounters")
-            .where("sessionId", "==", sessionId)
-            .get();
-          const batch = adminDb.batch();
-          encSnaps.forEach((doc) => batch.delete(doc.ref));
-          batch.delete(adminDb.collection("sessions").doc(sessionId));
-          await batch.commit();
+          // Last character — delete the session, its subcollections, and encounters.
+          // Firestore does not cascade-delete subcollections, so we must
+          // explicitly remove messages and actions to avoid orphaned data.
+          // Batches are capped at 500 ops, so we chunk if needed.
+          const sessionRef = adminDb.collection("sessions").doc(sessionId);
+          const [encSnaps, msgSnaps, actSnaps] = await Promise.all([
+            adminDb.collection("encounters").where("sessionId", "==", sessionId).get(),
+            sessionRef.collection("messages").get(),
+            sessionRef.collection("actions").get(),
+          ]);
+          const allRefs = [
+            ...encSnaps.docs.map((d) => d.ref),
+            ...msgSnaps.docs.map((d) => d.ref),
+            ...actSnaps.docs.map((d) => d.ref),
+            sessionRef,
+          ];
+          const BATCH_LIMIT = 500;
+          for (let i = 0; i < allRefs.length; i += BATCH_LIMIT) {
+            const chunk = allRefs.slice(i, i + BATCH_LIMIT);
+            const batch = adminDb.batch();
+            chunk.forEach((ref) => batch.delete(ref));
+            await batch.commit();
+          }
         } else {
           // Update characterIds
           await adminDb.collection("sessions").doc(sessionId).update({

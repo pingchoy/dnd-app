@@ -1,6 +1,7 @@
 - Make it so that end of combat doesn't immediately close the combat page
     - Display loot from the fight (if any)
 - Fix level up wizard
+    - Especially spell slots
 - Make battle maps for combat grid background
 - Give tokens pictures
 - Add in AOE markers
@@ -8,3 +9,13 @@
 - Create ai generated plot story which they will guide the user through
     - Perhaps have a list of plot points and storylines that they will take the player through
 - Subclasses have their own features... Have to implement this similar to current features I think?
+- Allow short rest/long rest with deterministic button logic
+- Find a better way of displaying money. 1 gp -> 10 silver -> 100 copper
+- Need to figure out action economy in combat. Actions + bonus actions 
+- Update spell effects for all spells......
+- Enable armour equip/unequip 
+    - Need to also handle conditions when equipping and unequipping like unarmoured/holding shield/dual wielding/etc.
+- Design better way of handling abilities in combat screen. Currently when chat opens it obscures the abilities section
+- instead of activeNPCs, maybe we track "hostileNPCs" so we can keep track of HP for the dm to narrate even after they die 
+- I don't think spell levels work in combat?
+- Need to reprompt the combat agent. IT currently doesn't display how much damage is done to the player in the flavour text

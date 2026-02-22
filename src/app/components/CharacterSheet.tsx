@@ -312,7 +312,24 @@ function RightColumnTabs({ player, allSkills, prof }: RightColumnTabsProps) {
                     </div>
                   )}
 
-                  {player.knownSpells && player.knownSpells.length > 0 && (
+                  {player.preparedSpells && player.preparedSpells.length > 0 && (
+                    <div>
+                      <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
+                        Prepared Spells ({player.preparedSpells.length}/{player.maxPreparedSpells ?? player.preparedSpells.length})
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {player.preparedSpells.map((s) => (
+                          <SpellTag
+                            key={s}
+                            name={s}
+                            className="font-crimson text-sm bg-dungeon-mid text-gold-light border border-gold/40 rounded px-2 py-0.5 shadow-sm shadow-gold/10"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {player.knownSpells && player.knownSpells.length > 0 && !player.preparedSpells?.length && (
                     <div>
                       <div className="font-cinzel text-sm text-ink/60 tracking-wide mb-1">
                         Spells ({player.knownSpells.length}/{player.maxKnownSpells ?? player.knownSpells.length})

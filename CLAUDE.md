@@ -1,7 +1,15 @@
 # AI Dungeon Master — Project Overview
 
 ## Purpose
-An AI-powered Dungeon Master for D&D 5e, built with Next.js 14 and the Anthropic Claude SDK. A single player interacts via a chat interface; multiple specialized AI agents handle different concerns to keep each call focused and cost-efficient.
+An AI-powered Dungeon Master for D&D 5e, built with Next.js 14 and the Anthropic Claude SDK. Multiple players join a shared session via a chat interface; multiple specialized AI agents handle different concerns to keep each call focused and cost-efficient.
+
+## Architecture Principle: Build for Multiplayer
+**All new code must assume multiple players in a session.** Never hardcode single-player assumptions (e.g. a singular `player` field, skipping `characterId` checks, assuming only one user sends messages). The message subcollection and action queue already support multiplayer — game state, agents, and frontend need to follow.
+
+Key patterns:
+- **Identify by `characterId`**, not by role or position — every player action, state mutation, and UI element must know which character it belongs to.
+- **Animate for others, not yourself** — this client's own actions appear optimistically; other players' messages arrive via onSnapshot and should animate in.
+- **Shared session, per-player state** — story/encounter state is shared; HP, inventory, abilities, and conditions are per-character.
 
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router), React 18, TypeScript
@@ -134,3 +142,4 @@ Common violations to avoid:
 - **Shared utility functions in `gameTypes.ts`** — Pure functions like `formatModifier`, `getModifier`, `getProficiencyBonus`, `rollDice`, `formatWeaponDamage` live in `gameTypes.ts`. Server-side code imports them via re-exports from `gameState.ts`. Never duplicate these locally.
 - **Named interfaces for request bodies** — API route handlers define a named interface for `req.json()` casts (e.g. `ChatRequestBody`, `DebugRequestBody`).
 - **Comments on complex logic** — Non-obvious algorithms, multi-phase animations, and multi-step orchestration flows should have a doc comment explaining the high-level approach.
+- **`React.memo` on expensive components** — Wrap components that are expensive to render (e.g. those using ReactMarkdown, inventory loops, spell slot arrays) in `React.memo` to prevent unnecessary re-renders when parent state changes but props are unchanged. Stabilize callback props with `useCallback` and derived arrays with `useMemo` so memo checks succeed.

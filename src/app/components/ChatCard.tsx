@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatMessage } from "../hooks/useChat";
@@ -8,17 +9,17 @@ interface Props {
   playerName?: string;
 }
 
-export default function ChatCard({ message, playerName = "You" }: Props) {
-  // Historical dice-roll card — no avatar, just the compact roll result
+function ChatCard({ message, playerName = "You" }: Props) {
+  // Dice-roll card — animate if it's a new roll from this session
   if (message.rollResult) {
-    return <DiceRoll result={message.rollResult} isHistorical />;
+    return <DiceRoll result={message.rollResult} isHistorical={!message.isNewRoll} />;
   }
 
   const isDM = message.role === "assistant";
 
   return (
     <div
-      className={`animate-fade-in flex gap-4 mt-5 ${isDM ? "" : "flex-row-reverse"}`}
+      className={`flex gap-4 mt-5 ${isDM ? "" : "flex-row-reverse"} ${message.isNew ? "animate-chat-enter" : ""}`}
     >
       {/* Avatar */}
       <div className="flex-shrink-0">
@@ -66,3 +67,5 @@ export default function ChatCard({ message, playerName = "You" }: Props) {
     </div>
   );
 }
+
+export default memo(ChatCard);

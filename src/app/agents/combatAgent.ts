@@ -49,7 +49,7 @@ You may use update_game_state for non-damage changes: conditions, items found, s
 
 RULES:
 - Never ask the player for rolls, HP confirmation, or any input. Combat stats are authoritative.
-- Leveled spells cost spell slots (call update_game_state with spell_slots_used). Cantrips are free.
+- The player can only cast spells from their Prepared Spells or Known Spells list (whichever is present in their state). Leveled spells cost spell slots (call update_game_state with spell_slots_used). Cantrips are free.
 - Use query_srd if you need spell or rule details.
 
 FORMATTING:

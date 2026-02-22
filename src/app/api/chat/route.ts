@@ -1,13 +1,16 @@
 /**
  * POST /api/chat
  *
- * Phase 2 of the two-phase turn flow.
- * Receives the player input plus an optional pre-computed rules outcome
- * (from /api/roll) and runs the DM agent to generate the narrative.
+ * Single endpoint for all player actions. Handles the full flow:
+ * 1. Write user message to Firestore
+ * 2. Run rules agent for contested actions → write roll result to Firestore
+ * 3. Run DM/combat agent → write narrative to Firestore
+ * 4. NPC orchestration, state persistence
+ *
+ * Roll results are written BEFORE the DM agent call so all connected
+ * players see the dice animation immediately via onSnapshot.
  *
  * Uses an action queue to serialize concurrent player actions per session.
- * Messages are written to the Firestore messages subcollection — the
- * frontend picks them up via an onSnapshot listener.
  *
  * GET /api/chat?characterId=xxx
  *   Returns the current game state for a character (used on initial load).
@@ -19,7 +22,6 @@ import { getDMResponse } from "../../agents/dmAgent";
 import { getCombatResponse } from "../../agents/combatAgent";
 import { getNPCStats } from "../../agents/npcAgent";
 import { getRulesOutcome, isContestedAction } from "../../agents/rulesAgent";
-import type { ParsedRollResult } from "../../agents/rulesAgent";
 import {
   applyStateChangesAndPersist,
   createNPC,
@@ -38,19 +40,9 @@ import { addMessage } from "../../lib/messageStore";
 import { enqueueAction, claimNextAction, completeAction, failAction } from "../../lib/actionQueue";
 import type { StoredAction } from "../../lib/gameTypes";
 
-interface PrecomputedRules {
-  parsed: ParsedRollResult;
-  raw: string;
-  roll: number;
-  rulesCost: number;
-  damageTotal?: number;
-  damageBreakdown?: string;
-}
-
 interface ChatRequestBody {
   characterId: string;
   playerInput: string;
-  precomputedRules?: PrecomputedRules;
 }
 
 /**
@@ -60,7 +52,6 @@ interface ChatRequestBody {
 async function processChatAction(
   characterId: string,
   playerInput: string,
-  precomputedRules: PrecomputedRules | undefined,
   sessionId: string,
 ) {
   const gameState = await loadGameState(characterId);
@@ -70,7 +61,7 @@ async function processChatAction(
     return { levelUpPending: true };
   }
 
-  // Write user message to subcollection (ordering: written at processing time, not submit time)
+  // Write user message to subcollection
   await addMessage(sessionId, {
     role: "user",
     content: playerInput,
@@ -78,28 +69,14 @@ async function processChatAction(
     timestamp: Date.now(),
   });
 
+  // Inline rules check: run the rules agent if the action is contested,
+  // then write the roll result to Firestore so all players see the animation
+  // immediately (before the DM agent call which takes 10-30s).
   let rulesOutcome = null;
   let rulesCost = 0;
 
-  if (precomputedRules) {
-    console.log("[Rules Agent] Using precomputed rules from /api/roll:", {
-      roll: precomputedRules.roll,
-      cost: `$${precomputedRules.rulesCost.toFixed(4)}`,
-    });
-    let raw = precomputedRules.raw;
-    if (precomputedRules.damageTotal != null && precomputedRules.damageBreakdown) {
-      raw += `\n[Pre-rolled player damage: ${precomputedRules.damageTotal} total (${precomputedRules.damageBreakdown})]`;
-    }
-    rulesOutcome = {
-      parsed: precomputedRules.parsed,
-      raw,
-      roll: precomputedRules.roll,
-      inputTokens: 0,
-      outputTokens: 0,
-    };
-    rulesCost = precomputedRules.rulesCost;
-  } else if (isContestedAction(playerInput)) {
-    console.log("[Rules Agent] Contested action detected, calling rules agent inline...");
+  if (isContestedAction(playerInput)) {
+    console.log("[Rules Agent] Contested action detected, calling rules agent...");
     rulesOutcome = await getRulesOutcome(playerInput, gameState.player, getActiveNPCs());
     rulesCost = calculateCost(MODELS.UTILITY, rulesOutcome.inputTokens, rulesOutcome.outputTokens);
     console.log("[Rules Agent] Done:", {
@@ -107,6 +84,16 @@ async function processChatAction(
       tokens: { input: rulesOutcome.inputTokens, output: rulesOutcome.outputTokens },
       cost: `$${rulesCost.toFixed(4)}`,
     });
+
+    // Write roll result to Firestore before DM call so players see dice animation
+    if (!rulesOutcome.parsed.impossible && !rulesOutcome.parsed.noCheck) {
+      await addMessage(sessionId, {
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        rollResult: rulesOutcome.parsed,
+      });
+    }
   } else {
     console.log("[Rules Agent] Skipped — not a contested action");
   }
@@ -255,7 +242,7 @@ async function processChatAction(
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
-    const { characterId, playerInput, precomputedRules } = body;
+    const { characterId, playerInput } = body;
 
     if (!playerInput?.trim()) {
       return NextResponse.json({ error: "playerInput is required" }, { status: 400 });
@@ -280,7 +267,7 @@ export async function POST(req: NextRequest) {
     const actionId = await enqueueAction(sessionId, {
       characterId,
       type: "chat",
-      payload: { playerInput, precomputedRules },
+      payload: { playerInput },
     });
 
     // Try to claim the next action for processing
@@ -297,12 +284,11 @@ export async function POST(req: NextRequest) {
     try {
       let currentAction: StoredAction | null = claimed;
       while (currentAction) {
-        const payload = currentAction.payload as { playerInput: string; precomputedRules?: PrecomputedRules };
+        const payload = currentAction.payload as { playerInput: string };
 
         const result = await processChatAction(
           currentAction.characterId,
           payload.playerInput,
-          payload.precomputedRules,
           sessionId,
         );
 

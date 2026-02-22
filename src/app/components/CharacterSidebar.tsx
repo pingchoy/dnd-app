@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import {
   PlayerState,
   formatModifier,
@@ -38,7 +39,7 @@ function StatBlock({ label, value }: StatBlockProps) {
   );
 }
 
-export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
+function CharacterSidebar({ player, onOpenFullSheet }: Props) {
   const prof = getProficiencyBonus(player.level);
   const hpPct = player.maxHP > 0 ? (player.currentHP / player.maxHP) * 100 : 0;
   const hpColor = hpPct > 50 ? "#5a9a5a" : hpPct > 25 ? "#d4a017" : "#dc4a4a";
@@ -262,3 +263,5 @@ export default function CharacterSidebar({ player, onOpenFullSheet }: Props) {
     </div>
   );
 }
+
+export default memo(CharacterSidebar);

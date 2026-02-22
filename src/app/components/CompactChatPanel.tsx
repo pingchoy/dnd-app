@@ -1,18 +1,15 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage, PendingRoll } from "../hooks/useChat";
+import type { ChatMessage } from "../hooks/useChat";
 import DiceRoll from "./DiceRoll";
 
 interface Props {
   messages: ChatMessage[];
   playerName: string;
-  pendingRoll: PendingRoll | null;
-  isRolling: boolean;
   isNarrating: boolean;
-  confirmRoll: () => void;
 }
 
 /** Loading dots reused from the dashboard — compact version. */
@@ -32,40 +29,39 @@ function CompactLoading({ label }: { label: string }) {
  * Condensed chat panel shown below the combat grid.
  * Displays last few messages in compact form with dice roll support.
  */
-export default function CompactChatPanel({
+function CompactChatPanel({
   messages,
   playerName,
-  pendingRoll,
-  isRolling,
   isNarrating,
-  confirmRoll,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingRoll, isRolling, isNarrating]);
+  }, [messages, isNarrating]);
 
-  // Re-scroll while a dice roll is animating so the Continue button
-  // is visible once the animation settles and the button renders.
+  // Re-scroll while a dice roll is animating so the expanding card stays in view
+  const lastMsg = messages[messages.length - 1];
+  const hasAnimatingRoll = lastMsg?.isNewRoll === true;
   useEffect(() => {
-    if (!pendingRoll) return;
+    if (!hasAnimatingRoll) return;
     const id = setInterval(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 600);
-    return () => clearInterval(id);
-  }, [pendingRoll]);
+    }, 400);
+    const timeout = setTimeout(() => clearInterval(id), 3500);
+    return () => { clearInterval(id); clearTimeout(timeout); };
+  }, [hasAnimatingRoll]);
 
   const recentMessages = messages.slice(-6);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2">
         {recentMessages.map((msg, idx) => {
-          // Historical roll cards — render inline compact
+          // Roll cards — animate if new, compact if historical
           if (msg.rollResult) {
             return (
-              <div key={idx} className="my-1">
-                <DiceRoll result={msg.rollResult} isHistorical />
+              <div key={msg.id} className={`my-1 ${msg.isNew ? "animate-chat-enter" : ""}`}>
+                <DiceRoll result={msg.rollResult} isHistorical={!msg.isNewRoll} />
               </div>
             );
           }
@@ -73,8 +69,8 @@ export default function CompactChatPanel({
           const isDM = msg.role === "assistant";
           return (
             <div
-              key={idx}
-              className={`py-2 ${idx > 0 ? "border-t border-gold/10" : ""}`}
+              key={msg.id}
+              className={`py-2 ${idx > 0 ? "border-t border-gold/10" : ""} ${msg.isNew ? "animate-chat-enter" : ""}`}
             >
               <div
                 className={`font-cinzel text-[10px] tracking-widest uppercase mb-0.5 ${
@@ -95,19 +91,7 @@ export default function CompactChatPanel({
           );
         })}
 
-        {isRolling && <CompactLoading label="Consulting the fates" />}
-
-        {pendingRoll && (
-          <div className="my-1">
-            <DiceRoll
-              result={pendingRoll.parsed}
-              onContinue={confirmRoll}
-              isNarrating={isNarrating}
-            />
-          </div>
-        )}
-
-        {isNarrating && !pendingRoll && (
+        {isNarrating && (
           <CompactLoading label="The tale unfolds" />
         )}
 
@@ -115,3 +99,5 @@ export default function CompactChatPanel({
     </div>
   );
 }
+
+export default memo(CompactChatPanel);

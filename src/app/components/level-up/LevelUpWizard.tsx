@@ -7,6 +7,7 @@ import LevelUpSubclass from "./LevelUpSubclass";
 import LevelUpASI from "./LevelUpASI";
 import LevelUpFeatureChoices from "./LevelUpFeatureChoices";
 import LevelUpSpells from "./LevelUpSpells";
+import LevelUpPrepare from "./LevelUpPrepare";
 import LevelUpConfirm from "./LevelUpConfirm";
 
 interface Props {
@@ -22,6 +23,7 @@ const STEP_LABELS: Record<string, string> = {
   asi: "Abilities",
   features: "Features",
   spells: "Spells",
+  prepare: "Prepare",
   confirm: "Confirm",
 };
 
@@ -138,6 +140,15 @@ export default function LevelUpWizard({ pending, player, characterId, onComplete
               alreadyKnownSpells={lu.alreadyKnownSpells}
             />
           )}
+          {lu.currentStep === "prepare" && (
+            <LevelUpPrepare
+              availableSpells={lu.availableSpells}
+              selectedPreparedSpells={lu.selectedPreparedSpells}
+              maxPreparedSpells={lu.maxPreparedSpells}
+              onToggle={lu.togglePreparedSpell}
+              isLoading={lu.isLoadingSpells}
+            />
+          )}
           {lu.currentStep === "confirm" && (
             <LevelUpConfirm
               pending={pending}
@@ -147,6 +158,7 @@ export default function LevelUpWizard({ pending, player, characterId, onComplete
               featureChoices={lu.featureChoices}
               selectedCantrips={lu.selectedCantrips}
               selectedSpells={lu.selectedSpells}
+              selectedPreparedSpells={lu.selectedPreparedSpells}
               isConfirming={lu.isConfirming}
               error={lu.error}
               onConfirm={handleConfirm}

@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { ParsedRollResult } from "../agents/rulesAgent";
 
 interface DiceRollProps {
   result: ParsedRollResult;
-  /** When true: no animation, no Continue button — shown as a chat history card. */
+  /** When true: no animation — shown as a compact chat history card. */
   isHistorical?: boolean;
-  onContinue?: () => void;
-  isNarrating?: boolean;
 }
 
-export default function DiceRoll({
+function DiceRoll({
   result,
   isHistorical = false,
-  onContinue,
-  isNarrating = false,
 }: DiceRollProps) {
   const [displayValue, setDisplayValue] = useState(isHistorical ? result.dieResult : 1);
   const [settled, setSettled] = useState(isHistorical);
@@ -53,7 +49,7 @@ export default function DiceRoll({
   // then cycles random damage values for ~0.8s before revealing the real total.
   // Only runs when the d20 phase is done and the attack hit with damage.
   useEffect(() => {
-    if (isHistorical || !settled || !hasDamage) return;
+    if (isHistorical || !settled || !hasDamage || damagePhase !== "hidden") return;
     const pauseTimer = setTimeout(() => {
       setDamagePhase("rolling");
       let ticks = 0;
@@ -70,7 +66,8 @@ export default function DiceRoll({
       }, 70);
     }, 600);
     return () => clearTimeout(pauseTimer);
-  }, [settled, hasDamage, isHistorical, result.damage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled, hasDamage, isHistorical]);
 
   const isCrit   = result.dieResult === 20;
   const isFumble = result.dieResult === 1;
@@ -89,9 +86,6 @@ export default function DiceRoll({
     :                  "✦ Failure";
 
   const resultColour = (isCrit || result.success) ? "text-success" : "text-red-400";
-
-  // Continue enabled when all phases are done
-  const allPhasesComplete = settled && (damagePhase === "settled" || damagePhase === "hidden");
 
   if (isHistorical) {
     // Compact inline card shown in chat history
@@ -234,19 +228,9 @@ export default function DiceRoll({
           </div>
         )}
 
-        {/* Continue button */}
-        {allPhasesComplete && onContinue && (
-          <div className="px-4 pb-4 flex justify-center">
-            <button
-              onClick={onContinue}
-              disabled={isNarrating}
-              className="font-cinzel text-xs tracking-widest uppercase px-6 py-2 border border-gold-dark/60 text-gold-dark rounded hover:bg-gold/10 hover:text-gold transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isNarrating ? "The tale unfolds…" : "Continue Adventure →"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
 }
+
+export default memo(DiceRoll);

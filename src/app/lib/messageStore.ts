@@ -26,7 +26,8 @@ export async function addMessage(
     .collection("messages")
     .doc();
 
-  await ref.set(message);
+  // JSON round-trip strips undefined values that Firestore rejects
+  await ref.set(JSON.parse(JSON.stringify(message)));
   return ref.id;
 }
 

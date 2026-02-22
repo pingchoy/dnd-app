@@ -12,6 +12,7 @@ interface Props {
   featureChoices: Record<string, string>;
   selectedCantrips: string[];
   selectedSpells: string[];
+  selectedPreparedSpells: string[];
   isConfirming: boolean;
   error: string | null;
   onConfirm: () => void;
@@ -25,6 +26,7 @@ export default function LevelUpConfirm({
   featureChoices,
   selectedCantrips,
   selectedSpells,
+  selectedPreparedSpells,
   isConfirming,
   error,
   onConfirm,
@@ -140,9 +142,9 @@ export default function LevelUpConfirm({
           </div>
         )}
 
-        {/* New spells */}
+        {/* New spells (known casters) */}
         {selectedSpells.length > 0 && (
-          <div className="pb-1">
+          <div className="border-b border-gold/10 pb-3">
             <span className="font-cinzel text-sm text-parchment/60 uppercase tracking-wide">
               New Spells
             </span>
@@ -151,6 +153,25 @@ export default function LevelUpConfirm({
                 <span
                   key={name}
                   className="font-crimson text-sm text-cyan-300 bg-cyan-900/30 border border-cyan-500/30 rounded px-2 py-0.5"
+                >
+                  {toDisplayCase(name)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Prepared spells (prepared casters) */}
+        {selectedPreparedSpells.length > 0 && (
+          <div className="pb-1">
+            <span className="font-cinzel text-sm text-parchment/60 uppercase tracking-wide">
+              Prepared Spells ({selectedPreparedSpells.length})
+            </span>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {selectedPreparedSpells.map((name) => (
+                <span
+                  key={name}
+                  className="font-crimson text-sm text-gold-light bg-gold/10 border border-gold/30 rounded px-2 py-0.5"
                 >
                   {toDisplayCase(name)}
                 </span>

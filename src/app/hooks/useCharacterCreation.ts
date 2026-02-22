@@ -402,7 +402,8 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
    * 2. Early-exit if the class has no slots or cantrips at level 1
    * 3. Fetch cantrip and spell lists from the class's spell list in parallel
    * 4. Compute spellsToChoose: fixed count for known-casters (Bard, Sorcerer),
-   *    ability_mod + level for prepared-casters (Cleric, Wizard)
+   *    spellbook size (6) for spellbook-casters (Wizard),
+   *    ability_mod + level for other prepared-casters (Cleric, Druid, Paladin)
    * 5. Navigate to the right step (cantrips, spells, or review)
    */
   const loadSpellData = useCallback(async () => {
@@ -457,7 +458,7 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
         // Known caster (Bard, Ranger, Sorcerer, Warlock) — fixed from class table
         spellsToChoose = levelData.spellsKnown;
       } else if (hasSpellSlots) {
-        // Prepared caster (Cleric, Druid, Paladin, Wizard) — ability_mod + level
+        // Prepared caster (Wizard, Cleric, Druid, Paladin) — ability_mod + level
         const raw = cls.spellcastingAbility || "";
         const ability = raw.toLowerCase();
         const abilityKey = (
@@ -717,8 +718,15 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           spellcastingAbility,
           cantrips: state.selectedCantrips,
           maxCantrips: state.cantripsToChoose,
-          knownSpells: state.selectedSpells,
-          maxKnownSpells: state.spellsToChoose,
+          // Prepared casters: selectedSpells = preparedSpells (no knownSpells)
+          // Known casters: selectedSpells = knownSpells (no preparedSpells)
+          ...(selectedClass.spellcastingType === "prepared" ? {
+            preparedSpells: state.selectedSpells,
+            maxPreparedSpells: state.spellsToChoose,
+          } : {
+            knownSpells: state.selectedSpells,
+            maxKnownSpells: state.spellsToChoose,
+          }),
           spellSlots: (levelData?.spellSlots as Record<string, number>) ?? {},
           spellSlotsUsed: {} as Record<string, number>,
         } : {}),

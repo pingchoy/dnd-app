@@ -41,7 +41,7 @@ export async function enqueueAction(
     createdAt: Date.now(),
   };
 
-  await ref.set(doc);
+  await ref.set(JSON.parse(JSON.stringify(doc)));
   return ref.id;
 }
 
