@@ -114,6 +114,10 @@ export interface GameplayEffects {
   rangedDamageBonus?: number;
   /** Extra weapon dice on crits (Brutal Critical: 1/2/3). */
   critBonusDice?: number;
+  /** Ability score whose modifier is added to spell damage (Empowered Evocation: "intelligence"). */
+  spellDamageBonusAbility?: string;
+  /** Minimum d20 roll that scores a critical hit (default 20; Champion: 19, 18). */
+  critRange?: number;
   /** Bonus damage on every hit, e.g. "1d8 radiant" (Improved Divine Smite). */
   bonusDamage?: string;
   /** Number of Sneak Attack dice (Rogue: 1–10). */
@@ -152,8 +156,17 @@ export interface GameplayEffects {
   resourcePool?: { name: string; perLevel: number };
   /** Healing pool HP per level (Lay on Hands: 5). */
   healPoolPerLevel?: number;
+  /** Bonus HP per class level (Draconic Resilience: 1). Applied during level-up HP calculation. */
+  hpPerLevel?: number;
 
   // ─── Proficiency ───
+  /** Proficiency grants from features (e.g. Life Domain heavy armor, Assassin tools). */
+  proficiencyGrants?: {
+    armor?: string[];
+    weapons?: string[];
+    skills?: string[];
+    tools?: string[];
+  };
   /** Number of expertise slots gained. */
   expertiseSlots?: number;
 
@@ -223,6 +236,8 @@ export interface PlayerState {
   meleeDamageBonus?: number;       // default 0
   rangedDamageBonus?: number;      // default 0
   critBonusDice?: number;          // default 0
+  critRange?: number;              // default 20
+  spellDamageBonus?: number;       // default 0
   bonusDamage?: string[];          // default []
   // ─── Aggregated defense (computed by applyEffects) ───
   resistances?: string[];          // default []
@@ -263,7 +278,7 @@ export interface PendingLevelData {
   hpGain: number;
   proficiencyBonus: number;
   newFeatures: Array<{ name: string; description: string; type?: "active" | "passive" | "reaction"; gameplayEffects?: GameplayEffects }>;
-  newSubclassFeatures: Array<{ name: string; description: string }>;
+  newSubclassFeatures: Array<{ name: string; description: string; type?: "active" | "passive" | "reaction"; gameplayEffects?: GameplayEffects }>;
   spellSlots?: Record<string, number>;
   maxCantrips?: number;
   maxKnownSpells?: number;
@@ -714,6 +729,8 @@ export function applyEffects(player: PlayerState): void {
   player.meleeDamageBonus = 0;
   player.rangedDamageBonus = 0;
   player.critBonusDice = 0;
+  player.critRange = 20;
+  player.spellDamageBonus = 0;
   player.bonusDamage = [];
   player.resistances = [];
   player.immunities = [];
@@ -744,7 +761,16 @@ export function applyEffects(player: PlayerState): void {
     if (fx.meleeDamageBonus) player.meleeDamageBonus! += fx.meleeDamageBonus;
     if (fx.rangedDamageBonus) player.rangedDamageBonus! += fx.rangedDamageBonus;
     if (fx.critBonusDice) player.critBonusDice! += fx.critBonusDice;
+    if (fx.critRange != null) player.critRange = Math.min(player.critRange!, fx.critRange);
     if (fx.bonusDamage) player.bonusDamage!.push(fx.bonusDamage);
+    if (fx.spellDamageBonusAbility) {
+      const abilityMap: Record<string, keyof CharacterStats> = {
+        strength: "strength", dexterity: "dexterity", constitution: "constitution",
+        intelligence: "intelligence", wisdom: "wisdom", charisma: "charisma",
+      };
+      const stat = abilityMap[fx.spellDamageBonusAbility];
+      if (stat) player.spellDamageBonus! += getModifier(player.stats[stat]);
+    }
 
     // Defense
     if (fx.acBonus) acBonus += fx.acBonus;
@@ -776,6 +802,25 @@ export function applyEffects(player: PlayerState): void {
     if (fx.saveProficiencies?.length) {
       for (const sp of fx.saveProficiencies) {
         if (!player.bonusSaveProficiencies!.includes(sp)) player.bonusSaveProficiencies!.push(sp);
+      }
+    }
+
+    // Proficiency grants
+    if (fx.proficiencyGrants) {
+      if (fx.proficiencyGrants.armor) {
+        for (const a of fx.proficiencyGrants.armor) {
+          if (!player.armorProficiencies.includes(a)) player.armorProficiencies.push(a);
+        }
+      }
+      if (fx.proficiencyGrants.weapons) {
+        for (const w of fx.proficiencyGrants.weapons) {
+          if (!player.weaponProficiencies.includes(w)) player.weaponProficiencies.push(w);
+        }
+      }
+      if (fx.proficiencyGrants.skills) {
+        for (const s of fx.proficiencyGrants.skills) {
+          if (!player.skillProficiencies.includes(s)) player.skillProficiencies.push(s);
+        }
       }
     }
   }

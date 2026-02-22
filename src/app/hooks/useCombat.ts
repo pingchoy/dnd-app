@@ -158,36 +158,7 @@ export function useCombat({
       setGameState(data.gameState);
       setEncounter(data.encounter ?? null);
 
-      // // If the player's action killed the last hostile, delay the victory screen
-      // // by ~2s so the player can see the killing blow land on the combat grid.
-      // // Loot + narrative sections appear when /api/combat/resolve returns.
-      // const enc = data.encounter as StoredEncounter | null;
-      // if (
-      //   enc &&
-      //   !enc.activeNPCs.some(
-      //     (n: { disposition: string; currentHp: number }) =>
-      //       n.disposition === "hostile" && n.currentHp > 0,
-      //   )
-      // ) {
-      //   victoryDelayRef.current = setTimeout(() => {
-      //     victoryDelayRef.current = null;
-      //     setVictoryData({
-      //       totalXP: enc.totalXPAwarded ?? 0,
-      //       combatStats: enc.combatStats ?? {},
-      //       loot: [],
-      //       goldAwarded: 0,
-      //       defeatedNPCs: (enc.defeatedNPCs ?? []).map(
-      //         (n: { name: string }) => n.name,
-      //       ),
-      //       rounds: enc.round,
-      //       narrative: "",
-      //       tokensUsed: 0,
-      //       estimatedCostUsd: 0,
-      //     });
-      //   }, 2000);
-      // }
-
-      // Show floating labels — AOE: one per target, single-target: one label
+      // Show floating labels -- AOE: one per target, single-target: one label
       if (data.aoeResult?.targets?.length) {
         for (let i = 0; i < data.aoeResult.targets.length; i++) {
           const t = data.aoeResult.targets[i];

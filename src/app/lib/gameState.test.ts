@@ -406,16 +406,17 @@ describe("updateNPC", () => {
     expect(result.died).toBe(false);
   });
 
-  it("NPC dies at 0 HP and is removed", async () => {
+  it("NPC dies at 0 HP but remains in activeNPCs", async () => {
     const goblin = makeNPC({ currentHp: 3, maxHp: 7 });
     await hydrateState({ xp: 0 }, [goblin]);
 
     const result = updateNPC({ id: goblin.id, hp_delta: -10 });
     expect(result.found).toBe(true);
     expect(result.died).toBe(true);
-    expect(result.removed).toBe(true);
+    expect(result.removed).toBe(false);
     expect(result.newHp).toBe(0);
-    expect(getActiveNPCs()).toHaveLength(0);
+    expect(getActiveNPCs()).toHaveLength(1);
+    expect(getActiveNPCs()[0].currentHp).toBe(0);
   });
 
   it("awards XP when hostile NPC is killed", async () => {

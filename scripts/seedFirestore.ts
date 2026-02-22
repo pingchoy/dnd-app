@@ -32,10 +32,8 @@
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
-import { readFileSync } from "fs";
-import { join } from "path";
 import { crToXP } from "../src/app/lib/gameTypes";
-import { RACE_OVERRIDES, CLASS_OVERRIDES, CLASS_LEVEL_OVERRIDES, CLASS_FEATURES_OVERRIDES } from "./srdOverrides";
+import { RACE_OVERRIDES, CLASS_OVERRIDES, CLASS_LEVEL_OVERRIDES, CLASS_FEATURES_OVERRIDES, SUBCLASS_FEATURES_OVERRIDES } from "./srdOverrides";
 import type { ClassFeatureDef } from "./srdOverrides";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
@@ -397,7 +395,7 @@ async function seedRaces(): Promise<void> {
  * Filters to base classes (subclass_of === null), collects subclasses as archetypes.
  * Uses hardcoded CLASS_OVERRIDES for proficiencies, skill options, and spellcasting info.
  */
-async function seedClasses(): Promise<V2Class[]> {
+async function seedClasses(): Promise<{ baseClasses: V2Class[]; subclasses: V2Class[] }> {
   console.log("\n── Seeding srdClasses (v2 + hardcoded overrides) ──");
 
   const allClasses = await fetchAllV2<V2Class>("/classes", "srd-2014");
@@ -465,7 +463,7 @@ async function seedClasses(): Promise<V2Class[]> {
   }
   console.log(`  ✓ ${docs.length} classes seeded`);
 
-  return baseClasses;
+  return { baseClasses, subclasses };
 }
 
 /**
@@ -770,6 +768,7 @@ async function seedSpells(): Promise<Array<{ id: string; data: Record<string, un
         school: s.school.name.toLowerCase(),
         castingTime: s.casting_time,
         range: s.range_text || `${s.range} feet`,
+        aoe: parseAOE(s.range_text || "", s.desc),
         components,
         duration: s.duration,
         concentration: s.concentration,
@@ -875,17 +874,74 @@ async function seedEquipment(): Promise<void> {
   console.log(`  ✓ ${docs.length} equipment entries seeded`);
 }
 
-async function seedSubclassLevels(): Promise<void> {
-  console.log("\n── Seeding srdSubclassLevels (bundled) ──");
-  const jsonPath = join(__dirname, "data", "subclassLevels.json");
-  const raw: Array<Record<string, unknown>> = JSON.parse(
-    readFileSync(jsonPath, "utf-8"),
-  );
+/**
+ * Derive subclass level data from v2 subclass features + hardcoded overrides.
+ * Same pattern as seedClassLevels(): features (names + descriptions) come from
+ * the API; type and gameplayEffects come from SUBCLASS_FEATURES_OVERRIDES.
+ */
+async function seedSubclassLevels(subclasses: V2Class[]): Promise<void> {
+  console.log("\n── Seeding srdSubclassLevels (v2 features + hardcoded overrides) ──");
 
-  const docs = raw.map((entry) => ({
-    id: entry.slug as string,
-    data: entry,
-  }));
+  const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
+
+  for (const sc of subclasses) {
+    const subclassSlug = stripKeyPrefix(sc.key);
+    const classSlug = sc.subclass_of ? stripKeyPrefix(sc.subclass_of.key) : "";
+
+    // Group features by gained_at.level
+    const levelFeatures = new Map<number, Array<{ name: string; description: string }>>();
+
+    for (const feature of sc.features) {
+      if (feature.feature_type !== "CLASS_LEVEL_FEATURE") continue;
+      for (const gained of feature.gained_at) {
+        const lvl = gained.level;
+        if (lvl >= 1 && lvl <= 20) {
+          if (!levelFeatures.has(lvl)) levelFeatures.set(lvl, []);
+          levelFeatures.get(lvl)!.push({
+            name: feature.name,
+            description: feature.desc,
+          });
+        }
+      }
+    }
+
+    // Build a lookup from the subclass feature overrides
+    const overrides = SUBCLASS_FEATURES_OVERRIDES[subclassSlug];
+    const featureLookup = new Map<string, ClassFeatureDef>();
+    if (overrides) {
+      for (const [lvl, defs] of Object.entries(overrides.levels)) {
+        for (const def of defs) {
+          featureLookup.set(`${def.name}:${lvl}`, def);
+        }
+      }
+    }
+
+    // Emit a doc per level that has features
+    for (const [level, features] of levelFeatures.entries()) {
+      const enrichedFeatures = features.map(f => {
+        const key = `${f.name.toLowerCase()}:${level}`;
+        const override = featureLookup.get(key);
+        return {
+          ...f,
+          ...(override?.type ? { type: override.type } : {}),
+          ...(override?.gameplayEffects ? { gameplayEffects: override.gameplayEffects } : {}),
+        };
+      });
+
+      const slug = `${subclassSlug}_${level}`;
+      docs.push({
+        id: slug,
+        data: {
+          slug,
+          classSlug,
+          subclassSlug,
+          level,
+          features: enrichedFeatures,
+        },
+      });
+    }
+  }
+
   await batchWrite("srdSubclassLevels", docs);
   console.log(`  ✓ ${docs.length} subclass levels seeded`);
 }
@@ -1268,11 +1324,11 @@ async function main(): Promise<void> {
   console.log("Starting Firestore seeding from Open5e v2 API...\n");
 
   await seedRaces();
-  const classData = await seedClasses();
-  await seedClassLevels(classData);
+  const { baseClasses, subclasses } = await seedClasses();
+  await seedClassLevels(baseClasses);
   const spellDocs = await seedSpells();
   await seedEquipment();
-  await seedSubclassLevels();
+  await seedSubclassLevels(subclasses);
   await seedConditions();
   await seedBackgrounds();
   await seedFeats();

@@ -27,9 +27,9 @@ import { addMessage } from "../../../lib/messageStore";
 
 interface CombatActionBody {
   characterId: string;
-  abilityId: string;    // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
-  targetId?: string;    // NPC id (required for targeted abilities)
-  aoeOrigin?: GridPosition;    // for ranged AOEs: center point chosen by player
+  abilityId: string; // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
+  targetId?: string; // NPC id (required for targeted abilities)
+  aoeOrigin?: GridPosition; // for ranged AOEs: center point chosen by player
   aoeDirection?: GridPosition; // for cone/line: cursor position indicating direction
 }
 
@@ -61,15 +61,20 @@ export async function POST(req: NextRequest) {
 
     // Initialize turnOrder if not set (backwards compat for pre-existing encounters)
     if (!encounter.turnOrder || encounter.turnOrder.length === 0) {
-      encounter.turnOrder = ["player", ...encounter.activeNPCs.map(n => n.id)];
+      encounter.turnOrder = [
+        "player",
+        ...encounter.activeNPCs.map((n) => n.id),
+      ];
       encounter.currentTurnIndex = 0;
     }
 
     // Find ability in player's abilities
-    const ability = (player.abilities ?? []).find(a => a.id === abilityId);
+    const ability = (player.abilities ?? []).find((a) => a.id === abilityId);
     if (!ability) {
       return NextResponse.json(
-        { error: `Ability "${abilityId}" not found in player's combat abilities` },
+        {
+          error: `Ability "${abilityId}" not found in player's combat abilities`,
+        },
         { status: 400 },
       );
     }
@@ -77,7 +82,7 @@ export async function POST(req: NextRequest) {
     // Find target NPC if targeted
     let targetNPC = null;
     if (targetId) {
-      targetNPC = encounter.activeNPCs.find(n => n.id === targetId) ?? null;
+      targetNPC = encounter.activeNPCs.find((n) => n.id === targetId) ?? null;
       if (!targetNPC) {
         return NextResponse.json(
           { error: `Target NPC "${targetId}" not found in encounter` },
@@ -93,7 +98,8 @@ export async function POST(req: NextRequest) {
 
     // ── Accumulate player combat stats ──────────────────────────────────────
     if (!encounter.combatStats) encounter.combatStats = {};
-    if (!encounter.combatStats[characterId]) encounter.combatStats[characterId] = emptyCombatStats();
+    if (!encounter.combatStats[characterId])
+      encounter.combatStats[characterId] = emptyCombatStats();
     const stats = encounter.combatStats[characterId];
 
     let playerResult = null;

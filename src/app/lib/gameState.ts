@@ -582,12 +582,10 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   const npc = encounter.activeNPCs.find((n) => n.id === input.id);
   if (!npc) return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
 
+  const wasAlive = npc.currentHp > 0;
+
   if (input.hp_delta) {
     npc.currentHp = Math.max(0, Math.min(npc.maxHp, npc.currentHp + input.hp_delta));
-    // Auto-remove NPCs that hit 0 HP (safety net if DM forgets remove_from_scene)
-    if (npc.currentHp <= 0) {
-      input.remove_from_scene = true;
-    }
   }
   if (input.conditions_added?.length) {
     for (const c of input.conditions_added) {
@@ -600,11 +598,15 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
     );
   }
 
+  // Detect fresh kill: was alive before this update, now dead.
+  // Dead NPCs remain in activeNPCs (rendered as faded corpse on the grid)
+  // but XP/snapshot/events only trigger once on the killing blow.
+  const justDied = wasAlive && npc.currentHp <= 0;
   const died = npc.currentHp <= 0;
   let xpAwarded = 0;
 
-  if (input.remove_from_scene) {
-    // Snapshot the NPC before removal (for loot context and victory screen)
+  if (justDied) {
+    // Snapshot the NPC for loot context and victory screen
     if (!encounter.defeatedNPCs) encounter.defeatedNPCs = [];
     encounter.defeatedNPCs.push({ ...npc });
 
@@ -618,15 +620,17 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
       console.log(`[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`);
     }
     // Record the kill in recentEvents so the DM agent has context on future turns
-    if (died) {
-      state.story.recentEvents.push(`Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`);
-      if (state.story.recentEvents.length > 10) state.story.recentEvents = state.story.recentEvents.slice(-10);
-    }
+    state.story.recentEvents.push(`Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`);
+    if (state.story.recentEvents.length > 10) state.story.recentEvents = state.story.recentEvents.slice(-10);
+  }
+
+  // Explicit remove_from_scene (e.g. NPC flees, DM removes for story reasons)
+  if (input.remove_from_scene && !died) {
     encounter.activeNPCs = encounter.activeNPCs.filter((n) => n.id !== npc.id);
     delete encounter.positions[npc.id];
   }
 
-  return { found: true, name: npc.name, died, removed: !!input.remove_from_scene, newHp: npc.currentHp, xpAwarded };
+  return { found: true, name: npc.name, died, removed: !!input.remove_from_scene && !died, newHp: npc.currentHp, xpAwarded };
 }
 
 // ─── XP / Level-up ────────────────────────────────────────────────────────────
@@ -675,8 +679,11 @@ async function computePendingLevelUp(
   for (let lvl = fromLevel + 1; lvl <= toLevel; lvl++) {
     const levelData = await getSRDClassLevel(classSlug, lvl);
 
-    // HP gain: floor(hitDie/2) + 1 + CON mod
-    const hpGain = Math.floor(player.hitDie / 2) + 1 + conMod;
+    // HP gain: floor(hitDie/2) + 1 + CON mod + hpPerLevel bonuses from features
+    const hpPerLevelBonus = player.features
+      .filter(f => f.gameplayEffects?.hpPerLevel)
+      .reduce((sum, f) => sum + (f.gameplayEffects!.hpPerLevel ?? 0), 0);
+    const hpGain = Math.floor(player.hitDie / 2) + 1 + conMod + hpPerLevelBonus;
 
     // Check ASI using class-specific schedule from Firestore
     const asiLevels = classData?.asiLevels ?? DEFAULT_ASI_LEVELS;
@@ -686,7 +693,7 @@ async function computePendingLevelUp(
     const requiresSubclass = !player.subclass && classData?.archetypeLevel === lvl;
 
     // Subclass features (if player already has a subclass)
-    let newSubclassFeatures: Array<{ name: string; description: string }> = [];
+    let newSubclassFeatures: PendingLevelData["newSubclassFeatures"] = [];
     if (player.subclass) {
       const subclassSlug = player.subclass.toLowerCase().replace(/\s+/g, "-");
       const subclassLevel = await getSRDSubclassLevel(subclassSlug, lvl);
@@ -694,6 +701,8 @@ async function computePendingLevelUp(
         newSubclassFeatures = subclassLevel.features.map((f) => ({
           name: f.name,
           description: f.description ?? "",
+          ...(f.type ? { type: f.type } : {}),
+          ...(f.gameplayEffects ? { gameplayEffects: f.gameplayEffects } : {}),
         }));
       }
     }
@@ -1007,13 +1016,19 @@ export async function applyLevelUp(
       }
     }
 
-    // Add subclass features
+    // Add subclass features (mirrors class feature pattern — supports scaling updates)
     for (const feat of levelData.newSubclassFeatures) {
-      if (!state.player.features.some((f) => f.name === feat.name)) {
+      const existing = state.player.features.find((f) => f.name === feat.name);
+      if (existing) {
+        // Scaling: update effects for features re-listed at higher level
+        if (feat.gameplayEffects) existing.gameplayEffects = feat.gameplayEffects;
+      } else {
         state.player.features.push({
           name: feat.name,
           level: lvl,
           source: state.player.subclass ?? undefined,
+          ...(feat.type ? { type: feat.type } : {}),
+          ...(feat.gameplayEffects ? { gameplayEffects: feat.gameplayEffects } : {}),
         });
       }
     }

@@ -114,7 +114,7 @@ export function resolveWeaponAttack(
 
   const { d20, allRolls } = rollD20WithAdvantage(advType);
   const isNat1 = d20 === 1;
-  const isNat20 = d20 === 20;
+  const isNat20 = d20 >= (player.critRange ?? 20);
 
   const { mod: abilityMod, label: abilityLabel } = getWeaponAbilityMod(weaponStat, player.stats);
   const proficient = isWeaponProficient(weaponName, player.weaponProficiencies ?? []);
@@ -145,6 +145,23 @@ export function resolveWeaponAttack(
       subtotal: weaponRoll.total + flatBonus,
       damageType: ability.damageType ?? "piercing",
     }];
+
+    // Brutal Critical: extra weapon dice on crits
+    if (isNat20 && (player.critBonusDice ?? 0) > 0) {
+      const baseDiceMatch = diceBase.match(/^\d+(d\d+)$/i);
+      if (baseDiceMatch) {
+        const critExpr = `${player.critBonusDice}${baseDiceMatch[1]}`;
+        const critRoll = rollDice(critExpr);
+        breakdown.push({
+          label: "Brutal Critical",
+          dice: critExpr,
+          rolls: critRoll.rolls,
+          flatBonus: 0,
+          subtotal: critRoll.total,
+          damageType: ability.damageType ?? "piercing",
+        });
+      }
+    }
 
     damage = {
       breakdown,
@@ -188,7 +205,8 @@ export function resolveSpellAttack(
   const spellAbility = player.spellcastingAbility ?? "intelligence";
   const abilityMod = getModifier(player.stats[spellAbility as keyof CharacterStats] as number);
   const profBonus = getProficiencyBonus(player.level);
-  const totalMod = abilityMod + profBonus;
+  const effectSpellAttackBonus = player.spellAttackBonus ?? 0;
+  const totalMod = abilityMod + profBonus + effectSpellAttackBonus;
 
   // Positional modifiers
   let advType: "advantage" | "disadvantage" | "normal" = "normal";
@@ -212,11 +230,13 @@ export function resolveSpellAttack(
 
   const { d20, allRolls } = rollD20WithAdvantage(advType);
   const isNat1 = d20 === 1;
-  const isNat20 = d20 === 20;
+  const isNat20 = d20 >= (player.critRange ?? 20);
   const total = d20 + totalMod;
 
   const abilityLabel = spellAbility.substring(0, 3).toUpperCase();
-  const components = `${abilityLabel} ${formatModifier(abilityMod)}, Prof ${formatModifier(profBonus)} = ${formatModifier(totalMod)}`;
+  const parts: string[] = [`${abilityLabel} ${formatModifier(abilityMod)}`, `Prof ${formatModifier(profBonus)}`];
+  if (effectSpellAttackBonus !== 0) parts.push(`Effects ${formatModifier(effectSpellAttackBonus)}`);
+  const components = `${parts.join(", ")} = ${formatModifier(totalMod)}`;
 
   const hit = isNat1 ? false : isNat20 ? true : total >= target.ac;
 
@@ -227,12 +247,13 @@ export function resolveSpellAttack(
       diceExpr = doubleDice(diceExpr);
     }
     const spellRoll = rollDice(diceExpr);
+    const spellDmgBonus = player.spellDamageBonus ?? 0;
     const breakdown: DamageBreakdown[] = [{
       label: ability.name,
       dice: diceExpr,
       rolls: spellRoll.rolls,
-      flatBonus: 0,
-      subtotal: spellRoll.total,
+      flatBonus: spellDmgBonus,
+      subtotal: spellRoll.total + spellDmgBonus,
       damageType: ability.damageType ?? "magical",
     }];
 
@@ -307,12 +328,13 @@ export function resolveSpellSave(
       }
     }
     const spellRoll = rollDice(diceExpr);
+    const spellDmgBonus = player.spellDamageBonus ?? 0;
     const breakdown: DamageBreakdown[] = [{
       label: ability.name,
       dice: diceExpr,
       rolls: spellRoll.rolls,
-      flatBonus: 0,
-      subtotal: spellRoll.total,
+      flatBonus: spellDmgBonus,
+      subtotal: spellRoll.total + spellDmgBonus,
       damageType: ability.damageType ?? "magical",
     }];
 

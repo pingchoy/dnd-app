@@ -860,3 +860,262 @@ export const CLASS_FEATURES_OVERRIDES: Record<string, ClassFeaturesOverride> = {
     },
   },
 };
+
+// ─── Per-Level Subclass Feature Overrides ────────────────────────────────────
+//
+// Same pattern as CLASS_FEATURES_OVERRIDES: type + optional gameplayEffects.
+// Features that are purely narrative get type but no gameplayEffects.
+
+export interface SubclassFeaturesOverride {
+  levels: Record<number, ClassFeatureDef[]>;
+}
+
+export const SUBCLASS_FEATURES_OVERRIDES: Record<string, SubclassFeaturesOverride> = {
+  // ── Champion (Fighter) ────────────────────────────────────────────────────
+  champion: {
+    levels: {
+      3: [
+        { name: "improved critical", type: "passive", gameplayEffects: { critRange: 19 } },
+      ],
+      7: [
+        { name: "remarkable athlete", type: "passive", gameplayEffects: { halfProficiency: true } },
+      ],
+      10: [
+        { name: "additional fighting style", type: "passive" },
+      ],
+      15: [
+        { name: "superior critical", type: "passive", gameplayEffects: { critRange: 18 } },
+      ],
+      18: [
+        { name: "survivor", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Berserker (Barbarian) ─────────────────────────────────────────────────
+  berserker: {
+    levels: {
+      3: [
+        { name: "frenzy", type: "active", gameplayEffects: { condition: "raging" } },
+      ],
+      6: [
+        { name: "mindless rage", type: "passive", gameplayEffects: { condition: "raging", immunities: ["charmed", "frightened"] } },
+      ],
+      10: [
+        { name: "intimidating presence", type: "active" },
+      ],
+      14: [
+        { name: "retaliation", type: "reaction" },
+      ],
+    },
+  },
+
+  // ── Life (Cleric) ─────────────────────────────────────────────────────────
+  life: {
+    levels: {
+      1: [
+        { name: "bonus proficiency", type: "passive", gameplayEffects: { proficiencyGrants: { armor: ["heavy armor"] } } },
+        { name: "disciple of life", type: "passive" },
+      ],
+      2: [
+        { name: "preserve life", type: "active" },
+      ],
+      6: [
+        { name: "blessed healer", type: "passive" },
+      ],
+      8: [
+        { name: "divine strike", type: "passive", gameplayEffects: { bonusDamage: "1d8 radiant" } },
+      ],
+      14: [
+        { name: "divine strike", type: "passive", gameplayEffects: { bonusDamage: "2d8 radiant" } },
+      ],
+      17: [
+        { name: "supreme healing", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Thief (Rogue) ─────────────────────────────────────────────────────────
+  thief: {
+    levels: {
+      3: [
+        { name: "fast hands", type: "active" },
+        { name: "second-story work", type: "passive" },
+      ],
+      9: [
+        { name: "supreme sneak", type: "passive" },
+      ],
+      13: [
+        { name: "use magic device", type: "passive" },
+      ],
+      17: [
+        { name: "thief's reflexes", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Assassin (Rogue) ──────────────────────────────────────────────────────
+  assassin: {
+    levels: {
+      3: [
+        { name: "bonus proficiencies", type: "passive", gameplayEffects: { proficiencyGrants: { tools: ["disguise kit", "poisoner's kit"] } } },
+        { name: "assassinate", type: "passive" },
+      ],
+      9: [
+        { name: "infiltration expertise", type: "passive" },
+      ],
+      13: [
+        { name: "impostor", type: "passive" },
+      ],
+      17: [
+        { name: "death strike", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Evocation (Wizard) ────────────────────────────────────────────────────
+  evocation: {
+    levels: {
+      2: [
+        { name: "evocation savant", type: "passive" },
+        { name: "sculpt spells", type: "active" },
+      ],
+      6: [
+        { name: "potent cantrip", type: "passive" },
+      ],
+      10: [
+        { name: "empowered evocation", type: "passive", gameplayEffects: { spellDamageBonusAbility: "intelligence" } },
+      ],
+      14: [
+        { name: "overchannel", type: "active" },
+      ],
+    },
+  },
+
+  // ── Open Hand (Monk) ──────────────────────────────────────────────────────
+  "open-hand": {
+    levels: {
+      3: [
+        { name: "open hand technique", type: "active" },
+      ],
+      6: [
+        { name: "wholeness of body", type: "active", gameplayEffects: { usesPerRest: 1, restType: "long" } },
+      ],
+      11: [
+        { name: "tranquility", type: "passive" },
+      ],
+      17: [
+        { name: "quivering palm", type: "active" },
+      ],
+    },
+  },
+
+  // ── Devotion (Paladin) ────────────────────────────────────────────────────
+  devotion: {
+    levels: {
+      3: [
+        { name: "sacred weapon", type: "active" },
+        { name: "turn the unholy", type: "active" },
+      ],
+      7: [
+        { name: "aura of devotion", type: "passive", gameplayEffects: { immunities: ["charmed"] } },
+      ],
+      15: [
+        { name: "purity of spirit", type: "passive" },
+      ],
+      20: [
+        { name: "holy nimbus", type: "active" },
+      ],
+    },
+  },
+
+  // ── Hunter (Ranger) ───────────────────────────────────────────────────────
+  hunter: {
+    levels: {
+      3: [
+        { name: "hunter's prey", type: "passive" },
+      ],
+      7: [
+        { name: "defensive tactics", type: "passive" },
+      ],
+      11: [
+        { name: "multiattack", type: "active" },
+      ],
+      15: [
+        { name: "superior hunter's defense", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Draconic (Sorcerer) ───────────────────────────────────────────────────
+  draconic: {
+    levels: {
+      1: [
+        { name: "dragon ancestor", type: "passive" },
+        { name: "draconic resilience", type: "passive", gameplayEffects: { acFormula: "13 + dex", hpPerLevel: 1 } },
+      ],
+      6: [
+        { name: "elemental affinity", type: "passive", gameplayEffects: { spellDamageBonusAbility: "charisma" } },
+      ],
+      14: [
+        { name: "dragon wings", type: "active" },
+      ],
+      18: [
+        { name: "draconic presence", type: "active" },
+      ],
+    },
+  },
+
+  // ── Fiend (Warlock) ───────────────────────────────────────────────────────
+  fiend: {
+    levels: {
+      1: [
+        { name: "dark one's blessing", type: "passive" },
+      ],
+      6: [
+        { name: "dark one's own luck", type: "active", gameplayEffects: { usesPerRest: 1, restType: "short" } },
+      ],
+      10: [
+        { name: "fiendish resilience", type: "passive" },
+      ],
+      14: [
+        { name: "hurl through hell", type: "active", gameplayEffects: { usesPerRest: 1, restType: "long" } },
+      ],
+    },
+  },
+
+  // ── Lore (Bard) ───────────────────────────────────────────────────────────
+  lore: {
+    levels: {
+      3: [
+        { name: "bonus proficiencies", type: "passive" },
+        { name: "cutting words", type: "reaction" },
+      ],
+      6: [
+        { name: "additional magical secrets", type: "passive" },
+      ],
+      14: [
+        { name: "peerless skill", type: "passive" },
+      ],
+    },
+  },
+
+  // ── Moon (Druid) ──────────────────────────────────────────────────────────
+  moon: {
+    levels: {
+      2: [
+        { name: "combat wild shape", type: "active" },
+        { name: "circle forms", type: "passive" },
+      ],
+      6: [
+        { name: "primal strike", type: "passive" },
+      ],
+      10: [
+        { name: "elemental wild shape", type: "active" },
+      ],
+      14: [
+        { name: "thousand forms", type: "active" },
+      ],
+    },
+  },
+};

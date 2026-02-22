@@ -31,23 +31,26 @@ export function getTokenImageKey(
 }
 
 /**
- * Preload a set of token images and return a map of successfully loaded ones.
+ * Preload a set of token images into an existing cache (or a new one).
  * Tries .webp first, then .png. Images that fail to load in all formats are
  * silently excluded — the grid falls back to initials for those tokens.
+ *
+ * Already-loaded keys are skipped so that re-running this on NPC HP changes
+ * doesn't discard working images (which would cause an initials flash).
  *
  * Cache is keyed by format-agnostic path (no extension) so callers don't
  * need to know which format was found.
  */
 export function preloadTokenImages(
   entries: { name: string; type: "monster" | "race" }[],
+  existingCache?: Map<string, HTMLImageElement>,
 ): Map<string, HTMLImageElement> {
-  const cache = new Map<string, HTMLImageElement>();
-  const seen = new Set<string>();
+  const cache = existingCache ?? new Map<string, HTMLImageElement>();
 
   for (const entry of entries) {
     const key = getTokenImageKey(entry.name, entry.type);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // Skip if already loaded or currently loading in the cache
+    if (cache.has(key)) continue;
 
     // Try each format in order; stop on first successful load.
     tryLoadImage(key, 0, cache);
@@ -62,23 +65,23 @@ function tryLoadImage(
   extIndex: number,
   cache: Map<string, HTMLImageElement>,
 ): void {
-  // if (extIndex >= SUPPORTED_EXTENSIONS.length) return;
-  // const img = new Image();
-  // img.src = `${key}.${SUPPORTED_EXTENSIONS[extIndex]}`;
-  // (img as HTMLImageElement & { _loaded?: boolean })._loaded = false;
-  // img.onload = () => {
-  //   (img as HTMLImageElement & { _loaded?: boolean })._loaded = true;
-  //   cache.set(key, img);
-  // };
-  // img.onerror = () => {
-  //   // Try next format
-  //   tryLoadImage(key, extIndex + 1, cache);
-  // };
-  // // Optimistically set in cache so the key exists during the first format attempt.
-  // // If all formats fail, the entry stays with _loaded=false → initials fallback.
-  // if (!cache.has(key)) {
-  //   cache.set(key, img);
-  // }
+  if (extIndex >= SUPPORTED_EXTENSIONS.length) return;
+  const img = new Image();
+  img.src = `${key}.${SUPPORTED_EXTENSIONS[extIndex]}`;
+  (img as HTMLImageElement & { _loaded?: boolean })._loaded = false;
+  img.onload = () => {
+    (img as HTMLImageElement & { _loaded?: boolean })._loaded = true;
+    cache.set(key, img);
+  };
+  img.onerror = () => {
+    // Try next format
+    tryLoadImage(key, extIndex + 1, cache);
+  };
+  // Optimistically set in cache so the key exists during the first format attempt.
+  // If all formats fail, the entry stays with _loaded=false → initials fallback.
+  if (!cache.has(key)) {
+    cache.set(key, img);
+  }
 }
 
 /** Check if a preloaded image is ready to draw. */

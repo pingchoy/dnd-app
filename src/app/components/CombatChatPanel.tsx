@@ -65,7 +65,7 @@ const CombatChatPanel = memo(function CombatChatPanel({
             </div>
 
             {/* Chat content */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
               <CompactChatPanel
                 messages={messages}
                 playerName={playerName}
@@ -102,10 +102,15 @@ const CombatChatPanel = memo(function CombatChatPanel({
                   disabled={inputDisabled}
                   onChange={(e) => setUserInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !inputDisabled) handleSubmit();
+                    if (e.key === "Enter" && !e.shiftKey && !inputDisabled)
+                      handleSubmit();
                   }}
                   autoComplete="off"
-                  placeholder={inputDisabled ? "Awaiting the tale\u2026" : "Speak your action\u2026"}
+                  placeholder={
+                    inputDisabled
+                      ? "Awaiting the tale\u2026"
+                      : "Speak your action\u2026"
+                  }
                   className="flex-1 min-w-0 h-11 bg-transparent border-0 font-crimson text-sm
                              text-parchment/90 placeholder-parchment/30 focus:ring-0 focus:outline-none
                              disabled:opacity-40 px-2"

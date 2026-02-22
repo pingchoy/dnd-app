@@ -520,14 +520,19 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
     patch({ isSaving: true, error: null });
 
     try {
-      // Fetch level-1 features and starting equipment from API in parallel
+      // Fetch level-1 features, starting equipment, and subclass features in parallel
       const classSlug = selectedClass.slug;
-      const [levelRes, gearRes] = await Promise.all([
+      const subclassSlug = state.selectedArchetype?.slug;
+      const [levelRes, gearRes, scRes] = await Promise.all([
         fetch(`/api/srd?type=class-level&classSlug=${classSlug}&level=1`),
         fetch(`/api/srd?type=starting-equipment&classSlug=${classSlug}`),
+        subclassSlug
+          ? fetch(`/api/srd?type=subclass-level&subclassSlug=${subclassSlug}&level=1`)
+          : Promise.resolve(null),
       ]);
       const levelData = levelRes.ok ? await levelRes.json() : null;
       const gear = gearRes.ok ? await gearRes.json() : null;
+      const subclassData = scRes && "ok" in scRes && scRes.ok ? await scRes.json() : null;
 
       // Collect race traits + class features + archetype into CharacterFeature[]
       const features: CharacterFeature[] = [
@@ -561,11 +566,27 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           level: 1,
           source: `${selectedClass.name} 1`,
         }] : []),
+        // Subclass level features with gameplayEffects (e.g. Draconic Resilience AC formula)
+        ...(state.selectedArchetype && subclassData?.features
+          ? (subclassData.features as Array<{ name: string; description?: string; type?: string; gameplayEffects?: Record<string, unknown> }>).map((f) => ({
+              name: f.name,
+              description: f.description ?? "",
+              level: 1,
+              source: state.selectedArchetype!.name,
+              ...(f.type ? { type: f.type as "active" | "passive" | "reaction" } : {}),
+              ...(f.gameplayEffects ? { gameplayEffects: f.gameplayEffects } : {}),
+            }))
+          : []),
       ];
 
-      // Compute derived HP: hitDie + CON modifier (max roll at level 1)
+      // Compute derived HP: hitDie + CON modifier (max roll at level 1) + hpPerLevel from subclass features
       const conMod = getModifier(finalStats.constitution);
-      const maxHP = selectedClass.hitDie + conMod;
+      // Check subclass features for hpPerLevel bonuses (e.g. Draconic Resilience +1 HP per level)
+      const subclassFeatures = (subclassData?.features ?? []) as Array<{ gameplayEffects?: { hpPerLevel?: number } }>;
+      const hpPerLevelBonus = subclassFeatures
+        .filter(f => f.gameplayEffects?.hpPerLevel)
+        .reduce((sum: number, f) => sum + (f.gameplayEffects!.hpPerLevel ?? 0), 0);
+      const maxHP = selectedClass.hitDie + conMod + hpPerLevelBonus;
 
       // Saving throw proficiencies come from the class
       const savingThrowProficiencies = selectedClass.savingThrows;

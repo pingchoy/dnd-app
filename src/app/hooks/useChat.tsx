@@ -6,6 +6,7 @@ import {
   collection,
   query,
   orderBy,
+  limitToLast,
   onSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -144,7 +145,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     unsubRef.current?.();
     const db = getClientDb();
     const messagesRef = collection(db, "sessions", sessionId, "messages");
-    const messagesQuery = query(messagesRef, orderBy("timestamp", "asc"));
+    const messagesQuery = query(messagesRef, orderBy("timestamp", "asc"), limitToLast(20));
 
     const unsub = onSnapshot(messagesQuery, (snapshot) => {
       // On first snapshot, record all existing doc IDs as historical

@@ -21,14 +21,17 @@ export function useCombatGrid(
   inCombat: boolean,
   encounter?: StoredEncounter | null,
 ) {
-  const [positions, setPositions] = useState<Map<string, GridPosition>>(new Map());
+  const [positions, setPositions] = useState<Map<string, GridPosition>>(
+    new Map(),
+  );
   const prevCombatRef = useRef(false);
   const prevEncounterIdRef = useRef<string | undefined>(undefined);
 
   // When a new encounter arrives or combat starts, load positions from encounter
   useEffect(() => {
     const encounterId = encounter?.id;
-    const isNewEncounter = encounterId && encounterId !== prevEncounterIdRef.current;
+    const isNewEncounter =
+      encounterId && encounterId !== prevEncounterIdRef.current;
     const combatJustStarted = inCombat && !prevCombatRef.current;
 
     if (isNewEncounter || combatJustStarted) {
@@ -70,7 +73,9 @@ export function useCombatGrid(
       }
 
       // Place new NPCs along edges (rows 0-3) — only for NPCs without positions
-      const occupied = new Set(Array.from(next.values()).map((p) => `${p.row},${p.col}`));
+      const occupied = new Set(
+        Array.from(next.values()).map((p) => `${p.row},${p.col}`),
+      );
       for (const npc of activeNPCs) {
         if (!next.has(npc.id)) {
           const pos = findEdgeSlot(occupied);
@@ -87,29 +92,32 @@ export function useCombatGrid(
    * Move a token to a new position.
    * Updates local state optimistically, then persists to Firestore via API.
    */
-  const moveToken = useCallback((id: string, pos: GridPosition) => {
-    // Optimistic local update
-    setPositions((prev) => {
-      const next = new Map(prev);
-      next.set(id, pos);
-      return next;
-    });
-
-    // Persist to Firestore if we have an active encounter
-    if (encounter?.id) {
-      fetch("/api/encounter/move", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          encounterId: encounter.id,
-          tokenId: id,
-          position: pos,
-        }),
-      }).catch((err) => {
-        console.error("[useCombatGrid] Failed to persist position:", err);
+  const moveToken = useCallback(
+    (id: string, pos: GridPosition) => {
+      // Optimistic local update
+      setPositions((prev) => {
+        const next = new Map(prev);
+        next.set(id, pos);
+        return next;
       });
-    }
-  }, [encounter?.id]);
+
+      // Persist to Firestore if we have an active encounter
+      if (encounter?.id) {
+        fetch("/api/encounter/move", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            encounterId: encounter.id,
+            tokenId: id,
+            position: pos,
+          }),
+        }).catch((err) => {
+          console.error("[useCombatGrid] Failed to persist position:", err);
+        });
+      }
+    },
+    [encounter?.id],
+  );
 
   return { positions, moveToken, gridSize: GRID_SIZE };
 }

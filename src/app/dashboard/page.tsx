@@ -104,10 +104,6 @@ export default function Dashboard() {
   const gridRef = useRef<CombatGridHandle>(null);
   const prevMsgCountRef = useRef(0);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isNarrating, isCombatProcessing]);
-
   // Re-scroll while a dice roll is animating so the expanding card stays in view
   const lastMsg = messages[messages.length - 1];
   const hasAnimatingRoll = lastMsg?.isNewRoll === true;
@@ -176,6 +172,11 @@ export default function Dashboard() {
     inCombat,
     encounter,
   );
+
+  // Auto-scroll chat to bottom on new messages or when leaving combat view
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isNarrating, isCombatProcessing, inCombat]);
 
   const isBusy = isNarrating || isCombatProcessing;
 

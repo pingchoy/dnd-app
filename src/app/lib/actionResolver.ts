@@ -238,7 +238,7 @@ export function resolveAttack(
   // Roll d20
   const d20 = rollD20();
   const isNat1 = d20 === 1;
-  const isNat20 = d20 === 20;
+  const isNat20 = d20 >= (player.critRange ?? 20);
 
   // Compute attack modifier
   const { mod: abilityMod, label: abilityLabel } = getWeaponAbilityMod(
@@ -294,6 +294,23 @@ export function resolveAttack(
       subtotal: weaponRoll.total + flatBonus,
       damageType: weaponAbility.damageType ?? "piercing",
     });
+
+    // Brutal Critical: extra weapon dice on crits
+    if (isNat20 && (player.critBonusDice ?? 0) > 0) {
+      const baseDiceMatch = weaponAbility.damageRoll.match(/^\d+(d\d+)$/i);
+      if (baseDiceMatch) {
+        const critExpr = `${player.critBonusDice}${baseDiceMatch[1]}`;
+        const critRoll = rollDice(critExpr);
+        breakdown.push({
+          label: "Brutal Critical",
+          dice: critExpr,
+          rolls: critRoll.rolls,
+          flatBonus: 0,
+          subtotal: critRoll.total,
+          damageType: weaponAbility.damageType ?? "piercing",
+        });
+      }
+    }
 
     // Aggregated bonus damage from effects (e.g. "1d6", "1d8 radiant")
     if (player.bonusDamage?.length) {

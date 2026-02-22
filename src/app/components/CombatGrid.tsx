@@ -1,6 +1,13 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from "react";
+import {
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import type { NPC, PlayerState, GridPosition, Ability, AOEData } from "../lib/gameTypes";
 import {
   cellsInRange,
@@ -12,7 +19,11 @@ import {
   FEET_PER_SQUARE as ENFORCEMENT_FPS,
 } from "../lib/combatEnforcement";
 import type { AOEShape } from "../lib/combatEnforcement";
-import { getTokenImageKey, preloadTokenImages, isImageReady } from "../lib/tokenImages";
+import {
+  getTokenImageKey,
+  preloadTokenImages,
+  isImageReady,
+} from "../lib/tokenImages";
 
 interface Props {
   player: PlayerState;
@@ -43,9 +54,9 @@ export interface CombatGridHandle {
 }
 
 interface FloatingCombatLabel {
-  tokenId: string;  // "player" or NPC id
+  tokenId: string; // "player" or NPC id
   hit: boolean;
-  damage: number;   // 0 for misses
+  damage: number; // 0 for misses
   startTime: number; // performance.now() when created
 }
 
@@ -60,10 +71,10 @@ const DEFAULT_SPEED = 30;
 
 /** Disposition → { fill, stroke, text } hex colors for canvas tokens. */
 const COLORS: Record<string, { fill: string; stroke: string; text: string }> = {
-  player:   { fill: "#d97706", stroke: "#fbbf24", text: "#fef3c7" },
-  hostile:  { fill: "#991b1b", stroke: "#ef4444", text: "#fee2e2" },
+  player: { fill: "#d97706", stroke: "#fbbf24", text: "#fef3c7" },
+  hostile: { fill: "#991b1b", stroke: "#ef4444", text: "#fee2e2" },
   friendly: { fill: "#065f46", stroke: "#10b981", text: "#d1fae5" },
-  neutral:  { fill: "#075985", stroke: "#0ea5e9", text: "#e0f2fe" },
+  neutral: { fill: "#075985", stroke: "#0ea5e9", text: "#e0f2fe" },
 };
 
 /**
@@ -105,6 +116,11 @@ function clampScale(s: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
 
+/** Opacity for fully-faded dead tokens (after animation completes). */
+const DEAD_OPACITY = 0.15;
+/** Duration of the death fade-out animation in ms. */
+const DEATH_FADE_MS = 1200;
+
 /**
  * Draw a single token on the canvas.
  *
@@ -114,6 +130,7 @@ function clampScale(s: number): number {
  *
  * `pulse` is 0–1 sine phase used for the player glow; ignored for NPCs.
  * `tokenImg` is the optional preloaded HTMLImageElement for this token.
+ * `alpha` overrides globalAlpha (used for death fade animation).
  */
 function drawToken(
   ctx: CanvasRenderingContext2D,
@@ -126,6 +143,7 @@ function drawToken(
   disposition: string,
   pulse: number,
   tokenImg?: HTMLImageElement,
+  alpha?: number,
 ) {
   const isDead = currentHp <= 0;
   const c = COLORS[disposition] ?? COLORS.neutral;
@@ -135,14 +153,13 @@ function drawToken(
 
   ctx.save();
 
-  if (isDead) ctx.globalAlpha = 0.3;
+  if (alpha !== undefined) ctx.globalAlpha = alpha;
+  else if (isDead) ctx.globalAlpha = DEAD_OPACITY;
 
-  // Pulse glow (player only)
+  // Static glow (player only)
   if (disposition === "player" && !isDead) {
-    const blur = 4 + 8 * pulse;
-    const alpha = 0.4 + 0.3 * pulse;
-    ctx.shadowColor = `rgba(201, 168, 76, ${alpha})`;
-    ctx.shadowBlur = blur;
+    ctx.shadowColor = `rgba(201, 168, 76, 0.5)`;
+    ctx.shadowBlur = 6;
   }
 
   if (hasImage) {
@@ -167,7 +184,13 @@ function drawToken(
     ctx.arc(cx, cy, radius - 1, 0, Math.PI * 2);
     ctx.clip();
     const imgSize = (radius - 1) * 2;
-    ctx.drawImage(tokenImg, cx - imgSize / 2, cy - imgSize / 2, imgSize, imgSize);
+    ctx.drawImage(
+      tokenImg,
+      cx - imgSize / 2,
+      cy - imgSize / 2,
+      imgSize,
+      imgSize,
+    );
     ctx.restore();
 
     // Death skull overlay on top of image
@@ -289,30 +312,44 @@ function buildPreviewShape(
  * Reset: double-click or ⟲ button.
  * Token drag: left-click on any token.
  */
-const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
-  player,
-  activeNPCs,
-  positions,
-  onMoveToken,
-  gridSize,
-  targetingAbility = null,
-  onTargetSelected,
-  onCancel,
-  aoePreview,
-  onAOEConfirm,
-  headerExtra,
-}, ref) {
+const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
+  {
+    player,
+    activeNPCs,
+    positions,
+    onMoveToken,
+    gridSize,
+    targetingAbility = null,
+    onTargetSelected,
+    onCancel,
+    aoePreview,
+    onAOEConfirm,
+    headerExtra,
+  },
+  ref,
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef(0);
   const floatingLabelsRef = useRef<FloatingCombatLabel[]>([]);
   const tokenImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  /** Tracks when each NPC died (performance.now timestamp) for fade animation. */
+  const deathTimestampsRef = useRef<Map<string, number>>(new Map());
+  /** Background battle map image (loaded from /battle-map.png). */
+  const battleMapRef = useRef<HTMLImageElement | null>(null);
 
   useImperativeHandle(ref, () => ({
     showCombatResult(tokenId: string, hit: boolean, damage: number) {
       // Replace any existing label for the same token
-      floatingLabelsRef.current = floatingLabelsRef.current.filter(l => l.tokenId !== tokenId);
-      floatingLabelsRef.current.push({ tokenId, hit, damage, startTime: performance.now() });
+      floatingLabelsRef.current = floatingLabelsRef.current.filter(
+        (l) => l.tokenId !== tokenId,
+      );
+      floatingLabelsRef.current.push({
+        tokenId,
+        hit,
+        damage,
+        startTime: performance.now(),
+      });
     },
   }));
 
@@ -322,7 +359,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
 
   // Token drag — which token id is being dragged, where the ghost is, and origin cell
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dragPixel, setDragPixel] = useState<{ x: number; y: number } | null>(null);
+  const [dragPixel, setDragPixel] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const [dragOrigin, setDragOrigin] = useState<GridPosition | null>(null);
 
   // AOE hover tracking
@@ -339,7 +378,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   // Fixed 1400px grid so tokens are large enough for character portrait images.
   // The grid may extend beyond the viewport; the player pans/zooms to navigate.
   const gridDim = 1400;
-  const cellSize = gridDim > 0 ? (gridDim - (gridSize - 1) * GAP) / gridSize : 0;
+  const cellSize =
+    gridDim > 0 ? (gridDim - (gridSize - 1) * GAP) / gridSize : 0;
   const cellStep = cellSize + GAP;
   const centerX = (viewWidth - (gridSize * cellStep - GAP)) / 2;
   const centerY = (viewHeight - (gridSize * cellStep - GAP)) / 2;
@@ -394,13 +434,25 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
     };
   });
 
+  /* ── Load battle map background image ── */
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/battle-map.png";
+    img.onload = () => {
+      battleMapRef.current = img;
+    };
+  }, []);
+
   /* ── Preload token images when NPC list or player race changes ── */
   useEffect(() => {
     const entries: { name: string; type: "monster" | "race" }[] = [
       { name: player.race, type: "race" },
-      ...activeNPCs.map((npc) => ({ name: npc.name, type: "monster" as const })),
+      ...activeNPCs.map((npc) => ({
+        name: npc.name,
+        type: "monster" as const,
+      })),
     ];
-    tokenImageCacheRef.current = preloadTokenImages(entries);
+    preloadTokenImages(entries, tokenImageCacheRef.current);
   }, [player.race, activeNPCs]);
 
   /* ── ResizeObserver ── */
@@ -450,13 +502,24 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       ctx!.translate(s.centerX + s.offset.x, s.centerY + s.offset.y);
       ctx!.scale(s.scale, s.scale);
 
-      // 1) Checkerboard cells
+      // 0) Battle map background image (drawn before checkerboard overlay)
+      const totalGridPx = s.gridSize * s.cellStep - GAP;
+      const bgImg = battleMapRef.current;
+      if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+        ctx!.save();
+        ctx!.globalAlpha = 0.8;
+        ctx!.drawImage(bgImg, 0, 0, totalGridPx, totalGridPx);
+        ctx!.restore();
+      }
+
+      // 1) Checkerboard cells — light semi-transparent overlay so tiles are
+      //    distinguishable but the background map shows through.
       for (let row = 0; row < s.gridSize; row++) {
         for (let col = 0; col < s.gridSize; col++) {
           const isAlt = (row + col) % 2 === 1;
           ctx!.fillStyle = isAlt
-            ? "rgba(18, 16, 14, 0.85)"
-            : "rgba(13, 10, 8, 0.85)";
+            ? "rgba(0, 0, 0, 0.35)"
+            : "rgba(0, 0, 0, 0.2)";
           ctx!.fillRect(
             col * s.cellStep,
             row * s.cellStep,
@@ -501,20 +564,18 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           const longCells = cellsInRange(pPos, longRangeFeet, s.gridSize);
           ctx!.fillStyle = "rgba(217, 119, 6, 0.06)";
           for (const rc of longCells) {
-            ctx!.fillRect(rc.col * s.cellStep, rc.row * s.cellStep, s.cellSize, s.cellSize);
+            ctx!.fillRect(
+              rc.col * s.cellStep,
+              rc.row * s.cellStep,
+              s.cellSize,
+              s.cellSize,
+            );
           }
         }
         // Draw normal range cells (green)
         const normalCells = cellsInRange(pPos, rangeFeet, s.gridSize);
         ctx!.fillStyle = "rgba(34, 197, 94, 0.1)";
         for (const rc of normalCells) {
-          ctx!.fillRect(rc.col * s.cellStep, rc.row * s.cellStep, s.cellSize, s.cellSize);
-        }
-      } else if (pPos) {
-        // Default melee reach overlay
-        const reachCells = cellsInRange(pPos, DEFAULT_MELEE_REACH, s.gridSize);
-        ctx!.fillStyle = "rgba(201, 168, 76, 0.08)";
-        for (const rc of reachCells) {
           ctx!.fillRect(
             rc.col * s.cellStep,
             rc.row * s.cellStep,
@@ -591,10 +652,54 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       ctx!.strokeRect(-0.5, -0.5, totalDim + 1, totalDim + 1);
 
       // Pulse phase for player glow (2s cycle)
-      const pulse = (Math.sin((now % 2000) / 2000 * Math.PI * 2) + 1) / 2;
+      const pulse = (Math.sin(((now % 2000) / 2000) * Math.PI * 2) + 1) / 2;
 
-      // 3) NPC tokens (below player in z-order) — skip the one being dragged
+      // 3) NPC tokens — dead corpses first (lowest z), then living NPCs.
+      //    Track death timestamps for fade-out animation.
+      const deathTs = deathTimestampsRef.current;
       for (const npc of s.activeNPCs) {
+        if (npc.currentHp <= 0 && !deathTs.has(npc.id)) {
+          deathTs.set(npc.id, now);
+        } else if (npc.currentHp > 0 && deathTs.has(npc.id)) {
+          deathTs.delete(npc.id); // revived
+        }
+      }
+
+      // 3a) Dead NPC corpses (faded, skull overlay, walkable)
+      for (const npc of s.activeNPCs) {
+        if (npc.currentHp > 0) continue;
+        if (npc.id === s.dragId) continue;
+        const pos = s.positions.get(npc.id);
+        if (!pos) continue;
+        const cx = pos.col * s.cellStep + s.cellSize / 2;
+        const cy = pos.row * s.cellStep + s.cellSize / 2;
+
+        // Compute animated fade-out opacity
+        const deathTime = deathTs.get(npc.id) ?? now;
+        const elapsed = now - deathTime;
+        const fadeProgress = Math.min(1, elapsed / DEATH_FADE_MS);
+        const alpha = 1.0 - (1.0 - DEAD_OPACITY) * fadeProgress;
+
+        const npcImgPath = getTokenImageKey(npc.name, "monster");
+        const npcImg = tokenImageCacheRef.current.get(npcImgPath);
+        drawToken(
+          ctx!,
+          cx,
+          cy,
+          s.cellSize,
+          getInitials(npc.name),
+          npc.currentHp,
+          npc.maxHp,
+          npc.disposition,
+          0,
+          npcImg,
+          alpha,
+        );
+      }
+
+      // 3b) Living NPC tokens (above corpses in z-order)
+      for (const npc of s.activeNPCs) {
+        if (npc.currentHp <= 0) continue;
         if (npc.id === s.dragId) continue;
         const pos = s.positions.get(npc.id);
         if (!pos) continue;
@@ -602,12 +707,21 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         const cy = pos.row * s.cellStep + s.cellSize / 2;
 
         // Targeting highlight: pulsing ring around hostile NPCs in range
-        if (s.targetingAbility && npc.disposition === "hostile" && npc.currentHp > 0 && pPos) {
-          const dist = Math.max(Math.abs(pos.row - pPos.row), Math.abs(pos.col - pPos.col)) * FEET_PER_SQUARE;
+        if (
+          s.targetingAbility &&
+          npc.disposition === "hostile" &&
+          pPos
+        ) {
+          const dist =
+            Math.max(
+              Math.abs(pos.row - pPos.row),
+              Math.abs(pos.col - pPos.col),
+            ) * FEET_PER_SQUARE;
           let inRange = false;
           const tr = s.targetingAbility.range;
           if (tr) {
-            const maxRange = tr.longRange ?? tr.shortRange ?? tr.reach ?? DEFAULT_MELEE_REACH;
+            const maxRange =
+              tr.longRange ?? tr.shortRange ?? tr.reach ?? DEFAULT_MELEE_REACH;
             inRange = tr.type === "self" || dist <= maxRange;
           } else {
             inRange = dist <= DEFAULT_MELEE_REACH;
@@ -615,7 +729,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
 
           if (inRange) {
             const radius = s.cellSize * 0.4;
-            const ringPulse = (Math.sin((now % 1500) / 1500 * Math.PI * 2) + 1) / 2;
+            const ringPulse =
+              (Math.sin(((now % 1500) / 1500) * Math.PI * 2) + 1) / 2;
             ctx!.save();
             ctx!.beginPath();
             ctx!.arc(cx, cy, radius + 3 + ringPulse * 2, 0, Math.PI * 2);
@@ -628,7 +743,18 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
 
         const npcImgPath = getTokenImageKey(npc.name, "monster");
         const npcImg = tokenImageCacheRef.current.get(npcImgPath);
-        drawToken(ctx!, cx, cy, s.cellSize, getInitials(npc.name), npc.currentHp, npc.maxHp, npc.disposition, 0, npcImg);
+        drawToken(
+          ctx!,
+          cx,
+          cy,
+          s.cellSize,
+          getInitials(npc.name),
+          npc.currentHp,
+          npc.maxHp,
+          npc.disposition,
+          0,
+          npcImg,
+        );
       }
 
       // 4) Player token (stationary, hidden while being dragged)
@@ -638,7 +764,18 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         const cy = playerPos.row * s.cellStep + s.cellSize / 2;
         const playerImgPath = getTokenImageKey(s.player.race, "race");
         const playerImg = tokenImageCacheRef.current.get(playerImgPath);
-        drawToken(ctx!, cx, cy, s.cellSize, getInitials(s.player.name), s.player.currentHP, s.player.maxHP, "player", pulse, playerImg);
+        drawToken(
+          ctx!,
+          cx,
+          cy,
+          s.cellSize,
+          getInitials(s.player.name),
+          s.player.currentHP,
+          s.player.maxHP,
+          "player",
+          pulse,
+          playerImg,
+        );
       }
 
       // 5) Drag ghost + measurement line
@@ -661,7 +798,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           const inRange = feet <= s.playerSpeed;
 
           // Measurement line from origin to cursor
-          const lineColor = inRange ? "rgba(201, 168, 76, 0.7)" : "rgba(239, 68, 68, 0.8)";
+          const lineColor = inRange
+            ? "rgba(201, 168, 76, 0.7)"
+            : "rgba(239, 68, 68, 0.8)";
           ctx!.save();
           ctx!.setLineDash([6, 4]);
           ctx!.strokeStyle = lineColor;
@@ -690,7 +829,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           ctx!.beginPath();
           ctx!.roundRect(mx - lw / 2, my - lh / 2, lw, lh, 4);
           ctx!.fill();
-          ctx!.strokeStyle = inRange ? "rgba(201, 168, 76, 0.5)" : "rgba(239, 68, 68, 0.6)";
+          ctx!.strokeStyle = inRange
+            ? "rgba(201, 168, 76, 0.5)"
+            : "rgba(239, 68, 68, 0.6)";
           ctx!.lineWidth = 1;
           ctx!.stroke();
           // Label text
@@ -737,7 +878,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         const tokenPos = s.positions.get(label.tokenId);
         if (!tokenPos) continue;
         const tcx = tokenPos.col * s.cellStep + s.cellSize / 2;
-        const tcy = tokenPos.row * s.cellStep + s.cellSize / 2 - s.cellSize * 0.6;
+        const tcy =
+          tokenPos.row * s.cellStep + s.cellSize / 2 - s.cellSize * 0.6;
 
         const labelFontSize = Math.max(10, s.cellSize * 0.35);
         ctx!.save();
@@ -832,6 +974,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       }
 
       for (const npc of activeNPCs) {
+        if (npc.currentHp <= 0) continue; // dead corpses are not interactive
         const pos = positions.get(npc.id);
         if (!pos) continue;
         const cx = pos.col * cellStep + cellSize / 2;
@@ -845,7 +988,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   );
 
   /* ── Viewport-relative coords from pointer event ── */
-  const getVP = (e: React.PointerEvent | React.MouseEvent): { vx: number; vy: number } => {
+  const getVP = (
+    e: React.PointerEvent | React.MouseEvent,
+  ): { vx: number; vy: number } => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { vx: 0, vy: 0 };
     return { vx: e.clientX - rect.left, vy: e.clientY - rect.top };
@@ -868,7 +1013,12 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         e.preventDefault();
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         setIsPanning(true);
-        panStart.current = { x: e.clientX, y: e.clientY, offsetX: offset.x, offsetY: offset.y };
+        panStart.current = {
+          x: e.clientX,
+          y: e.clientY,
+          offsetX: offset.x,
+          offsetY: offset.y,
+        };
         return;
       }
 
@@ -919,11 +1069,26 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           e.preventDefault();
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
           setIsPanning(true);
-          panStart.current = { x: e.clientX, y: e.clientY, offsetX: offset.x, offsetY: offset.y };
+          panStart.current = {
+            x: e.clientX,
+            y: e.clientY,
+            offsetX: offset.x,
+            offsetY: offset.y,
+          };
         }
       }
     },
-    [offset, hitTest, viewportToGrid, positions, targetingAbility, onTargetSelected, aoePreview, onAOEConfirm, pixelToCell],
+    [
+      offset,
+      hitTest,
+      viewportToGrid,
+      positions,
+      targetingAbility,
+      onTargetSelected,
+      aoePreview,
+      onAOEConfirm,
+      pixelToCell,
+    ],
   );
 
   const handlePointerMove = useCallback(
@@ -933,7 +1098,10 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       if (isPanning) {
         const dx = e.clientX - panStart.current.x;
         const dy = e.clientY - panStart.current.y;
-        setOffset({ x: panStart.current.offsetX + dx, y: panStart.current.offsetY + dy });
+        setOffset({
+          x: panStart.current.offsetX + dx,
+          y: panStart.current.offsetY + dy,
+        });
         return;
       }
 
@@ -960,8 +1128,13 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         if (canvasRef.current) {
           if (targetingAbility) {
             // Targeting mode: crosshair on hostiles, default elsewhere
-            const isHostile = hit && hit !== "player" && activeNPCs.some(n => n.id === hit && n.currentHp > 0);
-            canvasRef.current.style.cursor = isHostile ? "crosshair" : "default";
+            const isHostile =
+              hit &&
+              hit !== "player" &&
+              activeNPCs.some((n) => n.id === hit && n.currentHp > 0);
+            canvasRef.current.style.cursor = isHostile
+              ? "crosshair"
+              : "default";
           } else {
             canvasRef.current.style.cursor = hit === "player" ? "grab" : "";
           }
@@ -1000,14 +1173,31 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           if (!allowed) return;
         }
 
-        // Collision check — don't drop on another token
+        // Collision check — don't drop on another living token (dead corpses are walkable)
         for (const [id, pos] of Array.from(positions.entries())) {
-          if (id !== currentDragId && pos.row === cell.row && pos.col === cell.col) return;
+          if (
+            id !== currentDragId &&
+            pos.row === cell.row &&
+            pos.col === cell.col
+          ) {
+            // Allow walking over dead NPC corpses
+            const isDeadNPC = activeNPCs.some((n) => n.id === id && n.currentHp <= 0);
+            if (!isDeadNPC) return;
+          }
         }
         onMoveToken(currentDragId, cell);
       }
     },
-    [isPanning, dragId, dragOrigin, pixelToCell, positions, onMoveToken, player],
+    [
+      isPanning,
+      dragId,
+      dragOrigin,
+      pixelToCell,
+      positions,
+      onMoveToken,
+      player,
+      activeNPCs,
+    ],
   );
 
   /* ── Zoom helpers ───────────────────────────────────────
@@ -1026,7 +1216,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   const applyZoom = useCallback(
     (cursorX: number, cursorY: number, direction: number) => {
       const s = stateRef.current;
-      const newScale = clampScale(s.scale * (direction > 0 ? 1 + ZOOM_STEP : 1 - ZOOM_STEP));
+      const newScale = clampScale(
+        s.scale * (direction > 0 ? 1 + ZOOM_STEP : 1 - ZOOM_STEP),
+      );
       if (newScale === s.scale) return;
       const ratio = newScale / s.scale;
 
@@ -1107,9 +1299,19 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       <div className="flex-1 min-h-0 relative">
         {/* Zoom controls */}
         <div className="combat-zoom-controls">
-          <button onClick={zoomIn} title="Zoom in">+</button>
-          <button onClick={zoomOut} title="Zoom out">−</button>
-          <button onClick={resetView} title="Reset view" style={{ fontSize: 11 }}>⟲</button>
+          <button onClick={zoomIn} title="Zoom in">
+            +
+          </button>
+          <button onClick={zoomOut} title="Zoom out">
+            −
+          </button>
+          <button
+            onClick={resetView}
+            title="Reset view"
+            style={{ fontSize: 11 }}
+          >
+            ⟲
+          </button>
         </div>
 
         {/* Viewport */}
@@ -1129,7 +1331,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
           />
-
         </div>
       </div>
 
@@ -1141,16 +1342,27 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         </span>
         {activeNPCs.map((npc) => {
           const color =
-            npc.disposition === "hostile" ? "bg-red-600" :
-            npc.disposition === "friendly" ? "bg-emerald-600" : "bg-sky-600";
+            npc.disposition === "hostile"
+              ? "bg-red-600"
+              : npc.disposition === "friendly"
+                ? "bg-emerald-600"
+                : "bg-sky-600";
           return (
             <span
               key={npc.id}
               className={`flex items-center gap-1.5 font-cinzel text-[10px] tracking-wide whitespace-nowrap ${
-                npc.currentHp <= 0 ? "text-parchment/30 line-through" : "text-parchment/70"
+                npc.currentHp <= 0
+                  ? "text-parchment/30 line-through"
+                  : "text-parchment/70"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${color} inline-block ${npc.currentHp <= 0 ? "opacity-30" : ""}`} />
+              {npc.currentHp <= 0 ? (
+                <span className="text-[10px] opacity-40">💀</span>
+              ) : (
+                <span
+                  className={`w-2 h-2 rounded-full ${color} inline-block`}
+                />
+              )}
               {npc.name}
             </span>
           );
