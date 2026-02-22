@@ -4,7 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../lib/gameTypes";
-import type { StoredEncounter, Ability, GameState, VictoryData } from "../lib/gameTypes";
+import type {
+  StoredEncounter,
+  Ability,
+  GameState,
+  VictoryData,
+} from "../lib/gameTypes";
 
 export interface UseCombatReturn {
   /** Active combat encounter data, or null if not in combat. */
@@ -14,7 +19,9 @@ export interface UseCombatReturn {
   /** Execute a deterministic combat action (ability bar click). */
   executeCombatAction: (ability: Ability, targetId?: string) => Promise<void>;
   /** Ref to set a callback for showing floating combat labels on the grid. */
-  combatLabelRef: React.MutableRefObject<((tokenId: string, hit: boolean, damage: number) => void) | null>;
+  combatLabelRef: React.MutableRefObject<
+    ((tokenId: string, hit: boolean, damage: number) => void) | null
+  >;
   /** Set encounter directly from API response data (bypasses Firestore listener latency). */
   setEncounter: (enc: StoredEncounter | null) => void;
   /** Victory screen data — non-null when combat just ended. */
@@ -54,7 +61,9 @@ export function useCombat({
   const [victoryData, setVictoryData] = useState<VictoryData | null>(null);
 
   // Combat floating label callback (set by dashboard, called on hit/miss results)
-  const combatLabelRef = useRef<((tokenId: string, hit: boolean, damage: number) => void) | null>(null);
+  const combatLabelRef = useRef<
+    ((tokenId: string, hit: boolean, damage: number) => void) | null
+  >(null);
 
   // Track victoryData in a ref so the encounterId effect can check it synchronously
   // without adding victoryData to the dependency array (which would re-run the listener).
@@ -79,17 +88,21 @@ export function useCombat({
     const db = getClientDb();
     const encounterRef = doc(db, "encounters", encounterId);
 
-    const unsub = onSnapshot(encounterRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data() as StoredEncounter;
-      setEncounter({ ...data, id: snap.id });
-      // Multiplayer: if encounter completed with victoryData, show victory screen
-      if (data.status === "completed" && data.victoryData) {
-        setVictoryData(data.victoryData);
-      }
-    }, (err) => {
-      console.error("[useCombat] Encounter listener error:", err);
-    });
+    const unsub = onSnapshot(
+      encounterRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as StoredEncounter;
+        setEncounter({ ...data, id: snap.id });
+        // Multiplayer: if encounter completed with victoryData, show victory screen
+        if (data.status === "completed" && data.victoryData) {
+          setVictoryData(data.victoryData);
+        }
+      },
+      (err) => {
+        console.error("[useCombat] Encounter listener error:", err);
+      },
+    );
 
     return () => unsub();
   }, [encounterId]);
@@ -110,10 +123,16 @@ export function useCombat({
    * Phase 2: POST /api/combat/resolve triggers narration + NPC turns.
    * All narrations arrive via the Firestore messages listener.
    */
-  async function executeCombatAction(ability: Ability, targetId?: string): Promise<void> {
+  async function executeCombatAction(
+    ability: Ability,
+    targetId?: string,
+  ): Promise<void> {
     if (!characterId || isNarrating || isCombatProcessing) return;
 
     setIsNarrating(true);
+    // Mark combat as processing BEFORE updating encounter, so inCombat stays
+    // true even if this action killed the last hostile.
+    setIsCombatProcessing(true);
     try {
       const res = await fetch("/api/combat/action", {
         method: "POST",
@@ -128,34 +147,38 @@ export function useCombat({
 
       const data = await res.json();
 
-      // Mark combat as processing BEFORE updating encounter, so inCombat stays
-      // true even if this action killed the last hostile.
-      setIsCombatProcessing(true);
-
       // Update game state and encounter (damage already applied server-side)
       setGameState(data.gameState);
       setEncounter(data.encounter ?? null);
 
-      // If the player's action killed the last hostile, delay the victory screen
-      // by ~2s so the player can see the killing blow land on the combat grid.
-      // Loot + narrative sections appear when /api/combat/resolve returns.
-      const enc = data.encounter as StoredEncounter | null;
-      if (enc && !enc.activeNPCs.some((n: { disposition: string; currentHp: number }) => n.disposition === "hostile" && n.currentHp > 0)) {
-        victoryDelayRef.current = setTimeout(() => {
-          victoryDelayRef.current = null;
-          setVictoryData({
-            totalXP: enc.totalXPAwarded ?? 0,
-            combatStats: enc.combatStats ?? {},
-            loot: [],
-            goldAwarded: 0,
-            defeatedNPCs: (enc.defeatedNPCs ?? []).map((n: { name: string }) => n.name),
-            rounds: enc.round,
-            narrative: "",
-            tokensUsed: 0,
-            estimatedCostUsd: 0,
-          });
-        }, 2000);
-      }
+      // // If the player's action killed the last hostile, delay the victory screen
+      // // by ~2s so the player can see the killing blow land on the combat grid.
+      // // Loot + narrative sections appear when /api/combat/resolve returns.
+      // const enc = data.encounter as StoredEncounter | null;
+      // if (
+      //   enc &&
+      //   !enc.activeNPCs.some(
+      //     (n: { disposition: string; currentHp: number }) =>
+      //       n.disposition === "hostile" && n.currentHp > 0,
+      //   )
+      // ) {
+      //   victoryDelayRef.current = setTimeout(() => {
+      //     victoryDelayRef.current = null;
+      //     setVictoryData({
+      //       totalXP: enc.totalXPAwarded ?? 0,
+      //       combatStats: enc.combatStats ?? {},
+      //       loot: [],
+      //       goldAwarded: 0,
+      //       defeatedNPCs: (enc.defeatedNPCs ?? []).map(
+      //         (n: { name: string }) => n.name,
+      //       ),
+      //       rounds: enc.round,
+      //       narrative: "",
+      //       tokensUsed: 0,
+      //       estimatedCostUsd: 0,
+      //     });
+      //   }, 2000);
+      // }
 
       // Show floating HIT/MISS label on the targeted NPC
       if (targetId && !data.playerResult.noCheck) {
@@ -245,7 +268,9 @@ export function useCombat({
     // Refetch clean game state (loot/XP already applied server-side)
     if (characterId) {
       try {
-        const refreshRes = await fetch(`/api/chat?characterId=${encodeURIComponent(characterId)}`);
+        const refreshRes = await fetch(
+          `/api/chat?characterId=${encodeURIComponent(characterId)}`,
+        );
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
           setGameState(refreshData.gameState);

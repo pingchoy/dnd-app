@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import type { Ability } from "../lib/gameTypes";
 import { toDisplayCase } from "../lib/gameTypes";
-import { detectRollHints } from "../lib/actionKeywords";
 
 interface Props {
   abilities: Ability[];
@@ -15,11 +14,6 @@ interface Props {
   onToggleChat: () => void;
   /** Whether there are unread messages (shows dot indicator on chat toggle). */
   hasUnread: boolean;
-  /** Text input state. */
-  userInput: string;
-  setUserInput: React.Dispatch<React.SetStateAction<string>>;
-  handleSubmit: () => void;
-  inputDisabled: boolean;
   /** When a targeted ability is selected, show targeting placeholder instead of normal input. */
   isTargeting: boolean;
   /** Range warning message to display above the hotbar. */
@@ -44,10 +38,10 @@ function abilityRangeTag(ability: Ability): string {
  * Fixed-height hotbar at the bottom of the combat layout.
  *
  * Layout (left to right):
+ * - Chat toggle button (with unread dot)
  * - Ability buttons (horizontal, scrollable on overflow)
  * - Spell submenu toggle (pops upward)
- * - Chat toggle button (with unread dot)
- * - Input field (takes remaining space)
+ * - Targeting hint (when targeting)
  */
 export default function CombatHotbar({
   abilities,
@@ -57,14 +51,11 @@ export default function CombatHotbar({
   chatOpen,
   onToggleChat,
   hasUnread,
-  userInput,
-  setUserInput,
-  handleSubmit,
-  inputDisabled,
   isTargeting,
   rangeWarning,
 }: Props) {
   const [spellPanelOpen, setSpellPanelOpen] = useState(false);
+  const spellBtnRef = useRef<HTMLButtonElement>(null);
 
   const directAbilities = useMemo(
     () => abilities.filter(a => a.type === "weapon" || a.type === "action"),
@@ -74,8 +65,6 @@ export default function CombatHotbar({
     () => abilities.filter(a => a.type === "cantrip" || a.type === "spell"),
     [abilities],
   );
-
-  const hints = useMemo(() => detectRollHints(userInput), [userInput]);
 
   const handleAbilityClick = useCallback((ability: Ability) => {
     setSpellPanelOpen(false);
@@ -97,26 +86,25 @@ export default function CombatHotbar({
         </div>
       )}
 
-      {/* Roll hint tags */}
-      {hints.length > 0 && !isTargeting && (
-        <div className="flex gap-2 flex-wrap px-3 py-1.5 border-t border-[#3a2a1a] bg-dungeon-mid/60 animate-fade-in">
-          {hints.map(({ label, ability }) => (
-            <span
-              key={label}
-              className="flex items-center gap-1.5 font-cinzel text-[10px] tracking-widest uppercase
-                         text-gold/70 border border-gold/25 rounded px-2.5 py-1 bg-dungeon"
-            >
-              <span className="text-gold/40">&#x2684;</span>
-              {label}
-              <span className="text-parchment/30">&middot;</span>
-              <span className="text-parchment/40">{ability}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Main hotbar strip */}
       <div className="combat-hotbar">
+        {/* Chat toggle — left side */}
+        <button
+          onClick={onToggleChat}
+          className={`combat-hotbar-chat-toggle ${chatOpen ? "combat-hotbar-chat-toggle-active" : ""}`}
+          title={chatOpen ? "Hide combat log" : "Show combat log"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {hasUnread && !chatOpen && (
+            <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          )}
+        </button>
+
+        {/* Separator */}
+        <div className="w-px h-8 bg-gold/20 flex-shrink-0" />
+
         {/* Ability buttons — horizontal row, scrollable */}
         <div className="combat-hotbar-abilities">
           {directAbilities.map((ability) => {
@@ -139,104 +127,95 @@ export default function CombatHotbar({
               </button>
             );
           })}
-
         </div>
 
-        {/* Spells toggle — outside the scrollable area so popup isn't clipped */}
+        {/* Spells toggle button (popup rendered outside the hotbar to escape overflow clipping) */}
         {spellAbilities.length > 0 && (
-          <div className="relative flex-shrink-0">
-            {spellPanelOpen && (
-              <div className="combat-hotbar-spell-popup">
-                {spellAbilities.map((ability) => {
-                  const isSelected = selectedAbility?.id === ability.id;
-                  const range = abilityRangeTag(ability);
-                  return (
-                    <button
-                      key={ability.id}
-                      onClick={() => handleAbilityClick(ability)}
-                      disabled={abilityBarDisabled}
-                      className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
-                      title={`${toDisplayCase(ability.name)} (${range})`}
-                    >
-                      <span className="combat-ability-name">
-                        {toDisplayCase(ability.name)}
-                      </span>
-                      <span className="combat-ability-range">
-                        {range}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <button
-              onClick={toggleSpellPanel}
-              disabled={abilityBarDisabled}
-              className={`combat-ability-btn ${spellPanelOpen ? "combat-ability-btn-selected" : ""}`}
-              title="Spells &amp; Cantrips"
-            >
-              <span className="combat-ability-name">Spells</span>
-              <span className="combat-ability-range">
-                {spellAbilities.length}
-              </span>
-            </button>
-          </div>
+          <button
+            ref={spellBtnRef}
+            onClick={toggleSpellPanel}
+            disabled={abilityBarDisabled}
+            className={`combat-ability-btn flex-shrink-0 ${spellPanelOpen ? "combat-ability-btn-selected" : ""}`}
+            title="Spells &amp; Cantrips"
+          >
+            <span className="combat-ability-name">Spells</span>
+            <span className="combat-ability-range">
+              {spellAbilities.length}
+            </span>
+          </button>
         )}
 
-        {/* Separator */}
-        <div className="w-px h-8 bg-gold/20 flex-shrink-0" />
-
-        {/* Chat toggle */}
-        <button
-          onClick={onToggleChat}
-          className={`combat-hotbar-chat-toggle ${chatOpen ? "combat-hotbar-chat-toggle-active" : ""}`}
-          title={chatOpen ? "Hide combat log" : "Show combat log"}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {hasUnread && !chatOpen && (
-            <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          )}
-        </button>
-
-        {/* Separator */}
-        <div className="w-px h-8 bg-gold/20 flex-shrink-0" />
-
-        {/* Input field */}
-        <div className="flex-1 min-w-0 flex items-center">
-          {isTargeting ? (
-            <div className="w-full px-3 font-crimson text-sm text-parchment/40 italic truncate">
+        {/* Targeting hint — shown when a targeted ability is selected */}
+        {isTargeting && (
+          <>
+            <div className="w-px h-8 bg-gold/20 flex-shrink-0" />
+            <div className="flex-1 min-w-0 px-3 font-crimson text-sm text-parchment/40 italic truncate">
               Select a target on the map&hellip; <span className="text-parchment/25">(Esc to cancel)</span>
             </div>
-          ) : (
-            <>
-              <input
-                value={userInput}
-                disabled={inputDisabled}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !inputDisabled) handleSubmit();
-                }}
-                autoComplete="off"
-                placeholder={inputDisabled ? "Awaiting the tale\u2026" : "Speak your action\u2026"}
-                className="flex-1 min-w-0 h-full bg-transparent border-0 font-crimson text-base
-                           text-parchment/90 placeholder-parchment/30 focus:ring-0 focus:outline-none
-                           disabled:opacity-40 px-3"
-              />
-              <button
-                onClick={handleSubmit}
-                disabled={inputDisabled}
-                className="px-4 h-full font-cinzel text-[10px] tracking-widest text-gold uppercase
-                           hover:text-gold-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-                           flex-shrink-0"
-              >
-                Act
-              </button>
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
+
+      {/* Spell popup — rendered outside the hotbar so it escapes OrnateFrame overflow clipping */}
+      {spellPanelOpen && spellAbilities.length > 0 && spellBtnRef.current && (
+        <SpellPopup
+          spellBtnRef={spellBtnRef}
+          spellAbilities={spellAbilities}
+          selectedAbility={selectedAbility}
+          abilityBarDisabled={abilityBarDisabled}
+          onAbilityClick={handleAbilityClick}
+        />
+      )}
+    </div>
+  );
+}
+
+interface SpellPopupProps {
+  spellBtnRef: React.RefObject<HTMLButtonElement | null>;
+  spellAbilities: Ability[];
+  selectedAbility: Ability | null;
+  abilityBarDisabled: boolean;
+  onAbilityClick: (ability: Ability) => void;
+}
+
+/**
+ * Spell popup rendered with fixed positioning so it escapes any overflow clipping.
+ * Positioned above the Spells button using its bounding rect.
+ */
+function SpellPopup({ spellBtnRef, spellAbilities, selectedAbility, abilityBarDisabled, onAbilityClick }: SpellPopupProps) {
+  const btn = spellBtnRef.current;
+  if (!btn) return null;
+  const rect = btn.getBoundingClientRect();
+
+  return (
+    <div
+      className="combat-hotbar-spell-popup"
+      style={{
+        position: "fixed",
+        bottom: window.innerHeight - rect.top + 4,
+        left: rect.left,
+      }}
+    >
+      {spellAbilities.map((ability) => {
+        const isSelected = selectedAbility?.id === ability.id;
+        const range = abilityRangeTag(ability);
+        return (
+          <button
+            key={ability.id}
+            onClick={() => onAbilityClick(ability)}
+            disabled={abilityBarDisabled}
+            className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
+            title={`${toDisplayCase(ability.name)} (${range})`}
+          >
+            <span className="combat-ability-name">
+              {toDisplayCase(ability.name)}
+            </span>
+            <span className="combat-ability-range">
+              {range}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

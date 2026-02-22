@@ -15,7 +15,8 @@
 - Update spell effects for all spells......
 - Enable armour equip/unequip 
     - Need to also handle conditions when equipping and unequipping like unarmoured/holding shield/dual wielding/etc.
-- Design better way of handling abilities in combat screen. Currently when chat opens it obscures the abilities section
 - instead of activeNPCs, maybe we track "hostileNPCs" so we can keep track of HP for the dm to narrate even after they die 
 - I don't think spell levels work in combat?
-- Need to reprompt the combat agent. IT currently doesn't display how much damage is done to the player in the flavour text
+    - Spells also don't use spell slots in combat
+- Need to reprompt the combat agent. It currently doesn't display how much damage is done to the player in the flavour text
+- When a npc dies it instantly vanishes before we can see the hit and damage. Let's update it so that we see the damage and then it fades out with a skull icon

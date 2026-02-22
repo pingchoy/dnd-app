@@ -52,7 +52,9 @@ export default function Dashboard() {
   // Ref bridges encounter data from useChat API responses to useCombat's setEncounter.
   // Needed because useChat is called before useCombat (hook ordering), but the
   // callback is only invoked asynchronously from fetch handlers.
-  const encounterBridgeRef = useRef<((enc: StoredEncounter | null) => void) | null>(null);
+  const encounterBridgeRef = useRef<
+    ((enc: StoredEncounter | null) => void) | null
+  >(null);
 
   const {
     messages,
@@ -71,7 +73,15 @@ export default function Dashboard() {
     addCost,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
-  const { encounter, isCombatProcessing, executeCombatAction, combatLabelRef, setEncounter, victoryData, dismissVictory } = useCombat({
+  const {
+    encounter,
+    isCombatProcessing,
+    executeCombatAction,
+    combatLabelRef,
+    setEncounter,
+    victoryData,
+    dismissVictory,
+  } = useCombat({
     characterId,
     gameState,
     isNarrating,
@@ -108,7 +118,10 @@ export default function Dashboard() {
     }, 400);
     // Animation completes in ~3s (d20 tumble + damage tumble)
     const timeout = setTimeout(() => clearInterval(id), 3500);
-    return () => { clearInterval(id); clearTimeout(timeout); };
+    return () => {
+      clearInterval(id);
+      clearTimeout(timeout);
+    };
   }, [hasAnimatingRoll]);
 
   // Escape key clears targeting mode
@@ -127,7 +140,9 @@ export default function Dashboard() {
     combatLabelRef.current = (tokenId, hit, damage) => {
       gridRef.current?.showCombatResult(tokenId, hit, damage);
     };
-    return () => { combatLabelRef.current = null; };
+    return () => {
+      combatLabelRef.current = null;
+    };
   }, [combatLabelRef]);
 
   // Track unread messages when combat chat panel is closed
@@ -148,9 +163,14 @@ export default function Dashboard() {
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
+  // Victory screen or active processing keep the combat layout visible even if
+  // encounter data is momentarily null due to Firestore/HTTP race conditions.
   const inCombat =
-    encounter != null &&
-    (activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0) || victoryData != null || isCombatProcessing);
+    victoryData != null ||
+    isCombatProcessing ||
+    (encounter != null &&
+      activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0));
+
   const { positions, moveToken, gridSize } = useCombatGrid(
     activeNPCs,
     inCombat,
@@ -198,57 +218,73 @@ export default function Dashboard() {
   }, [userInput, inCombat, positions, activeNPCs, sendMessage]);
 
   /** Handle ability bar click: non-targeted abilities execute immediately, targeted ones enter targeting mode. */
-  const handleSelectAbility = useCallback((ability: Ability) => {
-    if (isBusy) return;
-    if (!ability.requiresTarget) {
-      setSelectedAbility(null);
-      executeCombatAction(ability);
-      return;
-    }
-    setSelectedAbility((prev) => prev?.id === ability.id ? null : ability);
-  }, [isBusy, executeCombatAction]);
-
-  /** Handle target click on the combat grid during targeting mode. */
-  const handleTargetSelected = useCallback((targetId: string) => {
-    if (!selectedAbility || isBusy) return;
-
-    const playerPos = positions.get("player");
-    const npcPos = positions.get(targetId);
-
-    if (playerPos && npcPos) {
-      const rangeCheck = validateAttackRange(playerPos, npcPos, selectedAbility.range);
-
-      if (!rangeCheck.inRange) {
-        setRangeWarning(rangeCheck.reason ?? "Target is out of range");
-        setTimeout(() => setRangeWarning(null), 4000);
+  const handleSelectAbility = useCallback(
+    (ability: Ability) => {
+      if (isBusy) return;
+      if (!ability.requiresTarget) {
+        setSelectedAbility(null);
+        executeCombatAction(ability);
         return;
       }
-    }
+      setSelectedAbility((prev) => (prev?.id === ability.id ? null : ability));
+    },
+    [isBusy, executeCombatAction],
+  );
 
-    const ability = selectedAbility;
-    setSelectedAbility(null);
-    setRangeWarning(null);
-    executeCombatAction(ability, targetId);
-  }, [selectedAbility, isBusy, positions, executeCombatAction]);
+  /** Handle target click on the combat grid during targeting mode. */
+  const handleTargetSelected = useCallback(
+    (targetId: string) => {
+      if (!selectedAbility || isBusy) return;
+
+      const playerPos = positions.get("player");
+      const npcPos = positions.get(targetId);
+
+      if (playerPos && npcPos) {
+        const rangeCheck = validateAttackRange(
+          playerPos,
+          npcPos,
+          selectedAbility.range,
+        );
+
+        if (!rangeCheck.inRange) {
+          setRangeWarning(rangeCheck.reason ?? "Target is out of range");
+          setTimeout(() => setRangeWarning(null), 4000);
+          return;
+        }
+      }
+
+      const ability = selectedAbility;
+      setSelectedAbility(null);
+      setRangeWarning(null);
+      executeCombatAction(ability, targetId);
+    },
+    [selectedAbility, isBusy, positions, executeCombatAction],
+  );
 
   const handleOpenFullSheet = useCallback(() => setFullSheetOpen(true), []);
 
   const handleOpenChatPanel = useCallback(() => setCombatChatOpen(true), []);
   const handleCloseChatPanel = useCallback(() => setCombatChatOpen(false), []);
-  const handleToggleChat = useCallback(() => setCombatChatOpen(o => !o), []);
+  const handleToggleChat = useCallback(() => setCombatChatOpen((o) => !o), []);
 
   // Memoize filtered messages to avoid creating a new array on every keystroke
   const filteredMessages = useMemo(
-    () => messages.filter((m) => !(m.role === "user" && m.content.startsWith("[Combat]"))),
+    () =>
+      messages.filter(
+        (m) => !(m.role === "user" && m.content.startsWith("[Combat]")),
+      ),
     [messages],
   );
 
-  const handleLevelUpComplete = useCallback((newState: GameState) => {
-    applyDebugResult(
-      newState,
-      `You have reached level ${newState.player.level}!`,
-    );
-  }, [applyDebugResult]);
+  const handleLevelUpComplete = useCallback(
+    (newState: GameState) => {
+      applyDebugResult(
+        newState,
+        `You have reached level ${newState.player.level}!`,
+      );
+    },
+    [applyDebugResult],
+  );
 
   if (isLoading || !gameState) {
     return (
@@ -389,12 +425,14 @@ export default function Dashboard() {
       {/* ── Body: chat + sidebar ── */}
       <div className="flex-1 overflow-hidden flex">
         {/* ── Left: chat area (swaps to combat grid when in combat) ── */}
-        <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-4 min-w-0">
+        <div
+          className={`flex-1 overflow-hidden flex flex-col py-4 min-w-0 ${inCombat ? "" : "px-3 sm:px-4"}`}
+        >
           {inCombat ? (
             /* ── Combat layout: left chat panel + map + hotbar at bottom ── */
             <div className="flex-1 overflow-hidden flex flex-col">
               {/* Map area with optional left chat panel */}
-              <div className="flex-1 overflow-hidden flex min-h-0">
+              <div className="flex-1 overflow-hidden flex min-h-0 px-3 sm:px-4">
                 {/* Left chat panel — map shrinks to accommodate */}
                 <CombatChatPanel
                   messages={messages}
@@ -402,6 +440,10 @@ export default function Dashboard() {
                   isNarrating={isNarrating}
                   open={combatChatOpen}
                   onClose={handleCloseChatPanel}
+                  userInput={userInput}
+                  setUserInput={setUserInput}
+                  handleSubmit={handleSubmit}
+                  inputDisabled={isBusy}
                 />
 
                 {/* Combat map canvas — fills remaining space */}
@@ -417,13 +459,15 @@ export default function Dashboard() {
                       targetingAbility={selectedAbility}
                       onTargetSelected={handleTargetSelected}
                       onCancel={() => setSelectedAbility(null)}
-                      headerExtra={encounter?.turnOrder ? (
-                        <TurnOrderBar
-                          turnOrder={encounter.turnOrder}
-                          currentTurnIndex={encounter.currentTurnIndex ?? 0}
-                          activeNPCs={activeNPCs}
-                        />
-                      ) : undefined}
+                      headerExtra={
+                        encounter?.turnOrder ? (
+                          <TurnOrderBar
+                            turnOrder={encounter.turnOrder}
+                            currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                            activeNPCs={activeNPCs}
+                          />
+                        ) : undefined
+                      }
                     />
 
                     {/* Last action toast — floating on the map canvas */}
@@ -437,21 +481,21 @@ export default function Dashboard() {
               </div>
 
               {/* Bottom hotbar — always visible during combat */}
-              <CombatHotbar
-                abilities={player.abilities ?? []}
-                selectedAbility={selectedAbility}
-                onSelectAbility={handleSelectAbility}
-                abilityBarDisabled={isBusy}
-                chatOpen={combatChatOpen}
-                onToggleChat={handleToggleChat}
-                hasUnread={hasUnread}
-                userInput={userInput}
-                setUserInput={setUserInput}
-                handleSubmit={handleSubmit}
-                inputDisabled={isBusy}
-                isTargeting={selectedAbility?.requiresTarget === true}
-                rangeWarning={rangeWarning}
-              />
+              <div className="flex-shrink-0 px-3 sm:px-4 pt-3">
+                <OrnateFrame className="overflow-hidden">
+                  <CombatHotbar
+                    abilities={player.abilities ?? []}
+                    selectedAbility={selectedAbility}
+                    onSelectAbility={handleSelectAbility}
+                    abilityBarDisabled={isBusy}
+                    chatOpen={combatChatOpen}
+                    onToggleChat={handleToggleChat}
+                    hasUnread={hasUnread}
+                    isTargeting={selectedAbility?.requiresTarget === true}
+                    rangeWarning={rangeWarning}
+                  />
+                </OrnateFrame>
+              </div>
             </div>
           ) : (
             /* ── Normal chat layout ── */

@@ -111,6 +111,17 @@ body {
 .dot-2 { animation: dot-bounce 1.2s ease-in-out 0.2s infinite; }
 .dot-3 { animation: dot-bounce 1.2s ease-in-out 0.4s infinite; }
 
+/* Toast: fades in, holds, then gradually dissipates over 5 seconds */
+@keyframes toast-dissipate {
+  0%   { opacity: 0; }
+  5%   { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { opacity: 0; pointer-events: none; }
+}
+.animate-toast-dissipate {
+  animation: toast-dissipate 5s ease-out forwards;
+}
+
 /* ── Combat grid viewport (clips zoomed/panned grid) ─────── */
 .combat-grid-viewport {
   overflow: hidden;
@@ -193,12 +204,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 4px 8px;
-  min-width: 56px;
-  background: rgba(13, 10, 8, 0.85);
-  border: 1px solid rgba(139, 105, 20, 0.3);
-  border-radius: 4px;
+  gap: 2px;
+  padding: 6px 12px;
+  min-width: 64px;
+  background: rgba(13, 10, 8, 0.8);
+  border: 1px solid rgba(139, 105, 20, 0.4);
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   user-select: none;
@@ -219,10 +230,10 @@ body {
 
 .combat-ability-name {
   font-family: "Cinzel", Georgia, serif;
-  font-size: 10px;
-  letter-spacing: 0.03em;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   line-height: 1.2;
-  color: rgba(245, 232, 200, 0.8);
+  color: rgba(245, 232, 200, 0.85);
   white-space: nowrap;
 }
 .combat-ability-btn-selected .combat-ability-name {
@@ -265,11 +276,10 @@ body {
 .combat-hotbar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 52px;
-  padding: 0 6px;
-  background: rgba(13, 10, 8, 0.95);
-  border-top: 1px solid rgba(139, 105, 20, 0.3);
+  gap: 6px;
+  height: 64px;
+  padding: 0 10px;
+  background: rgba(26, 20, 14, 0.95);
 }
 
 .combat-hotbar-abilities {
@@ -292,8 +302,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
   background: rgba(13, 10, 8, 0.85);
   border: 1px solid rgba(139, 105, 20, 0.3);
@@ -313,16 +323,12 @@ body {
   background: rgba(201, 168, 76, 0.1);
 }
 
-/* Spell popup above the Spells button */
+/* Spell popup above the Spells button — position set inline via fixed positioning */
 .combat-hotbar-spell-popup {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 4px;
-  margin-bottom: 4px;
   max-height: 280px;
   overflow-y: auto;
   background: rgba(13, 10, 8, 0.92);

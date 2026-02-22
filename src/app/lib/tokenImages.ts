@@ -62,26 +62,23 @@ function tryLoadImage(
   extIndex: number,
   cache: Map<string, HTMLImageElement>,
 ): void {
-  if (extIndex >= SUPPORTED_EXTENSIONS.length) return;
-
-  const img = new Image();
-  img.src = `${key}.${SUPPORTED_EXTENSIONS[extIndex]}`;
-  (img as HTMLImageElement & { _loaded?: boolean })._loaded = false;
-
-  img.onload = () => {
-    (img as HTMLImageElement & { _loaded?: boolean })._loaded = true;
-    cache.set(key, img);
-  };
-  img.onerror = () => {
-    // Try next format
-    tryLoadImage(key, extIndex + 1, cache);
-  };
-
-  // Optimistically set in cache so the key exists during the first format attempt.
-  // If all formats fail, the entry stays with _loaded=false → initials fallback.
-  if (!cache.has(key)) {
-    cache.set(key, img);
-  }
+  // if (extIndex >= SUPPORTED_EXTENSIONS.length) return;
+  // const img = new Image();
+  // img.src = `${key}.${SUPPORTED_EXTENSIONS[extIndex]}`;
+  // (img as HTMLImageElement & { _loaded?: boolean })._loaded = false;
+  // img.onload = () => {
+  //   (img as HTMLImageElement & { _loaded?: boolean })._loaded = true;
+  //   cache.set(key, img);
+  // };
+  // img.onerror = () => {
+  //   // Try next format
+  //   tryLoadImage(key, extIndex + 1, cache);
+  // };
+  // // Optimistically set in cache so the key exists during the first format attempt.
+  // // If all formats fail, the entry stays with _loaded=false → initials fallback.
+  // if (!cache.has(key)) {
+  //   cache.set(key, img);
+  // }
 }
 
 /** Check if a preloaded image is ready to draw. */
