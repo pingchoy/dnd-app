@@ -1139,67 +1139,271 @@ export interface SpellMechanicsOverride {
  */
 export const SPELL_OVERRIDES: Record<string, SpellMechanicsOverride> = {
   // ── Cantrips ───────────────────────────────────────────────
-  "acid-splash":             { aoe: { shape: "sphere", size: 5, origin: "target" } },    // 2 creatures within 5 ft
-  "poison-spray":            { aoe: { shape: "cone", size: 10, origin: "self" } },       // 10-foot cone (Tasha's variant, SRD is single target — include for safety)
-  "thunderclap":             { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
-  "word-of-radiance":        { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
-  "sword-burst":             { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
+  "acid-splash": {
+    aoe: { shape: "sphere", size: 5, origin: "target" },    // 2 creatures within 5 ft
+    cantripScaling: { "5": { damageRoll: "2d6" }, "11": { damageRoll: "3d6" }, "17": { damageRoll: "4d6" } },
+  },
+  "chill-touch": {
+    cantripScaling: { "5": { damageRoll: "2d8" }, "11": { damageRoll: "3d8" }, "17": { damageRoll: "4d8" } },
+  },
+  "eldritch-blast": {
+    cantripScaling: { "5": { targetCount: 2 }, "11": { targetCount: 3 }, "17": { targetCount: 4 } },
+  },
+  "fire-bolt": {
+    cantripScaling: { "5": { damageRoll: "2d10" }, "11": { damageRoll: "3d10" }, "17": { damageRoll: "4d10" } },
+  },
+  "poison-spray": {
+    aoe: { shape: "cone", size: 10, origin: "self" },       // 10-foot cone (Tasha's variant)
+    cantripScaling: { "5": { damageRoll: "2d12" }, "11": { damageRoll: "3d12" }, "17": { damageRoll: "4d12" } },
+  },
+  "produce-flame": {
+    cantripScaling: { "5": { damageRoll: "2d8" }, "11": { damageRoll: "3d8" }, "17": { damageRoll: "4d8" } },
+  },
+  "ray-of-frost": {
+    cantripScaling: { "5": { damageRoll: "2d8" }, "11": { damageRoll: "3d8" }, "17": { damageRoll: "4d8" } },
+  },
+  "sacred-flame": {
+    cantripScaling: { "5": { damageRoll: "2d8" }, "11": { damageRoll: "3d8" }, "17": { damageRoll: "4d8" } },
+  },
+  "shocking-grasp": {
+    cantripScaling: { "5": { damageRoll: "2d8" }, "11": { damageRoll: "3d8" }, "17": { damageRoll: "4d8" } },
+  },
+  "vicious-mockery": {
+    cantripScaling: { "5": { damageRoll: "2d4" }, "11": { damageRoll: "3d4" }, "17": { damageRoll: "4d4" } },
+  },
+  "thunderclap": {
+    aoe: { shape: "sphere", size: 5, origin: "self" },
+    cantripScaling: { "5": { damageRoll: "2d6" }, "11": { damageRoll: "3d6" }, "17": { damageRoll: "4d6" } },
+  },
+  "word-of-radiance": {
+    aoe: { shape: "sphere", size: 5, origin: "self" },
+    cantripScaling: { "5": { damageRoll: "2d6" }, "11": { damageRoll: "3d6" }, "17": { damageRoll: "4d6" } },
+  },
+  "sword-burst": {
+    aoe: { shape: "sphere", size: 5, origin: "self" },
+    cantripScaling: { "5": { damageRoll: "2d6" }, "11": { damageRoll: "3d6" }, "17": { damageRoll: "4d6" } },
+  },
 
   // ── 1st Level ──────────────────────────────────────────────
-  "burning-hands":           { aoe: { shape: "cone", size: 15, origin: "self" } },
-  "color-spray":             { aoe: { shape: "cone", size: 15, origin: "self" } },
-  "entangle":                { aoe: { shape: "cube", size: 20, origin: "target" } },     // 20-foot square
+  "bane": {
+    upcastScaling: { "2": { targetCount: 4 }, "3": { targetCount: 5 }, "4": { targetCount: 6 }, "5": { targetCount: 7 }, "6": { targetCount: 8 }, "7": { targetCount: 9 }, "8": { targetCount: 10 }, "9": { targetCount: 11 } },
+  },
+  "bless": {
+    upcastScaling: { "2": { targetCount: 4 }, "3": { targetCount: 5 }, "4": { targetCount: 6 }, "5": { targetCount: 7 }, "6": { targetCount: 8 }, "7": { targetCount: 9 }, "8": { targetCount: 10 }, "9": { targetCount: 11 } },
+  },
+  "burning-hands": {
+    aoe: { shape: "cone", size: 15, origin: "self" },
+    upcastScaling: { "2": { damageRoll: "4d6" }, "3": { damageRoll: "5d6" }, "4": { damageRoll: "6d6" }, "5": { damageRoll: "7d6" }, "6": { damageRoll: "8d6" }, "7": { damageRoll: "9d6" }, "8": { damageRoll: "10d6" }, "9": { damageRoll: "11d6" } },
+  },
+  "charm-person": {
+    upcastScaling: { "2": { targetCount: 2 }, "3": { targetCount: 3 }, "4": { targetCount: 4 }, "5": { targetCount: 5 }, "6": { targetCount: 6 }, "7": { targetCount: 7 }, "8": { targetCount: 8 }, "9": { targetCount: 9 } },
+  },
+  "color-spray": {
+    aoe: { shape: "cone", size: 15, origin: "self" },
+    upcastScaling: { "2": { damageRoll: "8d10" }, "3": { damageRoll: "10d10" }, "4": { damageRoll: "12d10" }, "5": { damageRoll: "14d10" }, "6": { damageRoll: "16d10" }, "7": { damageRoll: "18d10" }, "8": { damageRoll: "20d10" }, "9": { damageRoll: "22d10" } },
+  },
+  "command": {
+    upcastScaling: { "2": { targetCount: 2 }, "3": { targetCount: 3 }, "4": { targetCount: 4 }, "5": { targetCount: 5 }, "6": { targetCount: 6 }, "7": { targetCount: 7 }, "8": { targetCount: 8 }, "9": { targetCount: 9 } },
+  },
+  "cure-wounds": {
+    upcastScaling: { "2": { damageRoll: "2d8" }, "3": { damageRoll: "3d8" }, "4": { damageRoll: "4d8" }, "5": { damageRoll: "5d8" }, "6": { damageRoll: "6d8" }, "7": { damageRoll: "7d8" }, "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },
+  },
+  "entangle":                { aoe: { shape: "cube", size: 20, origin: "target" } },
   "faerie-fire":             { aoe: { shape: "cube", size: 20, origin: "target" } },
   "fog-cloud":               { aoe: { shape: "sphere", size: 20, origin: "target" } },
-  "grease":                  { aoe: { shape: "cube", size: 10, origin: "target" } },     // 10-foot square
-  "sleep":                   { aoe: { shape: "sphere", size: 20, origin: "target" } },
-  "thunderwave":             { aoe: { shape: "cube", size: 15, origin: "self" } },
+  "grease":                  { aoe: { shape: "cube", size: 10, origin: "target" } },
+  "guiding-bolt": {
+    upcastScaling: { "2": { damageRoll: "5d6" }, "3": { damageRoll: "6d6" }, "4": { damageRoll: "7d6" }, "5": { damageRoll: "8d6" }, "6": { damageRoll: "9d6" }, "7": { damageRoll: "10d6" }, "8": { damageRoll: "11d6" }, "9": { damageRoll: "12d6" } },
+  },
+  "healing-word": {
+    upcastScaling: { "2": { damageRoll: "2d4" }, "3": { damageRoll: "3d4" }, "4": { damageRoll: "4d4" }, "5": { damageRoll: "5d4" }, "6": { damageRoll: "6d4" }, "7": { damageRoll: "7d4" }, "8": { damageRoll: "8d4" }, "9": { damageRoll: "9d4" } },
+  },
+  "hellish-rebuke": {
+    upcastScaling: { "2": { damageRoll: "3d10" }, "3": { damageRoll: "4d10" }, "4": { damageRoll: "5d10" }, "5": { damageRoll: "6d10" }, "6": { damageRoll: "7d10" }, "7": { damageRoll: "8d10" }, "8": { damageRoll: "9d10" }, "9": { damageRoll: "10d10" } },
+  },
+  "inflict-wounds": {
+    upcastScaling: { "2": { damageRoll: "4d10" }, "3": { damageRoll: "5d10" }, "4": { damageRoll: "6d10" }, "5": { damageRoll: "7d10" }, "6": { damageRoll: "8d10" }, "7": { damageRoll: "9d10" }, "8": { damageRoll: "10d10" }, "9": { damageRoll: "11d10" } },
+  },
+  "magic-missile": {
+    upcastScaling: { "2": { targetCount: 4 }, "3": { targetCount: 5 }, "4": { targetCount: 6 }, "5": { targetCount: 7 }, "6": { targetCount: 8 }, "7": { targetCount: 9 }, "8": { targetCount: 10 }, "9": { targetCount: 11 } },
+  },
+  "sleep": {
+    aoe: { shape: "sphere", size: 20, origin: "target" },
+    upcastScaling: { "2": { damageRoll: "7d8" }, "3": { damageRoll: "9d8" }, "4": { damageRoll: "11d8" }, "5": { damageRoll: "13d8" }, "6": { damageRoll: "15d8" }, "7": { damageRoll: "17d8" }, "8": { damageRoll: "19d8" }, "9": { damageRoll: "21d8" } },
+  },
+  "thunderwave": {
+    aoe: { shape: "cube", size: 15, origin: "self" },
+    upcastScaling: { "2": { damageRoll: "3d8" }, "3": { damageRoll: "4d8" }, "4": { damageRoll: "5d8" }, "5": { damageRoll: "6d8" }, "6": { damageRoll: "7d8" }, "7": { damageRoll: "8d8" }, "8": { damageRoll: "9d8" }, "9": { damageRoll: "10d8" } },
+  },
 
   // ── 2nd Level ──────────────────────────────────────────────
+  "acid-arrow": {
+    upcastScaling: { "3": { damageRoll: "5d4" }, "4": { damageRoll: "6d4" }, "5": { damageRoll: "7d4" }, "6": { damageRoll: "8d4" }, "7": { damageRoll: "9d4" }, "8": { damageRoll: "10d4" }, "9": { damageRoll: "11d4" } },
+  },
+  "blindnessdeafness": {
+    upcastScaling: { "3": { targetCount: 2 }, "4": { targetCount: 3 }, "5": { targetCount: 4 }, "6": { targetCount: 5 }, "7": { targetCount: 6 }, "8": { targetCount: 7 }, "9": { targetCount: 8 } },
+  },
+  "branding-smite": {
+    upcastScaling: { "3": { damageRoll: "3d6" }, "4": { damageRoll: "4d6" }, "5": { damageRoll: "5d6" }, "6": { damageRoll: "6d6" }, "7": { damageRoll: "7d6" }, "8": { damageRoll: "8d6" }, "9": { damageRoll: "9d6" } },
+  },
+  "calm-emotions":           { aoe: { shape: "sphere", size: 20, origin: "target" } },
   "darkness":                { aoe: { shape: "sphere", size: 15, origin: "target" } },
+  "flame-blade": {
+    upcastScaling: { "4": { damageRoll: "4d6" }, "6": { damageRoll: "5d6" }, "8": { damageRoll: "6d6" } },   // +1d6 per 2 slots
+  },
+  "flaming-sphere": {
+    aoe: { shape: "sphere", size: 5, origin: "target" },
+    upcastScaling: { "3": { damageRoll: "3d6" }, "4": { damageRoll: "4d6" }, "5": { damageRoll: "5d6" }, "6": { damageRoll: "6d6" }, "7": { damageRoll: "7d6" }, "8": { damageRoll: "8d6" }, "9": { damageRoll: "9d6" } },
+  },
   "gust-of-wind":            { aoe: { shape: "line", size: 60, width: 10, origin: "self" } },
-  "moonbeam":                { aoe: { shape: "cylinder", size: 5, origin: "target" } },
-  "shatter":                 { aoe: { shape: "sphere", size: 10, origin: "target" } },
+  "heat-metal": {
+    upcastScaling: { "3": { damageRoll: "3d8" }, "4": { damageRoll: "4d8" }, "5": { damageRoll: "5d8" }, "6": { damageRoll: "6d8" }, "7": { damageRoll: "7d8" }, "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },
+  },
+  "hold-person": {
+    upcastScaling: { "3": { targetCount: 2 }, "4": { targetCount: 3 }, "5": { targetCount: 4 }, "6": { targetCount: 5 }, "7": { targetCount: 6 }, "8": { targetCount: 7 }, "9": { targetCount: 8 } },
+  },
+  "invisibility": {
+    upcastScaling: { "3": { targetCount: 2 }, "4": { targetCount: 3 }, "5": { targetCount: 4 }, "6": { targetCount: 5 }, "7": { targetCount: 6 }, "8": { targetCount: 7 }, "9": { targetCount: 8 } },
+  },
+  "moonbeam": {
+    aoe: { shape: "cylinder", size: 5, origin: "target" },
+    upcastScaling: { "3": { damageRoll: "3d10" }, "4": { damageRoll: "4d10" }, "5": { damageRoll: "5d10" }, "6": { damageRoll: "6d10" }, "7": { damageRoll: "7d10" }, "8": { damageRoll: "8d10" }, "9": { damageRoll: "9d10" } },
+  },
+  "prayer-of-healing": {
+    upcastScaling: { "3": { damageRoll: "3d8" }, "4": { damageRoll: "4d8" }, "5": { damageRoll: "5d8" }, "6": { damageRoll: "6d8" }, "7": { damageRoll: "7d8" }, "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },
+  },
+  "scorching-ray": {
+    upcastScaling: { "3": { targetCount: 4 }, "4": { targetCount: 5 }, "5": { targetCount: 6 }, "6": { targetCount: 7 }, "7": { targetCount: 8 }, "8": { targetCount: 9 }, "9": { targetCount: 10 } },
+  },
+  "shatter": {
+    aoe: { shape: "sphere", size: 10, origin: "target" },
+    upcastScaling: { "3": { damageRoll: "4d8" }, "4": { damageRoll: "5d8" }, "5": { damageRoll: "6d8" }, "6": { damageRoll: "7d8" }, "7": { damageRoll: "8d8" }, "8": { damageRoll: "9d8" }, "9": { damageRoll: "10d8" } },
+  },
   "silence":                 { aoe: { shape: "sphere", size: 20, origin: "target" } },
   "spike-growth":            { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "spiritual-weapon": {
+    upcastScaling: { "4": { damageRoll: "2d8" }, "6": { damageRoll: "3d8" }, "8": { damageRoll: "4d8" } },   // +1d8 per 2 slots
+  },
   "web":                     { aoe: { shape: "cube", size: 20, origin: "target" } },
-  "flaming-sphere":          { aoe: { shape: "sphere", size: 5, origin: "target" } },
-  "calm-emotions":           { aoe: { shape: "sphere", size: 20, origin: "target" } },
 
   // ── 3rd Level ──────────────────────────────────────────────
-  "call-lightning":          { aoe: { shape: "cylinder", size: 60, origin: "target" } },
+  "call-lightning": {
+    aoe: { shape: "cylinder", size: 60, origin: "target" },
+    upcastScaling: { "4": { damageRoll: "4d10" }, "5": { damageRoll: "5d10" }, "6": { damageRoll: "6d10" }, "7": { damageRoll: "7d10" }, "8": { damageRoll: "8d10" }, "9": { damageRoll: "9d10" } },
+  },
   "daylight":                { aoe: { shape: "sphere", size: 60, origin: "target" } },
   "fear":                    { aoe: { shape: "cone", size: 30, origin: "self" } },
-  "fireball":                { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "fireball": {
+    aoe: { shape: "sphere", size: 20, origin: "target" },
+    upcastScaling: { "4": { damageRoll: "9d6" }, "5": { damageRoll: "10d6" }, "6": { damageRoll: "11d6" }, "7": { damageRoll: "12d6" }, "8": { damageRoll: "13d6" }, "9": { damageRoll: "14d6" } },
+  },
+  "fly": {
+    upcastScaling: { "4": { targetCount: 2 }, "5": { targetCount: 3 }, "6": { targetCount: 4 }, "7": { targetCount: 5 }, "8": { targetCount: 6 }, "9": { targetCount: 7 } },
+  },
+  "glyph-of-warding": {
+    upcastScaling: { "4": { damageRoll: "6d8" }, "5": { damageRoll: "7d8" }, "6": { damageRoll: "8d8" }, "7": { damageRoll: "9d8" }, "8": { damageRoll: "10d8" }, "9": { damageRoll: "11d8" } },
+  },
   "hypnotic-pattern":        { aoe: { shape: "cube", size: 30, origin: "target" } },
-  "lightning-bolt":          { aoe: { shape: "line", size: 100, width: 5, origin: "self" } },
+  "lightning-bolt": {
+    aoe: { shape: "line", size: 100, width: 5, origin: "self" },
+    upcastScaling: { "4": { damageRoll: "9d6" }, "5": { damageRoll: "10d6" }, "6": { damageRoll: "11d6" }, "7": { damageRoll: "12d6" }, "8": { damageRoll: "13d6" }, "9": { damageRoll: "14d6" } },
+  },
+  "mass-healing-word": {
+    upcastScaling: { "4": { damageRoll: "2d4" }, "5": { damageRoll: "3d4" }, "6": { damageRoll: "4d4" }, "7": { damageRoll: "5d4" }, "8": { damageRoll: "6d4" }, "9": { damageRoll: "7d4" } },
+  },
   "sleet-storm":             { aoe: { shape: "cylinder", size: 40, origin: "target" } },
   "slow":                    { aoe: { shape: "cube", size: 40, origin: "target" } },
-  "spirit-guardians":        { aoe: { shape: "sphere", size: 15, origin: "self" } },
+  "spirit-guardians": {
+    aoe: { shape: "sphere", size: 15, origin: "self" },
+    upcastScaling: { "4": { damageRoll: "4d8" }, "5": { damageRoll: "5d8" }, "6": { damageRoll: "6d8" }, "7": { damageRoll: "7d8" }, "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },
+  },
   "stinking-cloud":          { aoe: { shape: "sphere", size: 20, origin: "target" } },
   "plant-growth":            { aoe: { shape: "sphere", size: 100, origin: "target" } },
+  "vampiric-touch": {
+    upcastScaling: { "4": { damageRoll: "4d6" }, "5": { damageRoll: "5d6" }, "6": { damageRoll: "6d6" }, "7": { damageRoll: "7d6" }, "8": { damageRoll: "8d6" }, "9": { damageRoll: "9d6" } },
+  },
 
   // ── 4th Level ──────────────────────────────────────────────
-  "black-tentacles":         { aoe: { shape: "cube", size: 20, origin: "target" } },     // 20-foot square
+  "banishment": {
+    upcastScaling: { "5": { targetCount: 2 }, "6": { targetCount: 3 }, "7": { targetCount: 4 }, "8": { targetCount: 5 }, "9": { targetCount: 6 } },
+  },
+  "black-tentacles":         { aoe: { shape: "cube", size: 20, origin: "target" } },
+  "blight": {
+    upcastScaling: { "5": { damageRoll: "9d8" }, "6": { damageRoll: "10d8" }, "7": { damageRoll: "11d8" }, "8": { damageRoll: "12d8" }, "9": { damageRoll: "13d8" } },
+  },
   "confusion":               { aoe: { shape: "sphere", size: 10, origin: "target" } },
-  "ice-storm":               { aoe: { shape: "cylinder", size: 20, origin: "target" } },
+  "ice-storm": {
+    aoe: { shape: "cylinder", size: 20, origin: "target" },
+    upcastScaling: { "5": { damageRoll: "3d8" }, "6": { damageRoll: "4d8" }, "7": { damageRoll: "5d8" }, "8": { damageRoll: "6d8" }, "9": { damageRoll: "7d8" } },  // bludgeoning component scales
+  },
+  "phantasmal-killer": {
+    upcastScaling: { "5": { damageRoll: "5d10" }, "6": { damageRoll: "6d10" }, "7": { damageRoll: "7d10" }, "8": { damageRoll: "8d10" }, "9": { damageRoll: "9d10" } },
+  },
+  "wall-of-fire": {
+    upcastScaling: { "5": { damageRoll: "6d8" }, "6": { damageRoll: "7d8" }, "7": { damageRoll: "8d8" }, "8": { damageRoll: "9d8" }, "9": { damageRoll: "10d8" } },
+  },
 
   // ── 5th Level ──────────────────────────────────────────────
-  "cloudkill":               { aoe: { shape: "sphere", size: 20, origin: "target" } },
-  "cone-of-cold":            { aoe: { shape: "cone", size: 60, origin: "self" } },
-  "insect-plague":           { aoe: { shape: "sphere", size: 20, origin: "target" } },
-  "flame-strike":            { aoe: { shape: "cylinder", size: 10, origin: "target" } },
+  "arcane-hand": {
+    upcastScaling: { "6": { damageRoll: "6d8" }, "7": { damageRoll: "8d8" }, "8": { damageRoll: "10d8" }, "9": { damageRoll: "12d8" } },  // clenched fist +2d8/slot
+  },
+  "cloudkill": {
+    aoe: { shape: "sphere", size: 20, origin: "target" },
+    upcastScaling: { "6": { damageRoll: "6d8" }, "7": { damageRoll: "7d8" }, "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },
+  },
+  "cone-of-cold": {
+    aoe: { shape: "cone", size: 60, origin: "self" },
+    upcastScaling: { "6": { damageRoll: "9d8" }, "7": { damageRoll: "10d8" }, "8": { damageRoll: "11d8" }, "9": { damageRoll: "12d8" } },
+  },
+  "flame-strike": {
+    aoe: { shape: "cylinder", size: 10, origin: "target" },
+    upcastScaling: { "6": { damageRoll: "5d6" }, "7": { damageRoll: "6d6" }, "8": { damageRoll: "7d6" }, "9": { damageRoll: "8d6" } },  // fire or radiant +1d6/slot
+  },
+  "hold-monster": {
+    upcastScaling: { "6": { targetCount: 2 }, "7": { targetCount: 3 }, "8": { targetCount: 4 }, "9": { targetCount: 5 } },
+  },
+  "insect-plague": {
+    aoe: { shape: "sphere", size: 20, origin: "target" },
+    upcastScaling: { "6": { damageRoll: "5d10" }, "7": { damageRoll: "6d10" }, "8": { damageRoll: "7d10" }, "9": { damageRoll: "8d10" } },
+  },
+  "mass-cure-wounds": {
+    upcastScaling: { "6": { damageRoll: "4d8" }, "7": { damageRoll: "5d8" }, "8": { damageRoll: "6d8" }, "9": { damageRoll: "7d8" } },
+  },
 
   // ── 6th Level ──────────────────────────────────────────────
-  "chain-lightning":         { aoe: { shape: "sphere", size: 30, origin: "target" } },   // bounces to targets within 30 ft
-  "circle-of-death":         { aoe: { shape: "sphere", size: 60, origin: "target" } },
-  "freezing-sphere":         { aoe: { shape: "sphere", size: 60, origin: "target" } },
-  "sunbeam":                 { aoe: { shape: "line", size: 60, width: 5, origin: "self" } },
   "blade-barrier":           { aoe: { shape: "line", size: 100, width: 5, origin: "target" } },
+  "chain-lightning": {
+    aoe: { shape: "sphere", size: 30, origin: "target" },    // bounces to targets within 30 ft
+    upcastScaling: { "7": { targetCount: 5 }, "8": { targetCount: 6 }, "9": { targetCount: 7 } },  // +1 secondary target/slot
+  },
+  "circle-of-death": {
+    aoe: { shape: "sphere", size: 60, origin: "target" },
+    upcastScaling: { "7": { damageRoll: "10d6" }, "8": { damageRoll: "12d6" }, "9": { damageRoll: "14d6" } },  // +2d6/slot
+  },
+  "disintegrate": {
+    upcastScaling: { "7": { damageRoll: "13d6" }, "8": { damageRoll: "16d6" }, "9": { damageRoll: "19d6" } },  // +3d6/slot
+  },
+  "freezing-sphere": {
+    aoe: { shape: "sphere", size: 60, origin: "target" },
+    upcastScaling: { "7": { damageRoll: "11d6" }, "8": { damageRoll: "12d6" }, "9": { damageRoll: "13d6" } },
+  },
+  "sunbeam":                 { aoe: { shape: "line", size: 60, width: 5, origin: "self" } },
+  "wall-of-ice": {
+    upcastScaling: { "7": { damageRoll: "12d6" }, "8": { damageRoll: "14d6" }, "9": { damageRoll: "16d6" } },  // +2d6/slot
+  },
+  "wall-of-thorns": {
+    upcastScaling: { "7": { damageRoll: "8d8" }, "8": { damageRoll: "9d8" }, "9": { damageRoll: "10d8" } },
+  },
 
   // ── 7th Level ──────────────────────────────────────────────
-  "delayed-blast-fireball":  { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "delayed-blast-fireball": {
+    aoe: { shape: "sphere", size: 20, origin: "target" },
+    upcastScaling: { "8": { damageRoll: "13d6" }, "9": { damageRoll: "14d6" } },
+  },
   "fire-storm":              { aoe: { shape: "cube", size: 10, origin: "target" } },     // ten 10-ft cubes
+  "finger-of-death": {
+    upcastScaling: { "8": { damageRoll: "8d8" }, "9": { damageRoll: "9d8" } },  // +1d8+30 per slot
+  },
   "prismatic-spray":         { aoe: { shape: "cone", size: 60, origin: "self" } },
   "reverse-gravity":         { aoe: { shape: "cylinder", size: 50, origin: "target" } },
 
