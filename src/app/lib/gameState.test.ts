@@ -50,8 +50,9 @@ import {
   getActiveNPCs,
   awardXPAsync,
   applyStateChangesAndPersist,
+  applyLevelUp,
 } from "./gameState";
-import type { PlayerState, StoredEncounter, NPC } from "./gameTypes";
+import type { PlayerState, StoredEncounter, NPC, PendingLevelUp } from "./gameTypes";
 
 // ─── Test fixtures ──────────────────────────────────────────────────────────
 
@@ -542,5 +543,129 @@ describe("applyStateChangesAndPersist", () => {
       activeNPCs: expect.any(Array),
     }));
     expect(mockCompleteEncounter).not.toHaveBeenCalled();
+  });
+});
+
+// ─── buildSpellAbility (tested via applyLevelUp) ────────────────────────────
+
+describe("buildSpellAbility via applyLevelUp", () => {
+  function makePendingLevelUp(): PendingLevelUp {
+    return {
+      fromLevel: 4,
+      toLevel: 5,
+      levels: [{
+        level: 5,
+        hpGain: 4,
+        proficiencyBonus: 3,
+        newFeatures: [],
+        newSubclassFeatures: [],
+        isASILevel: false,
+        requiresSubclass: false,
+        featureChoices: [],
+        newCantripSlots: 0,
+        newSpellSlots: 1,
+        maxNewSpellLevel: 3,
+      }],
+    };
+  }
+
+  it("AOE spell from SRD: ability has aoe set and requiresTarget false", async () => {
+    await hydrateState({
+      level: 4,
+      characterClass: "wizard",
+      spellcastingAbility: "intelligence",
+      abilities: [],
+      knownSpells: [],
+      pendingLevelUp: makePendingLevelUp(),
+    });
+
+    // Mock querySRD to return Fireball-like SRD data with AOE
+    mockQuerySRD.mockResolvedValue({
+      name: "Fireball",
+      level: 3,
+      range: "150 feet",
+      savingThrowAbility: "dexterity",
+      damageRoll: "8d6",
+      damageTypes: ["fire"],
+      aoe: { shape: "sphere", size: 20, origin: "target" },
+    });
+
+    await applyLevelUp("char-1", [{
+      level: 5,
+      newSpells: ["fireball"],
+    }]);
+
+    const player = getGameState().player;
+    const fireball = player.abilities?.find(a => a.id === "spell:fireball");
+    expect(fireball).toBeDefined();
+    expect(fireball!.aoe).toEqual({ shape: "sphere", size: 20, origin: "target" });
+    expect(fireball!.requiresTarget).toBe(false);
+    expect(fireball!.damageRoll).toBe("8d6");
+    expect(fireball!.damageType).toBe("fire");
+    expect(fireball!.saveAbility).toBe("dexterity");
+    expect(fireball!.attackType).toBe("save");
+  });
+
+  it("non-AOE spell from SRD: ability has no aoe field", async () => {
+    await hydrateState({
+      level: 4,
+      characterClass: "wizard",
+      spellcastingAbility: "intelligence",
+      abilities: [],
+      knownSpells: [],
+      pendingLevelUp: makePendingLevelUp(),
+    });
+
+    // Mock querySRD to return a single-target spell (no aoe field)
+    mockQuerySRD.mockResolvedValue({
+      name: "Magic Missile",
+      level: 1,
+      range: "120 feet",
+      damageRoll: "1d4+1",
+      damageTypes: ["force"],
+    });
+
+    await applyLevelUp("char-1", [{
+      level: 5,
+      newSpells: ["magic-missile"],
+    }]);
+
+    const player = getGameState().player;
+    const mm = player.abilities?.find(a => a.id === "spell:magic-missile");
+    expect(mm).toBeDefined();
+    expect(mm!.aoe).toBeUndefined();
+    expect(mm!.attackType).toBe("auto");
+  });
+
+  it("self-origin cone spell sets aoe and requiresTarget false", async () => {
+    await hydrateState({
+      level: 4,
+      characterClass: "wizard",
+      spellcastingAbility: "intelligence",
+      abilities: [],
+      knownSpells: [],
+      pendingLevelUp: makePendingLevelUp(),
+    });
+
+    mockQuerySRD.mockResolvedValue({
+      name: "Burning Hands",
+      level: 1,
+      range: "Self (15-foot cone)",
+      savingThrowAbility: "dexterity",
+      damageRoll: "3d6",
+      damageTypes: ["fire"],
+      aoe: { shape: "cone", size: 15, origin: "self" },
+    });
+
+    await applyLevelUp("char-1", [{
+      level: 5,
+      newSpells: ["burning-hands"],
+    }]);
+
+    const player = getGameState().player;
+    const bh = player.abilities?.find(a => a.id === "spell:burning-hands");
+    expect(bh).toBeDefined();
+    expect(bh!.aoe).toEqual({ shape: "cone", size: 15, origin: "self" });
+    expect(bh!.requiresTarget).toBe(false);
   });
 });

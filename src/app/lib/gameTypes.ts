@@ -38,6 +38,7 @@ export interface AOEData {
   shape: "cone" | "sphere" | "cube" | "line" | "cylinder";
   size: number;       // radius (sphere/cylinder/cube) or length (cone/line) in feet
   width?: number;     // for line spells only, in feet (default 5)
+  origin: "self" | "target"; // "self" = emanates from caster (Burning Hands), "target" = placed at a point (Fireball)
 }
 
 export type SpellAttackType = "ranged" | "melee" | "save" | "auto" | "none";

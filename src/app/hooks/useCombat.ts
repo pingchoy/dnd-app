@@ -166,17 +166,17 @@ export function useCombat({
             combatLabelRef.current?.(t.npcId, true, t.damageTaken);
           }, i * 200);
         }
-      } else if (targetId && data.playerResult && !data.playerResult.noCheck) {
+      } else if (targetId && data.singleTargetResult && !data.singleTargetResult.noCheck) {
         combatLabelRef.current?.(
           targetId,
-          data.playerResult.success,
-          data.playerResult.damage?.totalDamage ?? 0,
+          data.singleTargetResult.success,
+          data.singleTargetResult.damage?.totalDamage ?? 0,
         );
       }
 
       // Immediately proceed to narration + NPC turns
       setIsNarrating(false);
-      await requestCombatResolve(data.playerResult ?? data.aoeResult, targetId);
+      await requestCombatResolve(data.singleTargetResult ?? null, data.aoeResult ?? null, targetId);
     } catch (err) {
       console.error("[useCombat] executeCombatAction error:", err);
       onError?.();
@@ -190,7 +190,8 @@ export function useCombat({
    * Response provides final game state and encounter data.
    */
   async function requestCombatResolve(
-    playerResult: ParsedRollResult,
+    singleTargetResult: ParsedRollResult | null,
+    aoeResult: unknown | null,
     targetId?: string | null,
   ): Promise<void> {
     if (!characterId) return;
@@ -199,7 +200,12 @@ export function useCombat({
       const res = await fetch("/api/combat/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, playerResult, targetId }),
+        body: JSON.stringify({
+          characterId,
+          ...(singleTargetResult ? { singleTargetResult } : {}),
+          ...(aoeResult ? { aoeResult } : {}),
+          targetId,
+        }),
       });
 
       if (!res.ok) {

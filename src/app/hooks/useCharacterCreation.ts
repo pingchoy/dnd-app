@@ -4,9 +4,9 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SRDRace, SRDClass, SRDArchetype } from "../lib/characterStore";
 import { getModifier, xpForLevel, FEATURE_CHOICE_OPTIONS, FIGHTING_STYLE_EFFECTS } from "../lib/gameTypes";
-import type { CharacterStats, CharacterFeature, StoryState, Ability, SpellAttackType, SpellScalingEntry, AbilityRange } from "../lib/gameTypes";
+import type { CharacterStats, CharacterFeature, StoryState, Ability, AOEData, SpellAttackType, SpellScalingEntry, AbilityRange } from "../lib/gameTypes";
 
-import { parseSpellRange, parseAOEFromRange, parseAOEFromDescription } from "../lib/combatEnforcement";
+import { parseSpellRange } from "../lib/combatEnforcement";
 import { CHARACTER_ID_KEY, CHARACTER_IDS_KEY } from "./useChat";
 
 // ─── Point Buy ────────────────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ export interface SpellOption {
   damageRoll?: string;
   damageTypes?: string[];
   upcastScaling?: Record<string, SpellScalingEntry>;
+  aoe?: AOEData;
 }
 
 export interface CharacterCreationState {
@@ -647,10 +648,8 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           attackType = "auto";
         }
 
-        // Parse AOE data from range string, falling back to description
-        const aoe = parseAOEFromRange(spell?.range ?? "")
-          ?? parseAOEFromDescription(spell?.description ?? "")
-          ?? undefined;
+        // AOE data comes pre-computed from the SRD seed
+        const aoe = spell?.aoe;
 
         return {
           id: `cantrip:${slug}`,
@@ -685,10 +684,8 @@ export function useCharacterCreation(): UseCharacterCreationReturn {
           attackType = "auto";
         }
 
-        // Parse AOE data from range string, falling back to description
-        const aoe = parseAOEFromRange(spell?.range ?? "")
-          ?? parseAOEFromDescription(spell?.description ?? "")
-          ?? undefined;
+        // AOE data comes pre-computed from the SRD seed
+        const aoe = spell?.aoe;
 
         return {
           id: `spell:${slug}`,

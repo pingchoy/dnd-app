@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatMessage } from "../hooks/useChat";
 import DiceRoll from "./DiceRoll";
+import AOEResultCard from "./AOEResultCard";
 
 interface Props {
   message: ChatMessage;
@@ -13,6 +14,11 @@ function ChatCard({ message, playerName = "You" }: Props) {
   // Dice-roll card — animate if it's a new roll from this session
   if (message.rollResult) {
     return <DiceRoll result={message.rollResult} isHistorical={!message.isNewRoll} />;
+  }
+
+  // AOE result card — same compact card for both new and historical
+  if (message.aoeResult) {
+    return <AOEResultCard result={message.aoeResult} isHistorical={!message.isNewRoll} />;
   }
 
   const isDM = message.role === "assistant";

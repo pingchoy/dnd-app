@@ -2,7 +2,7 @@
  * POST /api/combat/action
  *
  * Phase 1 of turn-by-turn combat: deterministic player action resolution.
- * No AI calls — resolves instantly and returns playerResult for the dice UI.
+ * No AI calls — resolves instantly and returns singleTargetResult for the dice UI.
  *
  * After the player sees their roll and clicks Continue, the frontend calls
  * POST /api/combat/resolve to trigger narration + NPC turns.
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       encounter.combatStats[characterId] = emptyCombatStats();
     const stats = encounter.combatStats[characterId];
 
-    let playerResult = null;
+    let singleTargetResult = null;
     let aoeResult: AOEResult | null = null;
 
     // ── AOE resolution path ─────────────────────────────────────────────────
@@ -146,24 +146,24 @@ export async function POST(req: NextRequest) {
       }
     } else {
       // ── Single-target resolution path ───────────────────────────────────────
-      playerResult = resolvePlayerAction(player, ability, targetNPC, positions);
+      singleTargetResult = resolvePlayerAction(player, ability, targetNPC, positions);
 
       // Apply player damage to target NPC
       let targetDied = false;
-      if (playerResult.success && playerResult.damage && targetNPC) {
+      if (singleTargetResult.success && singleTargetResult.damage && targetNPC) {
         const npcResult = updateNPC({
           id: targetNPC.id,
-          hp_delta: -playerResult.damage.totalDamage,
+          hp_delta: -singleTargetResult.damage.totalDamage,
         });
         targetDied = npcResult.died;
       }
 
       const isAttack = ability.type === "weapon" || ability.attackType === "melee" || ability.attackType === "ranged";
-      if (isAttack && !playerResult.noCheck) {
+      if (isAttack && !singleTargetResult.noCheck) {
         stats.attacksMade += 1;
-        if (playerResult.success) stats.attacksHit += 1;
-        if (playerResult.damage?.isCrit) stats.criticalHits += 1;
-        if (playerResult.success && playerResult.damage) stats.damageDealt += playerResult.damage.totalDamage;
+        if (singleTargetResult.success) stats.attacksHit += 1;
+        if (singleTargetResult.damage?.isCrit) stats.criticalHits += 1;
+        if (singleTargetResult.success && singleTargetResult.damage) stats.damageDealt += singleTargetResult.damage.totalDamage;
       }
 
       if (ability.type === "spell" || ability.type === "cantrip") {
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
       role: "assistant",
       content: "",
       timestamp: Date.now(),
-      ...(playerResult ? { rollResult: playerResult } : {}),
+      ...(singleTargetResult ? { rollResult: singleTargetResult } : {}),
       ...(aoeResult ? { aoeResult } : {}),
     });
 
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     return NextResponse.json({
-      playerResult,
+      singleTargetResult,
       aoeResult,
       gameState: getGameState(),
       encounter,

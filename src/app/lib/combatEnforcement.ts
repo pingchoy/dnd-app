@@ -152,7 +152,8 @@ export function parseAOEFromRange(rangeStr: string): AOEData | null {
   if (!match) return null;
   const size = parseInt(match[1]);
   const shape = match[2].toLowerCase() as AOEData["shape"];
-  const result: AOEData = { shape, size };
+  const origin = rangeStr.toLowerCase().startsWith("self") ? "self" as const : "target" as const;
+  const result: AOEData = { shape, size, origin };
   if (shape === "line") result.width = 5;
   return result;
 }
@@ -167,7 +168,8 @@ export function parseAOEFromDescription(description: string): AOEData | null {
   if (!match) return null;
   const size = parseInt(match[1]);
   const shape = match[2].toLowerCase() as AOEData["shape"];
-  const result: AOEData = { shape, size };
+  // Description-sourced AOEs are always targeted (ranged AOEs like Fireball)
+  const result: AOEData = { shape, size, origin: "target" };
   if (shape === "line") result.width = 5;
   return result;
 }

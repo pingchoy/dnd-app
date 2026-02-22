@@ -30,15 +30,18 @@ import { saveEncounterState, completeEncounter } from "../../../lib/encounterSto
 import { resolveNPCTurn } from "../../../lib/combatResolver";
 import { emptyCombatStats } from "../../../lib/gameTypes";
 import type { ParsedRollResult } from "../../../lib/gameTypes";
+import type { AOEResult } from "../../../lib/combatResolver";
 import { addMessage } from "../../../lib/messageStore";
-import { narratePlayerTurn, narrateNPCTurn } from "../../../agents/turnNarrator";
+import { narratePlayerTurn, narrateAOETurn, narrateNPCTurn } from "../../../agents/turnNarrator";
 import { generateLoot } from "../../../agents/lootAgent";
 import type { VictoryData } from "../../../lib/gameTypes";
 
 interface CombatResolveBody {
   characterId: string;
-  /** The player's resolved action from /api/combat/action (passed through for narration). */
-  playerResult: ParsedRollResult;
+  /** The player's resolved action from /api/combat/action (single-target). */
+  singleTargetResult?: ParsedRollResult;
+  /** AOE spell result from /api/combat/action (mutually exclusive with singleTargetResult). */
+  aoeResult?: AOEResult;
   /** Target NPC id (if the player targeted one). */
   targetId?: string;
 }
@@ -46,11 +49,11 @@ interface CombatResolveBody {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CombatResolveBody;
-    const { characterId, playerResult, targetId } = body;
+    const { characterId, singleTargetResult, aoeResult, targetId } = body;
 
-    if (!characterId || !playerResult) {
+    if (!characterId || (!singleTargetResult && !aoeResult)) {
       return NextResponse.json(
-        { error: "characterId and playerResult are required" },
+        { error: "characterId and either singleTargetResult or aoeResult are required" },
         { status: 400 },
       );
     }
@@ -84,13 +87,10 @@ export async function POST(req: NextRequest) {
     // Set currentTurnIndex to player (0)
     encounter.currentTurnIndex = 0;
 
-    // Narrate player turn (Haiku call)
-    const playerNarration = await narratePlayerTurn(
-      player,
-      playerResult,
-      targetNPC,
-      encounter.location,
-    );
+    // Narrate player turn: AOE path or single-target path
+    const playerNarration = aoeResult
+      ? await narrateAOETurn(player, aoeResult, encounter.location)
+      : await narratePlayerTurn(player, singleTargetResult!, targetNPC, encounter.location);
 
     roundTokens += playerNarration.inputTokens + playerNarration.outputTokens;
     roundCost += playerNarration.costUsd;

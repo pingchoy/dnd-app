@@ -33,7 +33,14 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
 import { crToXP } from "../src/app/lib/gameTypes";
-import { RACE_OVERRIDES, CLASS_OVERRIDES, CLASS_LEVEL_OVERRIDES, CLASS_FEATURES_OVERRIDES, SUBCLASS_FEATURES_OVERRIDES } from "./srdOverrides";
+import {
+  RACE_OVERRIDES,
+  CLASS_OVERRIDES,
+  CLASS_LEVEL_OVERRIDES,
+  CLASS_FEATURES_OVERRIDES,
+  SUBCLASS_FEATURES_OVERRIDES,
+  SPELL_AOE_OVERRIDES,
+} from "./srdOverrides";
 import type { ClassFeatureDef } from "./srdOverrides";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
@@ -93,9 +100,15 @@ function stripKeyPrefix(key: string): string {
  * or prose descriptions whose formatting depends on original casing.
  */
 const PRESERVE_CASE_KEYS = new Set([
-  "description", "desc", "higherLevel",
+  "description",
+  "desc",
+  "higherLevel",
   // Race lore sub-fields (all markdown prose)
-  "age", "alignment", "sizeDescription", "speedDescription", "languageDescription",
+  "age",
+  "alignment",
+  "sizeDescription",
+  "speedDescription",
+  "languageDescription",
 ]);
 
 function lowercaseStrings(value: unknown, key?: string): unknown {
@@ -125,7 +138,10 @@ async function batchWrite(
   let opCount = 0;
 
   for (const { id, data } of docs) {
-    batch.set(db.collection(colPath).doc(id), lowercaseStrings(data) as Record<string, unknown>);
+    batch.set(
+      db.collection(colPath).doc(id),
+      lowercaseStrings(data) as Record<string, unknown>,
+    );
     opCount++;
 
     if (opCount >= BATCH_SIZE) {
@@ -188,7 +204,7 @@ interface V2Class {
 }
 
 interface V2CastingOption {
-  type: string;             // "default", "player_level_5", "slot_level_4", etc.
+  type: string; // "default", "player_level_5", "slot_level_4", etc.
   damage_roll: string | null;
   target_count: number | null;
   duration: string | null;
@@ -345,8 +361,10 @@ async function seedRaces(): Promise<void> {
     const allTraits = [...race.traits, ...subTraits];
 
     // Include all traits — the UI shows them in a dedicated "Racial Traits" section
-    const traits = allTraits
-      .map((t) => ({ name: t.name, description: t.desc }));
+    const traits = allTraits.map((t) => ({
+      name: t.name,
+      description: t.desc,
+    }));
 
     // Build lore sections from dedicated traits
     const lore: Record<string, string> = {};
@@ -395,7 +413,10 @@ async function seedRaces(): Promise<void> {
  * Filters to base classes (subclass_of === null), collects subclasses as archetypes.
  * Uses hardcoded CLASS_OVERRIDES for proficiencies, skill options, and spellcasting info.
  */
-async function seedClasses(): Promise<{ baseClasses: V2Class[]; subclasses: V2Class[] }> {
+async function seedClasses(): Promise<{
+  baseClasses: V2Class[];
+  subclasses: V2Class[];
+}> {
   console.log("\n── Seeding srdClasses (v2 + hardcoded overrides) ──");
 
   const allClasses = await fetchAllV2<V2Class>("/classes", "srd-2014");
@@ -417,17 +438,21 @@ async function seedClasses(): Promise<{ baseClasses: V2Class[]; subclasses: V2Cl
       .map((sc) => ({
         slug: stripKeyPrefix(sc.key),
         name: sc.name,
-        description: sc.desc || sc.features
-          .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
-          .map((f) => `**${f.name}:** ${f.desc}`)
-          .join("\n\n"),
+        description:
+          sc.desc ||
+          sc.features
+            .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
+            .map((f) => `**${f.name}:** ${f.desc}`)
+            .join("\n\n"),
       }));
 
     // Description: compose from CLASS_LEVEL_FEATURE features (v2 API has empty top-level desc)
-    const description = cls.desc || cls.features
-      .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
-      .map((f) => `### ${f.name}\n${f.desc}`)
-      .join("\n\n");
+    const description =
+      cls.desc ||
+      cls.features
+        .filter((f) => f.feature_type === "CLASS_LEVEL_FEATURE")
+        .map((f) => `### ${f.name}\n${f.desc}`)
+        .join("\n\n");
 
     // Use hardcoded overrides for proficiencies, skills, and spellcasting
     const override = CLASS_OVERRIDES[slug];
@@ -451,7 +476,9 @@ async function seedClasses(): Promise<{ baseClasses: V2Class[]; subclasses: V2Cl
         weaponProficiencies: override?.weaponProficiencies ?? [],
         armorProficiencies: override?.armorProficiencies ?? [],
         description,
-        asiLevels: CLASS_FEATURES_OVERRIDES[slug]?.asiLevels ?? [4, 8, 12, 16, 19],
+        asiLevels: CLASS_FEATURES_OVERRIDES[slug]?.asiLevels ?? [
+          4, 8, 12, 16, 19,
+        ],
       },
     };
   });
@@ -472,7 +499,9 @@ async function seedClasses(): Promise<{ baseClasses: V2Class[]; subclasses: V2Cl
  * and spells known come from CLASS_LEVEL_OVERRIDES for accuracy.
  */
 async function seedClassLevels(classData: V2Class[]): Promise<void> {
-  console.log("\n── Seeding srdClassLevels (v2 features + hardcoded spell progression) ──");
+  console.log(
+    "\n── Seeding srdClassLevels (v2 features + hardcoded spell progression) ──",
+  );
 
   const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
 
@@ -480,7 +509,10 @@ async function seedClassLevels(classData: V2Class[]): Promise<void> {
     const classSlug = stripKeyPrefix(cls.key);
 
     // Build a map of level → features from CLASS_LEVEL_FEATURE type (narrative text from API)
-    const levelFeatures = new Map<number, Array<{ name: string; description: string; level: number }>>();
+    const levelFeatures = new Map<
+      number,
+      Array<{ name: string; description: string; level: number }>
+    >();
     for (let lvl = 1; lvl <= 20; lvl++) levelFeatures.set(lvl, []);
 
     for (const feature of cls.features) {
@@ -513,13 +545,15 @@ async function seedClassLevels(classData: V2Class[]): Promise<void> {
 
     for (let level = 1; level <= 20; level++) {
       const proficiencyBonus = Math.ceil(level / 4) + 1;
-      const features = (levelFeatures.get(level) ?? []).map(f => {
+      const features = (levelFeatures.get(level) ?? []).map((f) => {
         const key = `${f.name.toLowerCase()}:${level}`;
         const override = featureLookup.get(key);
         return {
           ...f,
           ...(override?.type ? { type: override.type } : {}),
-          ...(override?.gameplayEffects ? { gameplayEffects: override.gameplayEffects } : {}),
+          ...(override?.gameplayEffects
+            ? { gameplayEffects: override.gameplayEffects }
+            : {}),
         };
       });
 
@@ -550,7 +584,9 @@ async function seedClassLevels(classData: V2Class[]): Promise<void> {
           level,
           proficiencyBonus,
           features,
-          ...(spellSlots && Object.keys(spellSlots).length > 0 ? { spellSlots } : {}),
+          ...(spellSlots && Object.keys(spellSlots).length > 0
+            ? { spellSlots }
+            : {}),
           ...(cantripsKnown != null ? { cantripsKnown } : {}),
           ...(spellsKnown != null ? { spellsKnown } : {}),
         },
@@ -582,8 +618,8 @@ function buildCantripScaling(
 ): Record<string, ScalingEntry> | null {
   if (spell.level !== 0) return null;
 
-  const entries = spell.casting_options.filter(
-    (opt) => opt.type.startsWith("player_level_"),
+  const entries = spell.casting_options.filter((opt) =>
+    opt.type.startsWith("player_level_"),
   );
 
   if (entries.length > 0) {
@@ -610,8 +646,10 @@ function buildCantripScaling(
 
     for (const entry of sorted) {
       // Treat undefined as "no change" — only compare when the entry has a value
-      const dmgChanged = entry.damageRoll != null && entry.damageRoll !== prevDamageRoll;
-      const tgtChanged = entry.targetCount != null && entry.targetCount !== prevTargetCount;
+      const dmgChanged =
+        entry.damageRoll != null && entry.damageRoll !== prevDamageRoll;
+      const tgtChanged =
+        entry.targetCount != null && entry.targetCount !== prevTargetCount;
       if (dmgChanged || tgtChanged) {
         const val: ScalingEntry = {};
         if (entry.damageRoll) val.damageRoll = entry.damageRoll;
@@ -649,11 +687,13 @@ function buildCantripScaling(
  *
  * Falls back to parsing higher_level text for spells with no structured data.
  */
-function buildUpcastScaling(spell: V2Spell): Record<string, ScalingEntry> | null {
+function buildUpcastScaling(
+  spell: V2Spell,
+): Record<string, ScalingEntry> | null {
   if (spell.level === 0) return null;
 
-  const entries = spell.casting_options.filter(
-    (opt) => opt.type.startsWith("slot_level_"),
+  const entries = spell.casting_options.filter((opt) =>
+    opt.type.startsWith("slot_level_"),
   );
 
   if (entries.length > 0) {
@@ -704,7 +744,9 @@ function buildUpcastScaling(spell: V2Spell): Record<string, ScalingEntry> | null
 /**
  * Seed spells and return the transformed docs for seedSpellLists() to use.
  */
-async function seedSpells(): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+async function seedSpells(): Promise<
+  Array<{ id: string; data: Record<string, unknown> }>
+> {
   console.log("\n── Seeding srdSpells (v2) ──");
 
   const raw = await fetchAllV2<V2Spell>("/spells", "srd-2014");
@@ -731,7 +773,9 @@ async function seedSpells(): Promise<Array<{ id: string; data: Record<string, un
     let damageTypes = s.damage_types.length > 0 ? s.damage_types : undefined;
     if (!damageRoll) {
       const firstScaling = s.casting_options
-        .filter((opt) => opt.damage_roll && opt.type.startsWith("player_level_"))
+        .filter(
+          (opt) => opt.damage_roll && opt.type.startsWith("player_level_"),
+        )
         .sort((a, b) => {
           const lvlA = parseInt(a.type.replace("player_level_", ""), 10);
           const lvlB = parseInt(b.type.replace("player_level_", ""), 10);
@@ -768,7 +812,7 @@ async function seedSpells(): Promise<Array<{ id: string; data: Record<string, un
         school: s.school.name.toLowerCase(),
         castingTime: s.casting_time,
         range: s.range_text || `${s.range} feet`,
-        aoe: parseAOE(s.range_text || "", s.desc),
+        aoe: SPELL_AOE_OVERRIDES[slug],
         components,
         duration: s.duration,
         concentration: s.concentration,
@@ -844,7 +888,7 @@ async function seedEquipment(): Promise<void> {
 
     // Build category string: "Simple Melee Weapons", "Martial Ranged Weapons", etc.
     const simpleOrMartial = w.is_simple ? "Simple" : "Martial";
-    const meleeOrRanged = (w.range > 0 || w.long_range > 0) ? "Ranged" : "Melee";
+    const meleeOrRanged = w.range > 0 || w.long_range > 0 ? "Ranged" : "Melee";
     const category = `${simpleOrMartial} ${meleeOrRanged} Weapons`;
 
     // Flatten properties to string array matching v1 format
@@ -880,7 +924,9 @@ async function seedEquipment(): Promise<void> {
  * the API; type and gameplayEffects come from SUBCLASS_FEATURES_OVERRIDES.
  */
 async function seedSubclassLevels(subclasses: V2Class[]): Promise<void> {
-  console.log("\n── Seeding srdSubclassLevels (v2 features + hardcoded overrides) ──");
+  console.log(
+    "\n── Seeding srdSubclassLevels (v2 features + hardcoded overrides) ──",
+  );
 
   const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
 
@@ -889,7 +935,10 @@ async function seedSubclassLevels(subclasses: V2Class[]): Promise<void> {
     const classSlug = sc.subclass_of ? stripKeyPrefix(sc.subclass_of.key) : "";
 
     // Group features by gained_at.level
-    const levelFeatures = new Map<number, Array<{ name: string; description: string }>>();
+    const levelFeatures = new Map<
+      number,
+      Array<{ name: string; description: string }>
+    >();
 
     for (const feature of sc.features) {
       if (feature.feature_type !== "CLASS_LEVEL_FEATURE") continue;
@@ -917,14 +966,16 @@ async function seedSubclassLevels(subclasses: V2Class[]): Promise<void> {
     }
 
     // Emit a doc per level that has features
-    for (const [level, features] of levelFeatures.entries()) {
-      const enrichedFeatures = features.map(f => {
+    for (const [level, features] of Array.from(levelFeatures.entries())) {
+      const enrichedFeatures = features.map((f) => {
         const key = `${f.name.toLowerCase()}:${level}`;
         const override = featureLookup.get(key);
         return {
           ...f,
           ...(override?.type ? { type: override.type } : {}),
-          ...(override?.gameplayEffects ? { gameplayEffects: override.gameplayEffects } : {}),
+          ...(override?.gameplayEffects
+            ? { gameplayEffects: override.gameplayEffects }
+            : {}),
         };
       });
 
@@ -948,12 +999,17 @@ async function seedSubclassLevels(subclasses: V2Class[]): Promise<void> {
 
 async function seedConditions(): Promise<void> {
   console.log("\n── Seeding srdConditions (v2, srd-2014) ──");
-  const raw = await fetchAllV2<Record<string, unknown>>("/conditions", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>(
+    "/conditions",
+    "srd-2014",
+  );
   const docs = raw.map((c) => {
     const key = stripKeyPrefix(c.key as string);
     const descriptions = Array.isArray(c.descriptions)
-      ? (c.descriptions as Array<{ desc: string }>).map((d) => d.desc).join("\n\n")
-      : (c.desc as string) ?? "";
+      ? (c.descriptions as Array<{ desc: string }>)
+          .map((d) => d.desc)
+          .join("\n\n")
+      : ((c.desc as string) ?? "");
     return {
       id: key,
       data: {
@@ -969,7 +1025,10 @@ async function seedConditions(): Promise<void> {
 
 async function seedBackgrounds(): Promise<void> {
   console.log("\n── Seeding srdBackgrounds (v2, srd-2014) ──");
-  const raw = await fetchAllV2<Record<string, unknown>>("/backgrounds", "srd-2014");
+  const raw = await fetchAllV2<Record<string, unknown>>(
+    "/backgrounds",
+    "srd-2014",
+  );
   const docs = raw.map((b) => {
     const key = stripKeyPrefix(b.key as string);
     const benefits = Array.isArray(b.benefits) ? b.benefits : [];
@@ -1050,11 +1109,16 @@ async function seedMonsters(): Promise<void> {
 
     // Build senses string from range fields
     const sensesParts: string[] = [];
-    if (m.darkvision_range) sensesParts.push(`darkvision ${m.darkvision_range} ft.`);
-    if (m.blindsight_range) sensesParts.push(`blindsight ${m.blindsight_range} ft.`);
-    if (m.tremorsense_range) sensesParts.push(`tremorsense ${m.tremorsense_range} ft.`);
-    if (m.truesight_range) sensesParts.push(`truesight ${m.truesight_range} ft.`);
-    if (m.passive_perception) sensesParts.push(`passive Perception ${m.passive_perception}`);
+    if (m.darkvision_range)
+      sensesParts.push(`darkvision ${m.darkvision_range} ft.`);
+    if (m.blindsight_range)
+      sensesParts.push(`blindsight ${m.blindsight_range} ft.`);
+    if (m.tremorsense_range)
+      sensesParts.push(`tremorsense ${m.tremorsense_range} ft.`);
+    if (m.truesight_range)
+      sensesParts.push(`truesight ${m.truesight_range} ft.`);
+    if (m.passive_perception)
+      sensesParts.push(`passive Perception ${m.passive_perception}`);
     const senses = sensesParts.join(", ");
 
     // Actions: separate by type and flatten attack data for npcAgent compatibility
@@ -1119,11 +1183,21 @@ async function seedMonsters(): Promise<void> {
         reactions,
         // New v2 fields
         armorDetail: m.armor_detail || undefined,
-        savingThrows: Object.keys(m.saving_throws ?? {}).length > 0 ? m.saving_throws : undefined,
-        skillBonuses: Object.keys(m.skill_bonuses ?? {}).length > 0 ? m.skill_bonuses : undefined,
-        damageResistances: m.resistances_and_immunities?.damage_resistances_display || undefined,
-        damageImmunities: m.resistances_and_immunities?.damage_immunities_display || undefined,
-        conditionImmunities: m.resistances_and_immunities?.condition_immunities_display || undefined,
+        savingThrows:
+          Object.keys(m.saving_throws ?? {}).length > 0
+            ? m.saving_throws
+            : undefined,
+        skillBonuses:
+          Object.keys(m.skill_bonuses ?? {}).length > 0
+            ? m.skill_bonuses
+            : undefined,
+        damageResistances:
+          m.resistances_and_immunities?.damage_resistances_display || undefined,
+        damageImmunities:
+          m.resistances_and_immunities?.damage_immunities_display || undefined,
+        conditionImmunities:
+          m.resistances_and_immunities?.condition_immunities_display ||
+          undefined,
         environments: m.environments?.map((e) => e.name) ?? [],
         proficiencyBonus: m.proficiency_bonus || undefined,
       },
@@ -1175,8 +1249,20 @@ async function seedStartingEquipment(): Promise<void> {
         slug: "barbarian",
         inventory: ["greataxe", "handaxe", "handaxe", "explorer's pack"],
         weapons: [
-          { name: "greataxe", dice: "1d12", stat: "str", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "handaxe", dice: "1d6", stat: "str", bonus: 0, range: { type: "both", reach: 5, shortRange: 20, longRange: 60 } },
+          {
+            name: "greataxe",
+            dice: "1d12",
+            stat: "str",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "handaxe",
+            dice: "1d6",
+            stat: "str",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 10,
       },
@@ -1185,10 +1271,28 @@ async function seedStartingEquipment(): Promise<void> {
       id: "bard",
       data: {
         slug: "bard",
-        inventory: ["rapier", "dagger", "lute", "leather armor", "entertainer's pack"],
+        inventory: [
+          "rapier",
+          "dagger",
+          "lute",
+          "leather armor",
+          "entertainer's pack",
+        ],
         weapons: [
-          { name: "rapier", dice: "1d8", stat: "finesse", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "dagger", dice: "1d4", stat: "finesse", bonus: 0, range: { type: "both", reach: 5, shortRange: 20, longRange: 60 } },
+          {
+            name: "rapier",
+            dice: "1d8",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "dagger",
+            dice: "1d4",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 10,
       },
@@ -1197,10 +1301,30 @@ async function seedStartingEquipment(): Promise<void> {
       id: "cleric",
       data: {
         slug: "cleric",
-        inventory: ["mace", "scale mail", "shield", "light crossbow", "bolts (20)", "priest's pack", "holy symbol"],
+        inventory: [
+          "mace",
+          "scale mail",
+          "shield",
+          "light crossbow",
+          "bolts (20)",
+          "priest's pack",
+          "holy symbol",
+        ],
         weapons: [
-          { name: "mace", dice: "1d6", stat: "str", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "light crossbow", dice: "1d8", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 80, longRange: 320 } },
+          {
+            name: "mace",
+            dice: "1d6",
+            stat: "str",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "light crossbow",
+            dice: "1d8",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 80, longRange: 320 },
+          },
         ],
         gold: 10,
       },
@@ -1209,9 +1333,21 @@ async function seedStartingEquipment(): Promise<void> {
       id: "druid",
       data: {
         slug: "druid",
-        inventory: ["wooden shield", "scimitar", "leather armor", "explorer's pack", "druidic focus"],
+        inventory: [
+          "wooden shield",
+          "scimitar",
+          "leather armor",
+          "explorer's pack",
+          "druidic focus",
+        ],
         weapons: [
-          { name: "scimitar", dice: "1d6", stat: "finesse", bonus: 0, range: { type: "melee", reach: 5 } },
+          {
+            name: "scimitar",
+            dice: "1d6",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
         ],
         gold: 10,
       },
@@ -1220,10 +1356,29 @@ async function seedStartingEquipment(): Promise<void> {
       id: "fighter",
       data: {
         slug: "fighter",
-        inventory: ["chain mail", "longsword", "shield", "light crossbow", "bolts (20)", "dungeoneer's pack"],
+        inventory: [
+          "chain mail",
+          "longsword",
+          "shield",
+          "light crossbow",
+          "bolts (20)",
+          "dungeoneer's pack",
+        ],
         weapons: [
-          { name: "longsword", dice: "1d8", stat: "str", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "light crossbow", dice: "1d8", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 80, longRange: 320 } },
+          {
+            name: "longsword",
+            dice: "1d8",
+            stat: "str",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "light crossbow",
+            dice: "1d8",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 80, longRange: 320 },
+          },
         ],
         gold: 10,
       },
@@ -1234,8 +1389,20 @@ async function seedStartingEquipment(): Promise<void> {
         slug: "monk",
         inventory: ["shortsword", "dart x10", "explorer's pack"],
         weapons: [
-          { name: "shortsword", dice: "1d6", stat: "finesse", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "dart", dice: "1d4", stat: "finesse", bonus: 0, range: { type: "ranged", shortRange: 20, longRange: 60 } },
+          {
+            name: "shortsword",
+            dice: "1d6",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "dart",
+            dice: "1d4",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 5,
       },
@@ -1244,10 +1411,29 @@ async function seedStartingEquipment(): Promise<void> {
       id: "paladin",
       data: {
         slug: "paladin",
-        inventory: ["longsword", "shield", "chain mail", "javelin x5", "priest's pack", "holy symbol"],
+        inventory: [
+          "longsword",
+          "shield",
+          "chain mail",
+          "javelin x5",
+          "priest's pack",
+          "holy symbol",
+        ],
         weapons: [
-          { name: "longsword", dice: "1d8", stat: "str", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "javelin", dice: "1d6", stat: "str", bonus: 0, range: { type: "both", reach: 5, shortRange: 30, longRange: 120 } },
+          {
+            name: "longsword",
+            dice: "1d8",
+            stat: "str",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "javelin",
+            dice: "1d6",
+            stat: "str",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 30, longRange: 120 },
+          },
         ],
         gold: 10,
       },
@@ -1256,10 +1442,29 @@ async function seedStartingEquipment(): Promise<void> {
       id: "ranger",
       data: {
         slug: "ranger",
-        inventory: ["scale mail", "shortsword", "shortsword", "longbow", "arrows (20)", "dungeoneer's pack"],
+        inventory: [
+          "scale mail",
+          "shortsword",
+          "shortsword",
+          "longbow",
+          "arrows (20)",
+          "dungeoneer's pack",
+        ],
         weapons: [
-          { name: "shortsword", dice: "1d6", stat: "finesse", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "longbow", dice: "1d8", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 150, longRange: 600 } },
+          {
+            name: "shortsword",
+            dice: "1d6",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "longbow",
+            dice: "1d8",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 150, longRange: 600 },
+          },
         ],
         gold: 10,
       },
@@ -1268,11 +1473,38 @@ async function seedStartingEquipment(): Promise<void> {
       id: "rogue",
       data: {
         slug: "rogue",
-        inventory: ["rapier", "shortbow", "arrows (20)", "leather armor", "dagger", "dagger", "thieves' tools", "burglar's pack"],
+        inventory: [
+          "rapier",
+          "shortbow",
+          "arrows (20)",
+          "leather armor",
+          "dagger",
+          "dagger",
+          "thieves' tools",
+          "burglar's pack",
+        ],
         weapons: [
-          { name: "rapier", dice: "1d8", stat: "finesse", bonus: 0, range: { type: "melee", reach: 5 } },
-          { name: "shortbow", dice: "1d6", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 80, longRange: 320 } },
-          { name: "dagger", dice: "1d4", stat: "finesse", bonus: 0, range: { type: "both", reach: 5, shortRange: 20, longRange: 60 } },
+          {
+            name: "rapier",
+            dice: "1d8",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
+          {
+            name: "shortbow",
+            dice: "1d6",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 80, longRange: 320 },
+          },
+          {
+            name: "dagger",
+            dice: "1d4",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 10,
       },
@@ -1281,10 +1513,29 @@ async function seedStartingEquipment(): Promise<void> {
       id: "sorcerer",
       data: {
         slug: "sorcerer",
-        inventory: ["light crossbow", "bolts (20)", "arcane focus", "dungeoneer's pack", "dagger", "dagger"],
+        inventory: [
+          "light crossbow",
+          "bolts (20)",
+          "arcane focus",
+          "dungeoneer's pack",
+          "dagger",
+          "dagger",
+        ],
         weapons: [
-          { name: "light crossbow", dice: "1d8", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 80, longRange: 320 } },
-          { name: "dagger", dice: "1d4", stat: "finesse", bonus: 0, range: { type: "both", reach: 5, shortRange: 20, longRange: 60 } },
+          {
+            name: "light crossbow",
+            dice: "1d8",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 80, longRange: 320 },
+          },
+          {
+            name: "dagger",
+            dice: "1d4",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 10,
       },
@@ -1293,10 +1544,30 @@ async function seedStartingEquipment(): Promise<void> {
       id: "warlock",
       data: {
         slug: "warlock",
-        inventory: ["light crossbow", "bolts (20)", "arcane focus", "dungeoneer's pack", "leather armor", "dagger", "dagger"],
+        inventory: [
+          "light crossbow",
+          "bolts (20)",
+          "arcane focus",
+          "dungeoneer's pack",
+          "leather armor",
+          "dagger",
+          "dagger",
+        ],
         weapons: [
-          { name: "light crossbow", dice: "1d8", stat: "dex", bonus: 0, range: { type: "ranged", shortRange: 80, longRange: 320 } },
-          { name: "dagger", dice: "1d4", stat: "finesse", bonus: 0, range: { type: "both", reach: 5, shortRange: 20, longRange: 60 } },
+          {
+            name: "light crossbow",
+            dice: "1d8",
+            stat: "dex",
+            bonus: 0,
+            range: { type: "ranged", shortRange: 80, longRange: 320 },
+          },
+          {
+            name: "dagger",
+            dice: "1d4",
+            stat: "finesse",
+            bonus: 0,
+            range: { type: "both", reach: 5, shortRange: 20, longRange: 60 },
+          },
         ],
         gold: 10,
       },
@@ -1305,9 +1576,20 @@ async function seedStartingEquipment(): Promise<void> {
       id: "wizard",
       data: {
         slug: "wizard",
-        inventory: ["quarterstaff", "arcane focus", "scholar's pack", "spellbook"],
+        inventory: [
+          "quarterstaff",
+          "arcane focus",
+          "scholar's pack",
+          "spellbook",
+        ],
         weapons: [
-          { name: "quarterstaff", dice: "1d6", stat: "str", bonus: 0, range: { type: "melee", reach: 5 } },
+          {
+            name: "quarterstaff",
+            dice: "1d6",
+            stat: "str",
+            bonus: 0,
+            range: { type: "melee", reach: 5 },
+          },
         ],
         gold: 10,
       },

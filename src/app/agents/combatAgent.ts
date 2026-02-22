@@ -25,10 +25,7 @@ import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
 import { handleSRDQuery } from "./agentUtils";
 import type { DMResponse } from "./dmAgent";
-import {
-  COMBAT_UPDATE_GAME_STATE_TOOL,
-  QUERY_SRD_TOOL,
-} from "./tools";
+import { COMBAT_UPDATE_GAME_STATE_TOOL, QUERY_SRD_TOOL } from "./tools";
 
 /**
  * Minimal context the combat agent needs — no full GameState/session data.
@@ -53,7 +50,7 @@ RULES:
 - Use query_srd if you need spell or rule details.
 
 FORMATTING:
-- 2–3 paragraphs of prose. Tight and action-focused.
+- 1-2 paragraphs of prose. Tight and action-focused.
 - **Bold** for actions and key outcomes. *Italics* for sensory details.
 - No headers (#) or bullet lists. Never mention tools or stat blocks.`;
 
@@ -107,9 +104,14 @@ export async function getCombatResponse(
   }
 
   // Minimal history: last 2 entries (1 user/assistant pair) from messages subcollection
-  const recentMessages = await getRecentMessages(sessionId, COMBAT_HISTORY_ENTRIES);
-  const historyMessages: Anthropic.MessageParam[] =
-    recentMessages.map((m) => ({ role: m.role, content: m.content }));
+  const recentMessages = await getRecentMessages(
+    sessionId,
+    COMBAT_HISTORY_ENTRIES,
+  );
+  const historyMessages: Anthropic.MessageParam[] = recentMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
 
   const messages: Anthropic.MessageParam[] = [
     ...historyMessages,
@@ -166,7 +168,9 @@ export async function getCombatResponse(
         stateChanges = block.input as StateChanges;
         // Strip hp_delta — damage is handled by the deterministic engine
         if (stateChanges.hp_delta) {
-          console.log("[Combat Agent] Stripping hp_delta from state changes — damage is engine-only");
+          console.log(
+            "[Combat Agent] Stripping hp_delta from state changes — damage is engine-only",
+          );
           delete stateChanges.hp_delta;
         }
         console.log(
@@ -184,7 +188,12 @@ export async function getCombatResponse(
           class_slug?: string;
           level?: number;
         };
-        const { resultContent, newCount } = await handleSRDQuery(input, srdQueryCount, MAX_SRD_QUERIES, "Combat Agent");
+        const { resultContent, newCount } = await handleSRDQuery(
+          input,
+          srdQueryCount,
+          MAX_SRD_QUERIES,
+          "Combat Agent",
+        );
         srdQueryCount = newCount;
 
         toolResults.push({

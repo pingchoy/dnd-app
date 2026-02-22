@@ -8,7 +8,7 @@
  * from the v2 API — this file provides only the structured mechanical values.
  */
 
-import type { Ability, GameplayEffects } from "../src/app/lib/gameTypes";
+import type { Ability, AOEData, GameplayEffects } from "../src/app/lib/gameTypes";
 
 // ─── Race Overrides ──────────────────────────────────────────────────────────
 
@@ -1118,4 +1118,92 @@ export const SUBCLASS_FEATURES_OVERRIDES: Record<string, SubclassFeaturesOverrid
       ],
     },
   },
+};
+
+// ─── Spell AOE Overrides ────────────────────────────────────────────────────
+
+/**
+ * Complete AOE data for all SRD spells with area effects.
+ * Keyed by spell slug (after stripping the "srd_" prefix).
+ * Manually maintained — regex parsing was too fragile for the varied
+ * phrasing in Open5e descriptions (e.g. "a line 100 feet long").
+ *
+ * size = radius for sphere/cylinder/cube, length for cone/line (in feet).
+ * origin = "self" when the AOE emanates from the caster, "target" when placed at a point.
+ */
+export const SPELL_AOE_OVERRIDES: Record<string, AOEData> = {
+  // ── Cantrips ───────────────────────────────────────────────
+  "acid-splash":             { shape: "sphere", size: 5, origin: "target" },    // 2 creatures within 5 ft
+  "poison-spray":            { shape: "cone", size: 10, origin: "self" },       // 10-foot cone (Tasha's variant, SRD is single target — include for safety)
+  "thunderclap":             { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
+  "word-of-radiance":        { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
+  "sword-burst":             { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
+
+  // ── 1st Level ──────────────────────────────────────────────
+  "burning-hands":           { shape: "cone", size: 15, origin: "self" },
+  "color-spray":             { shape: "cone", size: 15, origin: "self" },
+  "entangle":                { shape: "cube", size: 20, origin: "target" },     // 20-foot square
+  "faerie-fire":             { shape: "cube", size: 20, origin: "target" },
+  "fog-cloud":               { shape: "sphere", size: 20, origin: "target" },
+  "grease":                  { shape: "cube", size: 10, origin: "target" },     // 10-foot square
+  "sleep":                   { shape: "sphere", size: 20, origin: "target" },
+  "thunderwave":             { shape: "cube", size: 15, origin: "self" },
+
+  // ── 2nd Level ──────────────────────────────────────────────
+  "darkness":                { shape: "sphere", size: 15, origin: "target" },
+  "gust-of-wind":            { shape: "line", size: 60, width: 10, origin: "self" },
+  "moonbeam":                { shape: "cylinder", size: 5, origin: "target" },
+  "shatter":                 { shape: "sphere", size: 10, origin: "target" },
+  "silence":                 { shape: "sphere", size: 20, origin: "target" },
+  "spike-growth":            { shape: "sphere", size: 20, origin: "target" },
+  "web":                     { shape: "cube", size: 20, origin: "target" },
+  "flaming-sphere":          { shape: "sphere", size: 5, origin: "target" },
+  "calm-emotions":           { shape: "sphere", size: 20, origin: "target" },
+
+  // ── 3rd Level ──────────────────────────────────────────────
+  "call-lightning":          { shape: "cylinder", size: 60, origin: "target" },
+  "daylight":                { shape: "sphere", size: 60, origin: "target" },
+  "fear":                    { shape: "cone", size: 30, origin: "self" },
+  "fireball":                { shape: "sphere", size: 20, origin: "target" },
+  "hypnotic-pattern":        { shape: "cube", size: 30, origin: "target" },
+  "lightning-bolt":          { shape: "line", size: 100, width: 5, origin: "self" },
+  "sleet-storm":             { shape: "cylinder", size: 40, origin: "target" },
+  "slow":                    { shape: "cube", size: 40, origin: "target" },
+  "spirit-guardians":        { shape: "sphere", size: 15, origin: "self" },
+  "stinking-cloud":          { shape: "sphere", size: 20, origin: "target" },
+  "plant-growth":            { shape: "sphere", size: 100, origin: "target" },
+
+  // ── 4th Level ──────────────────────────────────────────────
+  "black-tentacles":         { shape: "cube", size: 20, origin: "target" },     // 20-foot square
+  "confusion":               { shape: "sphere", size: 10, origin: "target" },
+  "ice-storm":               { shape: "cylinder", size: 20, origin: "target" },
+
+  // ── 5th Level ──────────────────────────────────────────────
+  "cloudkill":               { shape: "sphere", size: 20, origin: "target" },
+  "cone-of-cold":            { shape: "cone", size: 60, origin: "self" },
+  "insect-plague":           { shape: "sphere", size: 20, origin: "target" },
+  "flame-strike":            { shape: "cylinder", size: 10, origin: "target" },
+
+  // ── 6th Level ──────────────────────────────────────────────
+  "chain-lightning":         { shape: "sphere", size: 30, origin: "target" },   // bounces to targets within 30 ft
+  "circle-of-death":         { shape: "sphere", size: 60, origin: "target" },
+  "freezing-sphere":         { shape: "sphere", size: 60, origin: "target" },
+  "sunbeam":                 { shape: "line", size: 60, width: 5, origin: "self" },
+  "blade-barrier":           { shape: "line", size: 100, width: 5, origin: "target" },
+
+  // ── 7th Level ──────────────────────────────────────────────
+  "delayed-blast-fireball":  { shape: "sphere", size: 20, origin: "target" },
+  "fire-storm":              { shape: "cube", size: 10, origin: "target" },     // ten 10-ft cubes
+  "prismatic-spray":         { shape: "cone", size: 60, origin: "self" },
+  "reverse-gravity":         { shape: "cylinder", size: 50, origin: "target" },
+
+  // ── 8th Level ──────────────────────────────────────────────
+  "earthquake":              { shape: "sphere", size: 100, origin: "target" },
+  "incendiary-cloud":        { shape: "sphere", size: 20, origin: "target" },
+  "sunburst":                { shape: "sphere", size: 60, origin: "target" },
+
+  // ── 9th Level ──────────────────────────────────────────────
+  "meteor-swarm":            { shape: "sphere", size: 40, origin: "target" },
+  "storm-of-vengeance":      { shape: "cylinder", size: 360, origin: "target" },
+  "weird":                   { shape: "sphere", size: 30, origin: "target" },
 };

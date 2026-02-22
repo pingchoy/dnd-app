@@ -20,6 +20,7 @@
 import { adminDb } from "./firebaseAdmin";
 import type {
   Ability,
+  AOEData,
   GameplayEffects,
   PlayerState,
   StoryState,
@@ -565,6 +566,8 @@ export interface SRDSpellCompact {
   upcastScaling?: Record<string, SpellScalingEntry>;
   /** Cantrip scaling by player level: level → scaling overrides. */
   cantripScaling?: Record<string, SpellScalingEntry>;
+  /** AOE shape data (cone, sphere, cube, line, cylinder) — set at seed time. */
+  aoe?: AOEData;
 }
 
 /**
@@ -605,6 +608,7 @@ export async function getSRDSpellsByClassAndLevel(
           damageTypes: s.damageTypes as string[] | undefined,
           upcastScaling: s.upcastScaling as Record<string, SpellScalingEntry> | undefined,
           cantripScaling: s.cantripScaling as Record<string, SpellScalingEntry> | undefined,
+          aoe: s.aoe as AOEData | undefined,
         });
       }
     } else {
@@ -638,6 +642,7 @@ export async function getSRDSpellsByClassAndLevel(
           damageTypes: s.damageTypes as string[] | undefined,
           upcastScaling: s.upcastScaling as Record<string, SpellScalingEntry> | undefined,
           cantripScaling: s.cantripScaling as Record<string, SpellScalingEntry> | undefined,
+          aoe: s.aoe as AOEData | undefined,
         });
       }
     }

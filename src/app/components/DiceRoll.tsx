@@ -91,12 +91,12 @@ function DiceRoll({
     // Compact inline card shown in chat history
     return (
       <div className="my-3 mx-auto max-w-xs animate-fade-in">
-        <div className="card-parchment border border-gold-dark/30 rounded-md overflow-hidden">
+        <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-md overflow-hidden">
           <div className="flex items-center gap-3 px-3 py-2">
             {/* Mini die — shows d20 roll */}
             <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
               <div
-                className="absolute inset-0 bg-dungeon-mid border border-gold/30"
+                className="absolute inset-0 bg-dungeon-light/60 border border-gold/50 shadow-[0_0_8px_rgba(201,168,76,0.2)]"
                 style={{ clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" }}
               />
               <span className={`relative font-cinzel text-lg font-bold tabular-nums ${dieColour}`}>
@@ -105,11 +105,11 @@ function DiceRoll({
             </div>
             {/* Summary */}
             <div className="flex-1 min-w-0">
-              <div className="font-cinzel text-[11px] tracking-widest text-gold-dark/80 uppercase">
+              <div className="font-cinzel text-[11px] tracking-widest text-red-400 uppercase">
                 {result.checkType}
               </div>
-              <div className="font-crimson text-ink/70 text-sm">
-                {result.dieResult} {result.totalModifier} = <strong className="text-base">{result.total}</strong>
+              <div className="font-crimson text-parchment/70 text-sm">
+                {result.dieResult} {result.totalModifier} = <strong className="text-parchment/90 text-base">{result.total}</strong>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -131,25 +131,25 @@ function DiceRoll({
   // Full interactive card
   return (
     <div className="animate-fade-in my-4 mx-auto max-w-sm">
-      <div className="card-parchment border border-gold-dark/50 rounded-lg overflow-hidden shadow-parchment">
+      <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-lg overflow-hidden shadow-lg">
         {/* Header */}
-        <div className="bg-dungeon-mid px-4 py-2 border-b border-gold-dark/30 text-center">
-          <span className="font-cinzel text-gold text-xs tracking-widest uppercase">
+        <div className="bg-dungeon-mid px-4 py-2 border-b border-red-900/30 text-center">
+          <span className="font-cinzel text-red-400 text-xs tracking-widest uppercase">
             {result.checkType}
           </span>
         </div>
 
         {/* Die + total */}
-        <div className="flex flex-col items-center py-6 gap-4">
+        <div className="flex flex-col items-center py-4 gap-3">
           {/* Row: d20 die → + mod → = total */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* d20 die */}
-            <div className="relative w-20 h-20 flex items-center justify-center">
+            <div className="relative w-14 h-14 flex items-center justify-center">
               <div
-                className="absolute inset-0 bg-dungeon-light border-2 border-gold/40"
+                className="absolute inset-0 bg-dungeon-light/60 border-2 border-gold/50 shadow-[0_0_10px_rgba(201,168,76,0.25)]"
                 style={{ clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" }}
               />
-              <span className={`relative font-cinzel text-3xl font-bold tabular-nums ${dieColour}`}>
+              <span className={`relative font-cinzel text-2xl font-bold tabular-nums ${dieColour}`}>
                 {displayValue}
               </span>
             </div>
@@ -157,13 +157,13 @@ function DiceRoll({
             {settled && (
               <>
                 <div className="flex flex-col items-center">
-                  <span className="font-cinzel text-2xl font-bold text-ink/70 tabular-nums">
+                  <span className="font-cinzel text-lg font-bold text-parchment/70 tabular-nums">
                     {result.totalModifier}
                   </span>
-                  <span className="font-crimson text-ink/50 text-[10px] uppercase tracking-wide">mod</span>
+                  <span className="font-crimson text-parchment/40 text-[10px] uppercase tracking-wide">mod</span>
                 </div>
-                <span className="font-crimson text-ink/30 text-xl">=</span>
-                <span className={`font-cinzel text-5xl font-bold tabular-nums leading-none ${dieColour}`}>
+                <span className="font-crimson text-parchment/30 text-lg">=</span>
+                <span className={`font-cinzel text-3xl font-bold tabular-nums leading-none ${dieColour}`}>
                   {result.total}
                 </span>
               </>
@@ -172,7 +172,7 @@ function DiceRoll({
 
           {/* Components */}
           {settled && result.components && (
-            <div className="font-crimson italic text-ink/50 text-xs px-4 text-center">
+            <div className="font-crimson italic text-parchment/40 text-xs px-4 text-center">
               {result.components}
             </div>
           )}
@@ -180,18 +180,18 @@ function DiceRoll({
 
         {/* Result banner */}
         {settled && (
-          <div className={`text-center py-2 font-cinzel text-sm tracking-widest border-t border-gold-dark/20 ${resultColour}`}>
+          <div className={`text-center py-2 font-cinzel text-sm tracking-widest border-t border-red-900/30 ${resultColour}`}>
             {resultLabel}
           </div>
         )}
 
         {/* Damage section */}
         {settled && hasDamage && damagePhase !== "hidden" && (
-          <div className="border-t border-gold-dark/20 px-4 py-4">
+          <div className="border-t border-red-900/30 px-4 py-4">
             <div className="flex flex-col items-center gap-3">
               {/* Animated damage total */}
               <div className="flex items-baseline gap-2">
-                <span className="font-cinzel text-xs tracking-widest text-ink/50 uppercase">Damage</span>
+                <span className="font-cinzel text-xs tracking-widest text-parchment/40 uppercase">Damage</span>
                 <span className={`font-cinzel text-4xl font-bold tabular-nums ${
                   result.damage!.isCrit ? "text-amber-400 drop-shadow-[0_0_6px_rgba(201,168,76,0.6)]" : "text-red-400"
                 }`}>
@@ -202,15 +202,15 @@ function DiceRoll({
               {damagePhase === "settled" && (
                 <div className="w-full space-y-1.5 animate-fade-in">
                   {result.damage!.breakdown.map((b, i) => (
-                    <div key={i} className="flex items-center justify-between font-crimson text-sm text-ink/70">
-                      <span className="font-cinzel text-xs text-ink/50 uppercase tracking-wide">{b.label}</span>
+                    <div key={i} className="flex items-center justify-between font-crimson text-sm text-parchment/70">
+                      <span className="font-cinzel text-xs text-parchment/40 uppercase tracking-wide">{b.label}</span>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-ink/40 text-xs">
+                        <span className="text-parchment/40 text-xs">
                           [{b.rolls.join(", ")}]{b.flatBonus ? (b.flatBonus > 0 ? `+${b.flatBonus}` : b.flatBonus) : ""}
                         </span>
-                        <span className="font-bold text-ink/80">= {b.subtotal}</span>
+                        <span className="font-bold text-parchment/80">= {b.subtotal}</span>
                         {b.damageType && (
-                          <span className="text-[11px] text-ink/40 italic">{b.damageType}</span>
+                          <span className="text-[11px] text-parchment/40 italic">{b.damageType}</span>
                         )}
                       </div>
                     </div>
@@ -223,7 +223,7 @@ function DiceRoll({
 
         {/* Notes */}
         {settled && result.notes && (
-          <div className="px-4 pb-3 text-center font-crimson italic text-ink/60 text-sm">
+          <div className="px-4 pb-3 text-center font-crimson italic text-parchment/50 text-sm">
             {result.notes}
           </div>
         )}

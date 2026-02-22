@@ -131,6 +131,13 @@ Common violations to avoid:
 - **Weapon/damage assumptions** — don't infer damage from weapon names; always use `weaponDamage` in state (set by the DM or character creation).
 - **Feature progression tables** — Sneak Attack, Rage uses, Spell Slots, Ki Points etc. should not be computed from class name. Either store the current value in state and let the DM/level-up flow update it, or maintain a class progression table keyed by class name.
 
+## Architecture Principle: No Regex Parsing for Mechanical Abilities
+**Never use regex to parse ability descriptions for mechanical effects (damage dice, scaling values, save DCs, etc.).** Regex-based extraction from natural-language text is fragile and error-prone. Instead:
+
+- **Hardcode mechanical data in a config/seed file** — define structured objects with explicit fields (`damageDice`, `scaling`, `saveDC`, `aoeRadius`, etc.) and insert them into Firestore during the seeding process (`seedFirestore.ts`).
+- **Read mechanics from Firestore at runtime** — agents and game logic should look up pre-seeded structured data, not parse prose descriptions.
+- **Reserve description text for display only** — the human-readable description is for the player to read, not for code to extract values from.
+
 ## UI Design Rules
 - **Minimum description text size: 16px** — No description or body text should be smaller than 16px (`text-sm` in Tailwind, overridden to 16px). Labels and navigation chrome may use smaller sizes, but any text the player reads for content must be at least `text-sm`.
 

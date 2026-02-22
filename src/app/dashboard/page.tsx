@@ -240,7 +240,7 @@ export default function Dashboard() {
   /** Derive AOE preview data from the selected ability (if it's an AOE spell). */
   const aoePreview = useMemo(() => {
     if (!selectedAbility?.aoe) return undefined;
-    const originType = selectedAbility.range?.type === "self" ? "self" as const : "ranged" as const;
+    const originType = selectedAbility.aoe.origin === "self" ? "self" as const : "ranged" as const;
     return {
       shape: selectedAbility.aoe,
       originType,

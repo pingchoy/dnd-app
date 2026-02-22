@@ -961,6 +961,10 @@ function buildSpellAbility(slug: string, srd: Record<string, unknown>): Ability 
   if (damageRoll) ability.damageRoll = damageRoll;
   if (damageType) ability.damageType = damageType;
   if (srd.upcastScaling) ability.upcastScaling = srd.upcastScaling as Record<string, { damageRoll?: string; targetCount?: number }>;
+  if (srd.aoe) {
+    ability.aoe = srd.aoe as import("./gameTypes").AOEData;
+    ability.requiresTarget = false; // AOE spells target an area, not a single NPC
+  }
   return ability;
 }
 
