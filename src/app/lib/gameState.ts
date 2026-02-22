@@ -133,20 +133,42 @@ export function serializeActiveNPCs(npcs: NPC[]): string {
   );
 }
 
-/** Compact summary of the story state for prompt injection. */
+/**
+ * Compact summary of the story state for prompt injection.
+ *
+ * Outputs all memory tiers:
+ *   1. campaignSummary (living synopsis) — falls back to campaignBackground
+ *   2. milestones (permanent plot beats)
+ *   3. activeQuests + importantNPCs (tracked state)
+ *   4. recentEvents (all stored, up to 10)
+ */
 export function serializeStoryState(s: StoryState): string {
-  return [
-    `Campaign: ${s.campaignTitle}`,
-    `Location: ${s.currentLocation}`,
-    `Scene: ${s.currentScene}`,
-    `Quests: ${s.activeQuests.join("; ")}`,
-    `Notable NPCs: ${s.importantNPCs.join(", ")}`,
-    s.recentEvents.length
-      ? `Recent: ${s.recentEvents.slice(-3).join(" | ")}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [`Campaign: ${s.campaignTitle}`];
+
+  if (s.campaignSummary) {
+    lines.push(`Summary: ${s.campaignSummary}`);
+  } else if (s.campaignBackground) {
+    lines.push(`Background: ${s.campaignBackground}`);
+  }
+
+  if (s.milestones?.length) {
+    lines.push(`Milestones: ${s.milestones.join(" | ")}`);
+  }
+
+  lines.push(`Location: ${s.currentLocation}`);
+  lines.push(`Scene: ${s.currentScene}`);
+
+  if (s.activeQuests.length) {
+    lines.push(`Active Quests: ${s.activeQuests.join("; ")}`);
+  }
+  if (s.importantNPCs.length) {
+    lines.push(`Notable NPCs: ${s.importantNPCs.join(", ")}`);
+  }
+  if (s.recentEvents.length) {
+    lines.push(`Recent: ${s.recentEvents.join(" | ")}`);
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -314,6 +336,17 @@ export interface StateChanges {
   cantrips_learned?: string[];
   /** NPCs the DM wants to introduce. Handled by the API route, not applied to state directly. */
   npcs_to_create?: NPCToCreate[];
+  // ─── Memory tier fields ───
+  /** A major plot milestone to record permanently (e.g. "defeated the shadow dragon"). */
+  milestone?: string;
+  /** Updated 2-3 sentence campaign synopsis. Only when the arc shifts significantly. */
+  campaign_summary_update?: string;
+  /** Quest names to add to active quests. */
+  quests_added?: string[];
+  /** Quest names completed or abandoned — removed from active quests. */
+  quests_completed?: string[];
+  /** Names of important NPCs the player has met. */
+  npcs_met?: string[];
 }
 
 /**
@@ -360,6 +393,33 @@ export function applyStateChanges(changes: StateChanges): void {
   if (changes.notable_event) {
     s.recentEvents.push(changes.notable_event);
     if (s.recentEvents.length > 10) s.recentEvents = s.recentEvents.slice(-10);
+  }
+  // ─── Memory tier mutations ───
+  if (changes.milestone) {
+    if (!s.milestones) s.milestones = [];
+    s.milestones.push(changes.milestone.toLowerCase());
+    if (s.milestones.length > 20) s.milestones = s.milestones.slice(-20);
+  }
+  if (changes.campaign_summary_update) {
+    s.campaignSummary = changes.campaign_summary_update;
+  }
+  if (changes.quests_added?.length) {
+    for (const q of changes.quests_added) {
+      const lower = q.toLowerCase();
+      if (!s.activeQuests.includes(lower)) s.activeQuests.push(lower);
+    }
+  }
+  if (changes.quests_completed?.length) {
+    s.activeQuests = s.activeQuests.filter(
+      (q) => !changes.quests_completed!.some((c) => c.toLowerCase() === q.toLowerCase()),
+    );
+  }
+  if (changes.npcs_met?.length) {
+    for (const npc of changes.npcs_met) {
+      const lower = npc.toLowerCase();
+      if (!s.importantNPCs.includes(lower)) s.importantNPCs.push(lower);
+    }
+    if (s.importantNPCs.length > 30) s.importantNPCs = s.importantNPCs.slice(-30);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   if (changes.xp_gained && changes.xp_gained > 0) p.xp = (p.xp ?? 0) + changes.xp_gained;

@@ -151,6 +151,32 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
           required: ["name", "slug", "disposition"],
         },
       },
+      // ─── Memory tier fields ───
+      milestone: {
+        type: "string",
+        description:
+          "A major plot milestone to remember permanently (e.g. 'defeated the sewer king', 'betrayed by captain aldric'). Use sparingly — only for events that should be remembered for the entire campaign. 1-2 per session max.",
+      },
+      campaign_summary_update: {
+        type: "string",
+        description:
+          "Updated 2-3 sentence campaign summary. Only provide when the story arc shifts significantly (new act, major revelation, fundamental change in the quest). This overwrites the previous summary.",
+      },
+      quests_added: {
+        type: "array",
+        items: { type: "string" },
+        description: "Quest names to add to active quests when the player accepts or discovers a new objective.",
+      },
+      quests_completed: {
+        type: "array",
+        items: { type: "string" },
+        description: "Quest names that have been completed or abandoned. These are removed from active quests.",
+      },
+      npcs_met: {
+        type: "array",
+        items: { type: "string" },
+        description: "Names of important NPCs the player has met or interacted with significantly. Not every shopkeeper — only story-relevant characters.",
+      },
     },
     required: [],
   },
