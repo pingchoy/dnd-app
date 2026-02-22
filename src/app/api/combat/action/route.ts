@@ -5,7 +5,7 @@
  * No AI calls — resolves instantly and returns playerResult for the dice UI.
  *
  * After the player sees their roll and clicks Continue, the frontend calls
- * POST /api/combat/continue to trigger narration + NPC turns via SSE.
+ * POST /api/combat/resolve to trigger narration + NPC turns.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -19,6 +19,7 @@ import {
 import { saveCharacterState } from "../../../lib/characterStore";
 import { saveEncounterState } from "../../../lib/encounterStore";
 import { resolvePlayerAction } from "../../../lib/combatResolver";
+import { emptyCombatStats } from "../../../lib/gameTypes";
 import type { GridPosition } from "../../../lib/gameTypes";
 import { addMessage } from "../../../lib/messageStore";
 
@@ -90,11 +91,39 @@ export async function POST(req: NextRequest) {
     const playerResult = resolvePlayerAction(player, ability, targetNPC, positions);
 
     // Apply player damage to target NPC
+    let targetDied = false;
     if (playerResult.success && playerResult.damage && targetNPC) {
-      updateNPC({
+      const npcResult = updateNPC({
         id: targetNPC.id,
         hp_delta: -playerResult.damage.totalDamage,
       });
+      targetDied = npcResult.died;
+    }
+
+    // ── Accumulate player combat stats ──────────────────────────────────────
+    if (!encounter.combatStats) encounter.combatStats = {};
+    if (!encounter.combatStats[characterId]) encounter.combatStats[characterId] = emptyCombatStats();
+    const stats = encounter.combatStats[characterId];
+
+    const isAttack = ability.type === "weapon" || ability.attackType === "melee" || ability.attackType === "ranged";
+    if (isAttack && !playerResult.noCheck) {
+      stats.attacksMade += 1;
+      if (playerResult.success) stats.attacksHit += 1;
+      if (playerResult.damage?.isCrit) stats.criticalHits += 1;
+      if (playerResult.success && playerResult.damage) stats.damageDealt += playerResult.damage.totalDamage;
+    }
+
+    if (ability.type === "spell" || ability.type === "cantrip") {
+      stats.spellsCast += 1;
+    }
+
+    if (!stats.abilitiesUsed.includes(ability.name)) {
+      stats.abilitiesUsed.push(ability.name);
+    }
+
+    if (targetDied && targetNPC) {
+      stats.killCount += 1;
+      stats.npcsDefeated.push(targetNPC.name);
     }
 
     // Write to messages subcollection (roll result visible via real-time listener)
@@ -118,6 +147,9 @@ export async function POST(req: NextRequest) {
         round: encounter.round,
         turnOrder: encounter.turnOrder,
         currentTurnIndex: encounter.currentTurnIndex,
+        combatStats: encounter.combatStats,
+        defeatedNPCs: encounter.defeatedNPCs,
+        totalXPAwarded: encounter.totalXPAwarded,
       }),
     ]);
 

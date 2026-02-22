@@ -232,6 +232,8 @@ export interface PlayerState {
   maxCantrips?: number;
   knownSpells?: string[];
   maxKnownSpells?: number;
+  preparedSpells?: string[];
+  maxPreparedSpells?: number;
   spellSlots?: Record<string, number>;
   spellSlotsUsed?: Record<string, number>;
   // ─── Abilities (weapons + cantrips + spells + universal actions) ───
@@ -257,6 +259,7 @@ export interface PendingLevelData {
   spellSlots?: Record<string, number>;
   maxCantrips?: number;
   maxKnownSpells?: number;
+  maxPreparedSpells?: number;
   isASILevel: boolean;
   requiresSubclass: boolean;
   featureChoices: Array<{ name: string; description: string; options: string[]; picks?: number }>;
@@ -309,6 +312,54 @@ export interface GameState {
   story: StoryState;
 }
 
+// ─── Combat Victory Types ────────────────────────────────────────────────────
+
+export interface CombatStats {
+  damageDealt: number;
+  damageTaken: number;
+  healingDone: number;
+  criticalHits: number;
+  attacksMade: number;
+  attacksHit: number;
+  spellsCast: number;
+  abilitiesUsed: string[];
+  killCount: number;
+  npcsDefeated: string[];
+}
+
+export function emptyCombatStats(): CombatStats {
+  return {
+    damageDealt: 0,
+    damageTaken: 0,
+    healingDone: 0,
+    criticalHits: 0,
+    attacksMade: 0,
+    attacksHit: 0,
+    spellsCast: 0,
+    abilitiesUsed: [],
+    killCount: 0,
+    npcsDefeated: [],
+  };
+}
+
+export interface VictoryLootItem {
+  name: string;
+  description?: string;
+  weapon?: { dice: string; stat: string; bonus: number; damageType?: string };
+}
+
+export interface VictoryData {
+  totalXP: number;
+  combatStats: Record<string, CombatStats>;
+  loot: VictoryLootItem[];
+  goldAwarded: number;
+  defeatedNPCs: string[];
+  rounds: number;
+  narrative: string;
+  tokensUsed: number;
+  estimatedCostUsd: number;
+}
+
 // ─── Firestore V2 Storage Types ───────────────────────────────────────────────
 
 /** Character document (characters/{id}) — player data only. */
@@ -339,6 +390,14 @@ export interface StoredEncounter {
   location: string;
   /** Snapshot of scene at encounter start (for combat agent narration). */
   scene: string;
+  /** Per-player combat stats accumulated during the encounter. */
+  combatStats?: Record<string, CombatStats>;
+  /** Snapshot of NPCs before removal (for loot context). */
+  defeatedNPCs?: NPC[];
+  /** Cumulative XP awarded from this encounter. */
+  totalXPAwarded?: number;
+  /** Populated when combat ends — consumed by the frontend victory screen. */
+  victoryData?: VictoryData;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -370,7 +429,7 @@ export interface StoredMessage {
 export interface StoredAction {
   id?: string;
   characterId: string;
-  type: "chat" | "roll" | "combat_action" | "combat_continue";
+  type: "chat" | "roll" | "combat_action" | "combat_resolve";
   payload: Record<string, unknown>;
   status: "pending" | "processing" | "completed" | "failed";
   createdAt: number;

@@ -1,26 +1,31 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Input from "../components/Input";
 import ChatCard from "../components/ChatCard";
-import DiceRoll from "../components/DiceRoll";
 import CharacterSheet from "../components/CharacterSheet";
 import CharacterSidebar from "../components/CharacterSidebar";
 import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
+import VictoryScreen from "../components/VictoryScreen";
 import CombatGrid, { CombatGridHandle } from "../components/CombatGrid";
 import CompactChatPanel from "../components/CompactChatPanel";
 import TurnOrderBar from "../components/TurnOrderBar";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
+import { useCombat } from "../hooks/useCombat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
-import type { GameState, Ability } from "../lib/gameTypes";
+import type { GameState, Ability, StoredEncounter } from "../lib/gameTypes";
 import { feetDistance, validateAttackRange } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
   label: string;
 }
+
+/** Regex for attack-like actions in player input. */
+const ATTACK_PATTERN =
+  /\b(attack|strike|hit|stab|slash|shoot|fire|throw|cast)\b/i;
 
 function LoadingIndicator({ label }: LoadingIndicatorProps) {
   return (
@@ -42,24 +47,39 @@ function LoadingIndicator({ label }: LoadingIndicatorProps) {
 
 export default function Dashboard() {
   const router = useRouter();
+  // Ref bridges encounter data from useChat API responses to useCombat's setEncounter.
+  // Needed because useChat is called before useCombat (hook ordering), but the
+  // callback is only invoked asynchronously from fetch handlers.
+  const encounterBridgeRef = useRef<((enc: StoredEncounter | null) => void) | null>(null);
+
   const {
     messages,
     gameState,
-    encounter,
-    pendingRoll,
     isLoading,
-    isRolling,
     isNarrating,
-    isCombatProcessing,
     totalTokens,
     estimatedCostUsd,
     characterId,
     sendMessage,
-    confirmRoll,
     applyDebugResult,
-    executeCombatAction,
-    combatLabelRef,
-  } = useChat();
+    appendError,
+    setGameState,
+    setIsNarrating,
+    addTokens,
+    addCost,
+  } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
+
+  const { encounter, isCombatProcessing, executeCombatAction, combatLabelRef, setEncounter, victoryData, dismissVictory } = useCombat({
+    characterId,
+    gameState,
+    isNarrating,
+    setGameState,
+    setIsNarrating,
+    addTokens,
+    addCost,
+    onError: appendError,
+  });
+  encounterBridgeRef.current = setEncounter;
 
   const [userInput, setUserInput] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -72,7 +92,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingRoll, isRolling, isNarrating, isCombatProcessing]);
+  }, [messages, isNarrating, isCombatProcessing]);
+
+  // Re-scroll while a dice roll is animating so the expanding card stays in view
+  const lastMsg = messages[messages.length - 1];
+  const hasAnimatingRoll = lastMsg?.isNewRoll === true;
+  useEffect(() => {
+    if (!hasAnimatingRoll) return;
+    const id = setInterval(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 400);
+    // Animation completes in ~3s (d20 tumble + damage tumble)
+    const timeout = setTimeout(() => clearInterval(id), 3500);
+    return () => { clearInterval(id); clearTimeout(timeout); };
+  }, [hasAnimatingRoll]);
 
   // Escape key clears targeting mode
   useEffect(() => {
@@ -94,7 +127,7 @@ export default function Dashboard() {
   }, [combatLabelRef]);
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
-  const activeNPCs = encounter?.activeNPCs ?? [];
+  const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
   const inCombat =
     encounter != null &&
     activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0);
@@ -104,11 +137,9 @@ export default function Dashboard() {
     encounter,
   );
 
-  /** Regex for attack-like actions in player input. */
-  const ATTACK_PATTERN =
-    /\b(attack|strike|hit|stab|slash|shoot|fire|throw|cast)\b/i;
+  const isBusy = isNarrating || isCombatProcessing;
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     const input = userInput.trim();
     if (!input) return;
 
@@ -144,44 +175,21 @@ export default function Dashboard() {
 
     setUserInput("");
     await sendMessage(input);
-  };
-
-  if (isLoading || !gameState) {
-    return (
-      <main className="flex items-center justify-center h-screen bg-dungeon">
-        <div className="flex flex-col items-center gap-4">
-          <span className="font-cinzel text-gold text-3xl animate-pulse">
-            ✦
-          </span>
-          <p className="font-crimson text-parchment/50 italic text-sm">
-            Loading your adventure…
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  const { player, story } = gameState;
-  const pendingLevelUp = player.pendingLevelUp ?? null;
-  const isBusy = isRolling || isNarrating || !!pendingRoll || isCombatProcessing;
+  }, [userInput, inCombat, positions, activeNPCs, sendMessage]);
 
   /** Handle ability bar click: non-targeted abilities execute immediately, targeted ones enter targeting mode. */
-  const handleSelectAbility = (ability: Ability) => {
+  const handleSelectAbility = useCallback((ability: Ability) => {
     if (isBusy) return;
     if (!ability.requiresTarget) {
       setSelectedAbility(null);
       executeCombatAction(ability);
       return;
     }
-    if (selectedAbility?.id === ability.id) {
-      setSelectedAbility(null);
-    } else {
-      setSelectedAbility(ability);
-    }
-  };
+    setSelectedAbility((prev) => prev?.id === ability.id ? null : ability);
+  }, [isBusy, executeCombatAction]);
 
   /** Handle target click on the combat grid during targeting mode. */
-  const handleTargetSelected = (targetId: string) => {
+  const handleTargetSelected = useCallback((targetId: string) => {
     if (!selectedAbility || isBusy) return;
 
     const playerPos = positions.get("player");
@@ -201,14 +209,40 @@ export default function Dashboard() {
     setSelectedAbility(null);
     setRangeWarning(null);
     executeCombatAction(ability, targetId);
-  };
+  }, [selectedAbility, isBusy, positions, executeCombatAction]);
 
-  function handleLevelUpComplete(newState: GameState) {
+  const handleOpenFullSheet = useCallback(() => setFullSheetOpen(true), []);
+
+  // Memoize filtered messages to avoid creating a new array on every keystroke
+  const filteredMessages = useMemo(
+    () => messages.filter((m) => !(m.role === "user" && m.content.startsWith("[Combat]"))),
+    [messages],
+  );
+
+  const handleLevelUpComplete = useCallback((newState: GameState) => {
     applyDebugResult(
       newState,
       `You have reached level ${newState.player.level}!`,
     );
+  }, [applyDebugResult]);
+
+  if (isLoading || !gameState) {
+    return (
+      <main className="flex items-center justify-center h-screen bg-dungeon">
+        <div className="flex flex-col items-center gap-4">
+          <span className="font-cinzel text-gold text-3xl animate-pulse">
+            ✦
+          </span>
+          <p className="font-crimson text-parchment/50 italic text-sm">
+            Loading your adventure…
+          </p>
+        </div>
+      </main>
+    );
   }
+
+  const { player, story } = gameState;
+  const pendingLevelUp = player.pendingLevelUp ?? null;
 
   return (
     <main className="flex flex-col h-screen bg-dungeon bg-stone-texture">
@@ -361,90 +395,70 @@ export default function Dashboard() {
                 />
               </OrnateFrame>
 
-              {/* Collapsible chat overlay */}
-              {combatChatOpen ? (
-                <div
-                  className="absolute bottom-0 left-0 right-0 z-30 flex flex-col"
-                  style={{ maxHeight: "45%" }}
-                >
-                  <OrnateFrame className="overflow-hidden">
-                    <div
-                      className="flex flex-col bg-dungeon/95 backdrop-blur-sm"
-                      style={{ maxHeight: "40vh" }}
-                    >
-                      {/* Chat header with hide button */}
-                      <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1 flex items-center justify-between">
-                        <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
-                          Combat Log
-                        </span>
-                        <button
-                          onClick={() => setCombatChatOpen(false)}
-                          className="font-cinzel text-[10px] tracking-widest text-parchment/50 uppercase hover:text-gold transition-colors"
-                        >
-                          ▼ Hide
-                        </button>
-                      </div>
-                      <CompactChatPanel
-                        messages={messages}
-                        playerName={player.name}
-                        pendingRoll={pendingRoll}
-                        isRolling={isRolling}
-                        isNarrating={isNarrating}
-                        confirmRoll={confirmRoll}
-                      />
-                      {rangeWarning && (
-                        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-900/30 border-t border-amber-500/30">
-                          <p className="font-crimson text-amber-300/80 text-sm italic">
-                            {rangeWarning}
-                          </p>
-                        </div>
-                      )}
-                      <Input
-                        userInput={userInput}
-                        setUserInput={setUserInput}
-                        handleSubmit={handleSubmit}
-                        disabled={isBusy}
-                      />
+              {/* Collapsible chat overlay — always mounted, toggled via CSS to preserve animation state */}
+              <div
+                className={`absolute bottom-0 left-0 right-0 z-30 flex flex-col ${combatChatOpen ? "" : "hidden"}`}
+                style={{ maxHeight: "45%" }}
+              >
+                <OrnateFrame className="overflow-hidden">
+                  <div
+                    className="flex flex-col bg-dungeon/95 backdrop-blur-sm"
+                    style={{ maxHeight: "40vh" }}
+                  >
+                    {/* Chat header with hide button */}
+                    <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1 flex items-center justify-between">
+                      <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
+                        Combat Log
+                      </span>
+                      <button
+                        onClick={() => setCombatChatOpen(false)}
+                        className="font-cinzel text-[10px] tracking-widest text-parchment/50 uppercase hover:text-gold transition-colors"
+                      >
+                        ▼ Hide
+                      </button>
                     </div>
-                  </OrnateFrame>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setCombatChatOpen(true)}
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 font-cinzel text-[10px] tracking-widest text-parchment/60 uppercase bg-dungeon-mid/95 border border-gold/30 rounded-full px-4 py-1.5 hover:text-gold hover:border-gold/50 transition-colors backdrop-blur-sm"
-                >
-                  ▲ Show Chat
-                </button>
-              )}
+                    <CompactChatPanel
+                      messages={messages}
+                      playerName={player.name}
+                      isNarrating={isNarrating}
+                    />
+                    {rangeWarning && (
+                      <div className="flex-shrink-0 px-3 py-1.5 bg-amber-900/30 border-t border-amber-500/30">
+                        <p className="font-crimson text-amber-300/80 text-sm italic">
+                          {rangeWarning}
+                        </p>
+                      </div>
+                    )}
+                    <Input
+                      userInput={userInput}
+                      setUserInput={setUserInput}
+                      handleSubmit={handleSubmit}
+                      disabled={isBusy}
+                    />
+                  </div>
+                </OrnateFrame>
+              </div>
+              <button
+                onClick={() => setCombatChatOpen(true)}
+                className={`absolute bottom-3 left-1/2 -translate-x-1/2 z-30 font-cinzel text-[10px] tracking-widest text-parchment/60 uppercase bg-dungeon-mid/95 border border-gold/30 rounded-full px-4 py-1.5 hover:text-gold hover:border-gold/50 transition-colors backdrop-blur-sm ${combatChatOpen ? "hidden" : ""}`}
+              >
+                ▲ Show Chat
+              </button>
             </div>
           ) : (
             /* ── Normal chat layout ── */
             <OrnateFrame className="flex-1 overflow-hidden">
               <div className="tome-container flex-1 overflow-hidden flex flex-col">
                 <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-                  {messages
-                    .filter((m) => !(m.role === "user" && m.content.startsWith("[Combat]")))
-                    .map((message, idx) => (
+                  {filteredMessages.map((message) => (
                     <ChatCard
-                      key={idx}
+                      key={message.id}
                       message={message}
                       playerName={player.name}
                     />
                   ))}
 
-                  {isRolling && (
-                    <LoadingIndicator label="The fates are consulted" />
-                  )}
-
-                  {pendingRoll && (
-                    <DiceRoll
-                      result={pendingRoll.parsed}
-                      onContinue={confirmRoll}
-                      isNarrating={isNarrating}
-                    />
-                  )}
-
-                  {isNarrating && !pendingRoll && (
+                  {isNarrating && (
                     <LoadingIndicator label="The Dungeon Master weaves the tale" />
                   )}
 
@@ -478,11 +492,20 @@ export default function Dashboard() {
           <OrnateFrame className="flex-1 overflow-hidden">
             <CharacterSidebar
               player={player}
-              onOpenFullSheet={() => setFullSheetOpen(true)}
+              onOpenFullSheet={handleOpenFullSheet}
             />
           </OrnateFrame>
         </aside>
       </div>
+
+      {/* ── Victory screen modal ── */}
+      {victoryData && (
+        <VictoryScreen
+          victoryData={victoryData}
+          player={player}
+          onDismiss={dismissVictory}
+        />
+      )}
 
       {/* ── Level-up wizard modal ── */}
       {pendingLevelUp && characterId && (
@@ -499,7 +522,10 @@ export default function Dashboard() {
         <DemigodMenu
           characterId={characterId}
           isBusy={isBusy}
-          onResult={applyDebugResult}
+          onResult={(gs, msg, enc) => {
+            applyDebugResult(gs, msg);
+            if (enc !== undefined) setEncounter(enc);
+          }}
           onError={(msg) =>
             applyDebugResult(gameState, `[DEMIGOD ERROR] ${msg}`)
           }

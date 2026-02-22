@@ -39,6 +39,9 @@ export type {
   DamageBreakdown,
   GridPosition,
   StoredEncounter,
+  CombatStats,
+  VictoryLootItem,
+  VictoryData,
 } from "./gameTypes";
 
 export {
@@ -55,6 +58,7 @@ export {
   doubleDice,
   applyEffects,
   FIGHTING_STYLE_EFFECTS,
+  emptyCombatStats,
 } from "./gameTypes";
 
 import {
@@ -68,8 +72,10 @@ import {
   PendingLevelData,
   Ability,
   AbilityRange,
+  SpellAttackType,
   FEATURE_CHOICE_OPTIONS,
   FIGHTING_STYLE_EFFECTS,
+  emptyCombatStats,
   formatModifier,
   getModifier,
   getProficiencyBonus,
@@ -78,6 +84,8 @@ import {
   XP_THRESHOLDS,
   applyEffects,
 } from "./gameTypes";
+
+import { parseSpellRange } from "./combatEnforcement";
 
 /**
  * Build the shared stat lines used by both serializePlayerState and
@@ -132,7 +140,13 @@ function buildStatLines(p: PlayerState, compact: boolean): string[] {
         ? `Cantrips: ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`
         : `Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
     }
-    if (p.knownSpells?.length) {
+    if (p.preparedSpells?.length) {
+      // Prepared casters (Wizard, Cleric, Druid, Paladin)
+      lines.push(compact
+        ? `Prepared Spells: ${p.preparedSpells.map(s => s.replace(/-/g, " ")).join(", ")}`
+        : `Prepared Spells (${p.preparedSpells.length}/${p.maxPreparedSpells ?? p.preparedSpells.length}): ${p.preparedSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
+    } else if (p.knownSpells?.length) {
+      // Known casters (Bard, Sorcerer, Ranger, Warlock)
       lines.push(compact
         ? `Spells: ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`
         : `Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
@@ -590,10 +604,15 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   let xpAwarded = 0;
 
   if (input.remove_from_scene) {
+    // Snapshot the NPC before removal (for loot context and victory screen)
+    if (!encounter.defeatedNPCs) encounter.defeatedNPCs = [];
+    encounter.defeatedNPCs.push({ ...npc });
+
     // Auto-award XP for defeating hostile NPCs; level-up is checked in applyStateChangesAndPersist
     if (npc.disposition === "hostile" && npc.xpValue > 0) {
       xpAwarded = npc.xpValue;
       state.player.xp = (state.player.xp ?? 0) + xpAwarded;
+      encounter.totalXPAwarded = (encounter.totalXPAwarded ?? 0) + xpAwarded;
       console.log(`[updateNPC] Awarded ${xpAwarded} XP for defeating "${npc.name}" (total XP: ${state.player.xp})`);
     } else {
       console.log(`[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`);
@@ -718,18 +737,18 @@ async function computePendingLevelUp(
 
     let newSpellSlots = 0;
     let maxKnownSpells: number | undefined;
+    let maxPreparedSpells: number | undefined;
     if (levelData?.spellsKnown != null) {
-      // Known casters (Bard, Sorcerer, Ranger, Warlock)
+      // Known casters (Bard, Sorcerer, Ranger, Warlock) — fixed from class table
       newSpellSlots = Math.max(0, levelData.spellsKnown - runningKnownSpells);
       runningKnownSpells = levelData.spellsKnown;
       maxKnownSpells = levelData.spellsKnown;
     } else if (player.spellcastingAbility) {
-      // Prepared casters — ability_mod + level
+      // Prepared casters (Wizard, Cleric, Druid, Paladin) — ability_mod + level
+      // No incremental spell learning — they re-select prepared spells each level
       const abilityMod = getModifier(player.stats[player.spellcastingAbility]);
-      const prepared = Math.max(1, abilityMod + lvl);
-      newSpellSlots = Math.max(0, prepared - runningKnownSpells);
-      runningKnownSpells = prepared;
-      maxKnownSpells = prepared;
+      maxPreparedSpells = Math.max(1, abilityMod + lvl);
+      // newSpellSlots stays 0 — "spells" step is skipped, "prepare" step is used instead
     }
 
     // Highest spell level the player can cast at this level
@@ -747,7 +766,9 @@ async function computePendingLevelUp(
       newSubclassFeatures,
       spellSlots,
       maxCantrips,
-      maxKnownSpells,
+      // Only include the relevant spellcasting limit — Firestore rejects undefined values
+      ...(maxKnownSpells != null ? { maxKnownSpells } : {}),
+      ...(maxPreparedSpells != null ? { maxPreparedSpells } : {}),
       isASILevel,
       requiresSubclass,
       featureChoices,
@@ -894,6 +915,44 @@ export interface LevelChoices {
   featureChoices?: Record<string, string>;
   newCantrips?: string[];
   newSpells?: string[];
+  preparedSpells?: string[];
+}
+
+/**
+ * Build an Ability entry from SRD spell data. Used during level-up and
+ * character creation to create combat-ready ability objects from spell slugs.
+ */
+function buildSpellAbility(slug: string, srd: Record<string, unknown>): Ability {
+  const range = parseSpellRange((srd.range as string) ?? "self");
+  const damageRoll = srd.damageRoll as string | undefined;
+  const damageType = (srd.damageTypes as string[] | undefined)?.[0];
+
+  let attackType: SpellAttackType = "none";
+  if (srd.savingThrowAbility) {
+    attackType = "save";
+  } else if (srd.attackRoll) {
+    const r = ((srd.range as string) ?? "").toLowerCase();
+    const isMelee = r === "touch" || (r.match(/^(\d+)/) && parseInt(r) <= 5);
+    attackType = isMelee ? "melee" : "ranged";
+  } else if (damageRoll) {
+    attackType = "auto";
+  }
+
+  // Only include optional fields when defined — Firestore rejects undefined values
+  const ability: Ability = {
+    id: `spell:${slug}`,
+    name: (srd.name as string) ?? slug,
+    type: "spell",
+    spellLevel: (srd.level as number) ?? 1,
+    range,
+    attackType,
+    requiresTarget: attackType !== "none" && attackType !== "auto" && range.type !== "self",
+  };
+  if (srd.savingThrowAbility) ability.saveAbility = srd.savingThrowAbility as string;
+  if (damageRoll) ability.damageRoll = damageRoll;
+  if (damageType) ability.damageType = damageType;
+  if (srd.upcastScaling) ability.upcastScaling = srd.upcastScaling as Record<string, { damageRoll?: string; targetCount?: number }>;
+  return ability;
 }
 
 /**
@@ -998,24 +1057,58 @@ export async function applyLevelUp(
       state.player.maxKnownSpells = levelData.maxKnownSpells;
     }
 
-    // New cantrips
+    // New cantrips (add to list and create abilities)
     if (choice?.newCantrips?.length) {
       if (!state.player.cantrips) state.player.cantrips = [];
-      for (const cantrip of choice.newCantrips) {
-        if (!state.player.cantrips.includes(cantrip)) {
-          state.player.cantrips.push(cantrip);
+      if (!state.player.abilities) state.player.abilities = [];
+      for (const slug of choice.newCantrips) {
+        if (!state.player.cantrips.includes(slug)) {
+          state.player.cantrips.push(slug);
+        }
+        // Add cantrip ability if not already present
+        if (!state.player.abilities.some(a => a.id === `cantrip:${slug}`)) {
+          const srd = await querySRD("spell", slug);
+          if (srd) {
+            const ability = buildSpellAbility(slug, srd);
+            // Override type/level for cantrip
+            ability.id = `cantrip:${slug}`;
+            ability.type = "cantrip";
+            ability.spellLevel = 0;
+            state.player.abilities.push(ability);
+          }
         }
       }
     }
 
-    // New spells
+    // New spells (known casters only — add to list and create abilities)
     if (choice?.newSpells?.length) {
       if (!state.player.knownSpells) state.player.knownSpells = [];
-      for (const spell of choice.newSpells) {
-        if (!state.player.knownSpells.includes(spell)) {
-          state.player.knownSpells.push(spell);
+      if (!state.player.abilities) state.player.abilities = [];
+      for (const slug of choice.newSpells) {
+        if (!state.player.knownSpells.includes(slug)) {
+          state.player.knownSpells.push(slug);
+        }
+        // Add ability if not already present
+        if (!state.player.abilities.some(a => a.id === `spell:${slug}`)) {
+          const srd = await querySRD("spell", slug);
+          if (srd) state.player.abilities.push(buildSpellAbility(slug, srd));
         }
       }
+    }
+
+    // Prepared spells (prepared casters — full replacement, rebuild abilities)
+    if (choice?.preparedSpells?.length) {
+      state.player.preparedSpells = choice.preparedSpells;
+      if (!state.player.abilities) state.player.abilities = [];
+      // Remove old spell abilities and rebuild from new prepared list
+      state.player.abilities = state.player.abilities.filter(a => a.type !== "spell");
+      for (const slug of choice.preparedSpells) {
+        const srd = await querySRD("spell", slug);
+        if (srd) state.player.abilities.push(buildSpellAbility(slug, srd));
+      }
+    }
+    if (levelData.maxPreparedSpells != null) {
+      state.player.maxPreparedSpells = levelData.maxPreparedSpells;
     }
 
     // Update level

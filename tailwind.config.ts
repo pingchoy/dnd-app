@@ -60,10 +60,20 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(6px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        chatEnter: {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        victoryReveal: {
+          from: { opacity: "0", transform: "scale(0.85) translateY(12px)" },
+          to: { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
       },
       animation: {
         flicker: "flicker 2s ease-in-out infinite",
         "fade-in": "fadeIn 0.4s ease-out",
+        "chat-enter": "fadeIn 0.8s ease-out",
+        "victory-reveal": "victoryReveal 0.5s ease-out",
       },
     },
   },
