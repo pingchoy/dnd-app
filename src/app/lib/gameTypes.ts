@@ -285,10 +285,14 @@ export interface NPC {
 export interface StoryState {
   campaignTitle: string;
   campaignBackground: string;
+  /** Living 2-3 sentence synopsis of the campaign arc, updated by the DM agent. */
+  campaignSummary?: string;
   currentLocation: string;
   currentScene: string;
   activeQuests: string[];
   importantNPCs: string[];
+  /** Permanent major plot beats (boss defeats, betrayals, quest completions). Cap 20. */
+  milestones?: string[];
   recentEvents: string[];
   /** Firestore ID of the active combat encounter, if any. */
   activeEncounterId?: string;
