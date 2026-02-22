@@ -84,8 +84,7 @@ export async function getNPCStats(
   // The AI may use "xp_value", "xp", or omit it — derive from CR as fallback.
   const srdCR = srdData?.challengeRating as number | string | undefined;
   const xpFromCR = srdCR != null ? crToXP(srdCR) : 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  npcs = npcs.map((npc: any) => ({
+  npcs = npcs.map((npc: CreateNPCInput) => ({
     name: (npc.name as string) || request.name,
     ac: (npc.ac as number) || 10,
     max_hp: (npc.max_hp as number) || 1,
@@ -93,7 +92,7 @@ export async function getNPCStats(
     damage_dice: (npc.damage_dice as string) || "1d4",
     damage_bonus: (npc.damage_bonus as number) ?? 0,
     saving_throw_bonus: (npc.saving_throw_bonus as number) ?? 0,
-    xp_value: (npc.xp_value as number) || (npc.xp as number) || xpFromCR,
+    xp_value: (npc.xp_value as number) || xpFromCR,
     disposition: request.disposition,
     notes: (npc.notes as string) || "",
   }));
