@@ -39,7 +39,7 @@ import {
   CLASS_LEVEL_OVERRIDES,
   CLASS_FEATURES_OVERRIDES,
   SUBCLASS_FEATURES_OVERRIDES,
-  SPELL_AOE_OVERRIDES,
+  SPELL_OVERRIDES,
 } from "./srdOverrides";
 import type { ClassFeatureDef } from "./srdOverrides";
 
@@ -812,7 +812,7 @@ async function seedSpells(): Promise<
         school: s.school.name.toLowerCase(),
         castingTime: s.casting_time,
         range: s.range_text || `${s.range} feet`,
-        aoe: SPELL_AOE_OVERRIDES[slug],
+        aoe: SPELL_OVERRIDES[slug]?.aoe,
         components,
         duration: s.duration,
         concentration: s.concentration,
@@ -832,9 +832,9 @@ async function seedSpells(): Promise<
         material: s.material,
         materialSpecified: s.material_specified || undefined,
         rangeNumeric: s.range || undefined,
-        // Scaling data (only present on spells that scale)
-        cantripScaling: cantripScaling || undefined,
-        upcastScaling: upcastScaling || undefined,
+        // Scaling data: overrides take precedence, then API-computed values
+        cantripScaling: SPELL_OVERRIDES[slug]?.cantripScaling ?? cantripScaling ?? undefined,
+        upcastScaling: SPELL_OVERRIDES[slug]?.upcastScaling ?? upcastScaling ?? undefined,
       },
     };
   });

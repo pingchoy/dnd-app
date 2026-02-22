@@ -8,7 +8,7 @@
  * from the v2 API — this file provides only the structured mechanical values.
  */
 
-import type { Ability, AOEData, GameplayEffects } from "../src/app/lib/gameTypes";
+import type { Ability, AOEData, GameplayEffects, SpellScalingEntry } from "../src/app/lib/gameTypes";
 
 // ─── Race Overrides ──────────────────────────────────────────────────────────
 
@@ -1122,6 +1122,12 @@ export const SUBCLASS_FEATURES_OVERRIDES: Record<string, SubclassFeaturesOverrid
 
 // ─── Spell AOE Overrides ────────────────────────────────────────────────────
 
+export interface SpellMechanicsOverride {
+  aoe?: AOEData;
+  upcastScaling?: Record<string, SpellScalingEntry>;
+  cantripScaling?: Record<string, SpellScalingEntry>;
+}
+
 /**
  * Complete AOE data for all SRD spells with area effects.
  * Keyed by spell slug (after stripping the "srd_" prefix).
@@ -1131,79 +1137,79 @@ export const SUBCLASS_FEATURES_OVERRIDES: Record<string, SubclassFeaturesOverrid
  * size = radius for sphere/cylinder/cube, length for cone/line (in feet).
  * origin = "self" when the AOE emanates from the caster, "target" when placed at a point.
  */
-export const SPELL_AOE_OVERRIDES: Record<string, AOEData> = {
+export const SPELL_OVERRIDES: Record<string, SpellMechanicsOverride> = {
   // ── Cantrips ───────────────────────────────────────────────
-  "acid-splash":             { shape: "sphere", size: 5, origin: "target" },    // 2 creatures within 5 ft
-  "poison-spray":            { shape: "cone", size: 10, origin: "self" },       // 10-foot cone (Tasha's variant, SRD is single target — include for safety)
-  "thunderclap":             { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
-  "word-of-radiance":        { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
-  "sword-burst":             { shape: "sphere", size: 5, origin: "self" },      // 5-ft radius from self
+  "acid-splash":             { aoe: { shape: "sphere", size: 5, origin: "target" } },    // 2 creatures within 5 ft
+  "poison-spray":            { aoe: { shape: "cone", size: 10, origin: "self" } },       // 10-foot cone (Tasha's variant, SRD is single target — include for safety)
+  "thunderclap":             { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
+  "word-of-radiance":        { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
+  "sword-burst":             { aoe: { shape: "sphere", size: 5, origin: "self" } },      // 5-ft radius from self
 
   // ── 1st Level ──────────────────────────────────────────────
-  "burning-hands":           { shape: "cone", size: 15, origin: "self" },
-  "color-spray":             { shape: "cone", size: 15, origin: "self" },
-  "entangle":                { shape: "cube", size: 20, origin: "target" },     // 20-foot square
-  "faerie-fire":             { shape: "cube", size: 20, origin: "target" },
-  "fog-cloud":               { shape: "sphere", size: 20, origin: "target" },
-  "grease":                  { shape: "cube", size: 10, origin: "target" },     // 10-foot square
-  "sleep":                   { shape: "sphere", size: 20, origin: "target" },
-  "thunderwave":             { shape: "cube", size: 15, origin: "self" },
+  "burning-hands":           { aoe: { shape: "cone", size: 15, origin: "self" } },
+  "color-spray":             { aoe: { shape: "cone", size: 15, origin: "self" } },
+  "entangle":                { aoe: { shape: "cube", size: 20, origin: "target" } },     // 20-foot square
+  "faerie-fire":             { aoe: { shape: "cube", size: 20, origin: "target" } },
+  "fog-cloud":               { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "grease":                  { aoe: { shape: "cube", size: 10, origin: "target" } },     // 10-foot square
+  "sleep":                   { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "thunderwave":             { aoe: { shape: "cube", size: 15, origin: "self" } },
 
   // ── 2nd Level ──────────────────────────────────────────────
-  "darkness":                { shape: "sphere", size: 15, origin: "target" },
-  "gust-of-wind":            { shape: "line", size: 60, width: 10, origin: "self" },
-  "moonbeam":                { shape: "cylinder", size: 5, origin: "target" },
-  "shatter":                 { shape: "sphere", size: 10, origin: "target" },
-  "silence":                 { shape: "sphere", size: 20, origin: "target" },
-  "spike-growth":            { shape: "sphere", size: 20, origin: "target" },
-  "web":                     { shape: "cube", size: 20, origin: "target" },
-  "flaming-sphere":          { shape: "sphere", size: 5, origin: "target" },
-  "calm-emotions":           { shape: "sphere", size: 20, origin: "target" },
+  "darkness":                { aoe: { shape: "sphere", size: 15, origin: "target" } },
+  "gust-of-wind":            { aoe: { shape: "line", size: 60, width: 10, origin: "self" } },
+  "moonbeam":                { aoe: { shape: "cylinder", size: 5, origin: "target" } },
+  "shatter":                 { aoe: { shape: "sphere", size: 10, origin: "target" } },
+  "silence":                 { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "spike-growth":            { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "web":                     { aoe: { shape: "cube", size: 20, origin: "target" } },
+  "flaming-sphere":          { aoe: { shape: "sphere", size: 5, origin: "target" } },
+  "calm-emotions":           { aoe: { shape: "sphere", size: 20, origin: "target" } },
 
   // ── 3rd Level ──────────────────────────────────────────────
-  "call-lightning":          { shape: "cylinder", size: 60, origin: "target" },
-  "daylight":                { shape: "sphere", size: 60, origin: "target" },
-  "fear":                    { shape: "cone", size: 30, origin: "self" },
-  "fireball":                { shape: "sphere", size: 20, origin: "target" },
-  "hypnotic-pattern":        { shape: "cube", size: 30, origin: "target" },
-  "lightning-bolt":          { shape: "line", size: 100, width: 5, origin: "self" },
-  "sleet-storm":             { shape: "cylinder", size: 40, origin: "target" },
-  "slow":                    { shape: "cube", size: 40, origin: "target" },
-  "spirit-guardians":        { shape: "sphere", size: 15, origin: "self" },
-  "stinking-cloud":          { shape: "sphere", size: 20, origin: "target" },
-  "plant-growth":            { shape: "sphere", size: 100, origin: "target" },
+  "call-lightning":          { aoe: { shape: "cylinder", size: 60, origin: "target" } },
+  "daylight":                { aoe: { shape: "sphere", size: 60, origin: "target" } },
+  "fear":                    { aoe: { shape: "cone", size: 30, origin: "self" } },
+  "fireball":                { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "hypnotic-pattern":        { aoe: { shape: "cube", size: 30, origin: "target" } },
+  "lightning-bolt":          { aoe: { shape: "line", size: 100, width: 5, origin: "self" } },
+  "sleet-storm":             { aoe: { shape: "cylinder", size: 40, origin: "target" } },
+  "slow":                    { aoe: { shape: "cube", size: 40, origin: "target" } },
+  "spirit-guardians":        { aoe: { shape: "sphere", size: 15, origin: "self" } },
+  "stinking-cloud":          { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "plant-growth":            { aoe: { shape: "sphere", size: 100, origin: "target" } },
 
   // ── 4th Level ──────────────────────────────────────────────
-  "black-tentacles":         { shape: "cube", size: 20, origin: "target" },     // 20-foot square
-  "confusion":               { shape: "sphere", size: 10, origin: "target" },
-  "ice-storm":               { shape: "cylinder", size: 20, origin: "target" },
+  "black-tentacles":         { aoe: { shape: "cube", size: 20, origin: "target" } },     // 20-foot square
+  "confusion":               { aoe: { shape: "sphere", size: 10, origin: "target" } },
+  "ice-storm":               { aoe: { shape: "cylinder", size: 20, origin: "target" } },
 
   // ── 5th Level ──────────────────────────────────────────────
-  "cloudkill":               { shape: "sphere", size: 20, origin: "target" },
-  "cone-of-cold":            { shape: "cone", size: 60, origin: "self" },
-  "insect-plague":           { shape: "sphere", size: 20, origin: "target" },
-  "flame-strike":            { shape: "cylinder", size: 10, origin: "target" },
+  "cloudkill":               { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "cone-of-cold":            { aoe: { shape: "cone", size: 60, origin: "self" } },
+  "insect-plague":           { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "flame-strike":            { aoe: { shape: "cylinder", size: 10, origin: "target" } },
 
   // ── 6th Level ──────────────────────────────────────────────
-  "chain-lightning":         { shape: "sphere", size: 30, origin: "target" },   // bounces to targets within 30 ft
-  "circle-of-death":         { shape: "sphere", size: 60, origin: "target" },
-  "freezing-sphere":         { shape: "sphere", size: 60, origin: "target" },
-  "sunbeam":                 { shape: "line", size: 60, width: 5, origin: "self" },
-  "blade-barrier":           { shape: "line", size: 100, width: 5, origin: "target" },
+  "chain-lightning":         { aoe: { shape: "sphere", size: 30, origin: "target" } },   // bounces to targets within 30 ft
+  "circle-of-death":         { aoe: { shape: "sphere", size: 60, origin: "target" } },
+  "freezing-sphere":         { aoe: { shape: "sphere", size: 60, origin: "target" } },
+  "sunbeam":                 { aoe: { shape: "line", size: 60, width: 5, origin: "self" } },
+  "blade-barrier":           { aoe: { shape: "line", size: 100, width: 5, origin: "target" } },
 
   // ── 7th Level ──────────────────────────────────────────────
-  "delayed-blast-fireball":  { shape: "sphere", size: 20, origin: "target" },
-  "fire-storm":              { shape: "cube", size: 10, origin: "target" },     // ten 10-ft cubes
-  "prismatic-spray":         { shape: "cone", size: 60, origin: "self" },
-  "reverse-gravity":         { shape: "cylinder", size: 50, origin: "target" },
+  "delayed-blast-fireball":  { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "fire-storm":              { aoe: { shape: "cube", size: 10, origin: "target" } },     // ten 10-ft cubes
+  "prismatic-spray":         { aoe: { shape: "cone", size: 60, origin: "self" } },
+  "reverse-gravity":         { aoe: { shape: "cylinder", size: 50, origin: "target" } },
 
   // ── 8th Level ──────────────────────────────────────────────
-  "earthquake":              { shape: "sphere", size: 100, origin: "target" },
-  "incendiary-cloud":        { shape: "sphere", size: 20, origin: "target" },
-  "sunburst":                { shape: "sphere", size: 60, origin: "target" },
+  "earthquake":              { aoe: { shape: "sphere", size: 100, origin: "target" } },
+  "incendiary-cloud":        { aoe: { shape: "sphere", size: 20, origin: "target" } },
+  "sunburst":                { aoe: { shape: "sphere", size: 60, origin: "target" } },
 
   // ── 9th Level ──────────────────────────────────────────────
-  "meteor-swarm":            { shape: "sphere", size: 40, origin: "target" },
-  "storm-of-vengeance":      { shape: "cylinder", size: 360, origin: "target" },
-  "weird":                   { shape: "sphere", size: 30, origin: "target" },
+  "meteor-swarm":            { aoe: { shape: "sphere", size: 40, origin: "target" } },
+  "storm-of-vengeance":      { aoe: { shape: "cylinder", size: 360, origin: "target" } },
+  "weird":                   { aoe: { shape: "sphere", size: 30, origin: "target" } },
 };
