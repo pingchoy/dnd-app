@@ -2,7 +2,6 @@
 
 import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from "react";
 import type { NPC, PlayerState, GridPosition, Ability } from "../lib/gameTypes";
-import { toDisplayCase } from "../lib/gameTypes";
 import {
   cellsInRange,
   validateMovement,
@@ -22,15 +21,7 @@ interface Props {
   targetingAbility?: Ability | null;
   /** Called when a valid target is clicked during targeting mode. */
   onTargetSelected?: (targetId: string) => void;
-  /** Combat abilities to display in the overlay bar. */
-  abilities?: Ability[];
-  /** Currently selected ability (for highlight state). */
-  selectedAbility?: Ability | null;
-  /** Called when an ability button is clicked. */
-  onSelectAbility?: (ability: Ability) => void;
-  /** Whether the ability bar buttons are disabled (during busy states). */
-  abilityBarDisabled?: boolean;
-  /** Called on right-click to cancel pending actions (targeting, spell panel, etc.). */
+  /** Called on right-click to cancel pending actions (targeting, etc.). */
   onCancel?: () => void;
   /** Optional element rendered below the combat map header (e.g. TurnOrderBar). */
   headerExtra?: React.ReactNode;
@@ -99,20 +90,6 @@ function getInitials(name: string): string {
 
 function clampScale(s: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
-}
-
-/** Format a compact range tag for an ability button. */
-function abilityRangeTag(ability: Ability): string {
-  if (ability.type === "action") return "Self";
-  const r = ability.range;
-  if (!r) return "5 ft";
-  switch (r.type) {
-    case "self":   return "Self";
-    case "touch":  return "Touch";
-    case "melee":  return `${r.reach ?? 5} ft`;
-    case "ranged": return `${r.shortRange ?? 30} ft`;
-    case "both":   return `${r.reach ?? 5}/${r.shortRange ?? 20} ft`;
-  }
 }
 
 /**
@@ -269,10 +246,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   gridSize,
   targetingAbility = null,
   onTargetSelected,
-  abilities = [],
-  selectedAbility = null,
-  onSelectAbility,
-  abilityBarDisabled = false,
   onCancel,
   headerExtra,
 }, ref) {
@@ -298,9 +271,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragPixel, setDragPixel] = useState<{ x: number; y: number } | null>(null);
   const [dragOrigin, setDragOrigin] = useState<GridPosition | null>(null);
-
-  // Spell submenu panel toggle
-  const [spellPanelOpen, setSpellPanelOpen] = useState(false);
 
   // Pan (left-click on empty space, or middle-click anywhere)
   const [isPanning, setIsPanning] = useState(false);
@@ -969,15 +939,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
     setOffset(newOffset);
   }, []);
 
-  // Close spell panel when targeting is cleared (e.g. Escape pressed)
-  useEffect(() => {
-    if (!selectedAbility) setSpellPanelOpen(false);
-  }, [selectedAbility]);
-
-  // Split abilities: weapons/actions stay as direct buttons, spells/cantrips go in submenu
-  const directAbilities = abilities.filter(a => a.type === "weapon" || a.type === "action");
-  const spellAbilities = abilities.filter(a => a.type === "cantrip" || a.type === "spell");
-
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -1001,86 +962,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           <button onClick={resetView} title="Reset view" style={{ fontSize: 11 }}>⟲</button>
         </div>
 
-        {/* Ability bar — right side, vertically centered */}
-        {abilities.length > 0 && (
-          <div className="combat-ability-bar">
-            {/* Targeting hint */}
-            {selectedAbility && selectedAbility.requiresTarget && (
-              <div className="combat-ability-hint">
-                Select target…
-              </div>
-            )}
-            {/* Direct abilities: weapons + universal actions */}
-            {directAbilities.map((ability) => {
-              const isSelected = selectedAbility?.id === ability.id;
-              const range = abilityRangeTag(ability);
-              return (
-                <button
-                  key={ability.id}
-                  onClick={() => {
-                    setSpellPanelOpen(false);
-                    onSelectAbility?.(ability);
-                  }}
-                  disabled={abilityBarDisabled}
-                  className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
-                  title={`${toDisplayCase(ability.name)} (${range})`}
-                >
-                  <span className="combat-ability-name">
-                    {toDisplayCase(ability.name)}
-                  </span>
-                  <span className="combat-ability-range">
-                    {range}
-                  </span>
-                </button>
-              );
-            })}
-            {/* Spells toggle button */}
-            {spellAbilities.length > 0 && (
-              <button
-                onClick={() => setSpellPanelOpen(o => !o)}
-                disabled={abilityBarDisabled}
-                className={`combat-ability-btn ${spellPanelOpen ? "combat-ability-btn-selected" : ""}`}
-                title="Spells & Cantrips"
-              >
-                <span className="combat-ability-name">Spells</span>
-                <span className="combat-ability-range">
-                  {spellAbilities.length}
-                </span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Spell submenu panel — rendered outside ability bar to avoid overflow clipping */}
-        {spellPanelOpen && spellAbilities.length > 0 && (
-          <div className="combat-spell-panel">
-            {spellAbilities.map((ability) => {
-              const isSelected = selectedAbility?.id === ability.id;
-              const range = abilityRangeTag(ability);
-              return (
-                <button
-                  key={ability.id}
-                  onClick={() => {
-                    setSpellPanelOpen(false);
-                    onSelectAbility?.(ability);
-                  }}
-                  disabled={abilityBarDisabled}
-                  className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
-                  style={{ whiteSpace: "nowrap" }}
-                  title={`${toDisplayCase(ability.name)} (${range})`}
-                >
-                  <span className="combat-ability-name">
-                    {toDisplayCase(ability.name)}
-                  </span>
-                  <span className="combat-ability-range">
-                    {range}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {/* Viewport */}
         <div
           ref={containerRef}
@@ -1088,7 +969,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
           onDoubleClick={resetView}
           onContextMenu={(e) => {
             e.preventDefault();
-            setSpellPanelOpen(false);
             onCancel?.();
           }}
         >

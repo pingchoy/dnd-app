@@ -10,7 +10,9 @@ import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
 import VictoryScreen from "../components/VictoryScreen";
 import CombatGrid, { CombatGridHandle } from "../components/CombatGrid";
-import CompactChatPanel from "../components/CompactChatPanel";
+import CombatHotbar from "../components/CombatHotbar";
+import CombatChatPanel from "../components/CombatChatPanel";
+import LastActionToast from "../components/LastActionToast";
 import TurnOrderBar from "../components/TurnOrderBar";
 import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
@@ -31,7 +33,7 @@ function LoadingIndicator({ label }: LoadingIndicatorProps) {
   return (
     <div className="flex items-center gap-3 px-6 py-4 mt-2 animate-fade-in">
       <div className="w-8 h-8 rounded-full bg-dungeon-mid border border-gold/40 flex items-center justify-center">
-        <span className="text-gold text-xs">✦</span>
+        <span className="text-gold text-xs">&#x2726;</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="text-parchment/50 font-crimson italic text-sm mr-1">
@@ -85,10 +87,12 @@ export default function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const [combatChatOpen, setCombatChatOpen] = useState(false);
+  const [hasUnread, setHasUnread] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
   const [selectedAbility, setSelectedAbility] = useState<Ability | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<CombatGridHandle>(null);
+  const prevMsgCountRef = useRef(0);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -126,6 +130,22 @@ export default function Dashboard() {
     return () => { combatLabelRef.current = null; };
   }, [combatLabelRef]);
 
+  // Track unread messages when combat chat panel is closed
+  useEffect(() => {
+    if (messages.length > prevMsgCountRef.current && !combatChatOpen) {
+      const newest = messages[messages.length - 1];
+      if (newest?.role === "assistant") {
+        setHasUnread(true);
+      }
+    }
+    prevMsgCountRef.current = messages.length;
+  }, [messages, combatChatOpen]);
+
+  // Clear unread when panel opens
+  useEffect(() => {
+    if (combatChatOpen) setHasUnread(false);
+  }, [combatChatOpen]);
+
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
   const inCombat =
@@ -160,7 +180,7 @@ export default function Dashboard() {
           }
           if (nearest > 30) {
             setRangeWarning(
-              `Nearest hostile is ${nearest} ft away — you may be out of range.`,
+              `Nearest hostile is ${nearest} ft away \u2014 you may be out of range.`,
             );
             // Auto-clear after 4 seconds
             setTimeout(() => setRangeWarning(null), 4000);
@@ -213,6 +233,10 @@ export default function Dashboard() {
 
   const handleOpenFullSheet = useCallback(() => setFullSheetOpen(true), []);
 
+  const handleOpenChatPanel = useCallback(() => setCombatChatOpen(true), []);
+  const handleCloseChatPanel = useCallback(() => setCombatChatOpen(false), []);
+  const handleToggleChat = useCallback(() => setCombatChatOpen(o => !o), []);
+
   // Memoize filtered messages to avoid creating a new array on every keystroke
   const filteredMessages = useMemo(
     () => messages.filter((m) => !(m.role === "user" && m.content.startsWith("[Combat]"))),
@@ -231,10 +255,10 @@ export default function Dashboard() {
       <main className="flex items-center justify-center h-screen bg-dungeon">
         <div className="flex flex-col items-center gap-4">
           <span className="font-cinzel text-gold text-3xl animate-pulse">
-            ✦
+            &#x2726;
           </span>
           <p className="font-crimson text-parchment/50 italic text-sm">
-            Loading your adventure…
+            Loading your adventure&hellip;
           </p>
         </div>
       </main>
@@ -259,13 +283,13 @@ export default function Dashboard() {
             <div className="h-full flex flex-col">
               <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-2 flex items-center justify-between">
                 <span className="font-cinzel text-gold text-xs tracking-widest uppercase">
-                  ✦ Character Sheet ✦
+                  &#x2726; Character Sheet &#x2726;
                 </span>
                 <button
                   onClick={() => setSheetOpen(false)}
                   className="font-cinzel text-parchment/40 hover:text-parchment text-lg leading-none"
                 >
-                  ✕
+                  &#x2715;
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
@@ -289,13 +313,13 @@ export default function Dashboard() {
             <div className="h-full flex flex-col">
               <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-2 flex items-center justify-between">
                 <span className="font-cinzel text-gold text-xs tracking-widest uppercase">
-                  ✦ Character Sheet ✦
+                  &#x2726; Character Sheet &#x2726;
                 </span>
                 <button
                   onClick={() => setFullSheetOpen(false)}
                   className="font-cinzel text-parchment/40 hover:text-parchment text-lg leading-none"
                 >
-                  ✕
+                  &#x2715;
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
@@ -336,7 +360,7 @@ export default function Dashboard() {
 
           {/* Center: Campaign title */}
           <h1 className="font-cinzel text-gold text-sm sm:text-lg tracking-[0.15em] sm:tracking-[0.2em] uppercase leading-none truncate text-center min-w-0">
-            ✦ {story.campaignTitle} ✦
+            &#x2726; {story.campaignTitle} &#x2726;
           </h1>
 
           {/* Right: Stats + sheet */}
@@ -367,83 +391,68 @@ export default function Dashboard() {
         {/* ── Left: chat area (swaps to combat grid when in combat) ── */}
         <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-4 min-w-0">
           {inCombat ? (
-            /* ── Combat layout: grid fills entire left side, chat overlays ── */
-            <div className="flex-1 overflow-hidden flex flex-col relative">
-              {/* Combat grid — fills entire area */}
-              <OrnateFrame className="flex-1 overflow-hidden">
-                <CombatGrid
-                  ref={gridRef}
-                  player={player}
-                  activeNPCs={activeNPCs}
-                  positions={positions}
-                  onMoveToken={moveToken}
-                  gridSize={gridSize}
-                  targetingAbility={selectedAbility}
-                  onTargetSelected={handleTargetSelected}
-                  abilities={player.abilities ?? []}
-                  selectedAbility={selectedAbility}
-                  onSelectAbility={handleSelectAbility}
-                  abilityBarDisabled={isBusy}
-                  onCancel={() => setSelectedAbility(null)}
-                  headerExtra={encounter?.turnOrder ? (
-                    <TurnOrderBar
-                      turnOrder={encounter.turnOrder}
-                      currentTurnIndex={encounter.currentTurnIndex ?? 0}
-                      activeNPCs={activeNPCs}
-                    />
-                  ) : undefined}
+            /* ── Combat layout: left chat panel + map + hotbar at bottom ── */
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Map area with optional left chat panel */}
+              <div className="flex-1 overflow-hidden flex min-h-0">
+                {/* Left chat panel — map shrinks to accommodate */}
+                <CombatChatPanel
+                  messages={messages}
+                  playerName={player.name}
+                  isNarrating={isNarrating}
+                  open={combatChatOpen}
+                  onClose={handleCloseChatPanel}
+                  onOpen={handleOpenChatPanel}
                 />
-              </OrnateFrame>
 
-              {/* Collapsible chat overlay — always mounted, toggled via CSS to preserve animation state */}
-              <div
-                className={`absolute bottom-0 left-0 right-0 z-30 flex flex-col ${combatChatOpen ? "" : "hidden"}`}
-                style={{ maxHeight: "45%" }}
-              >
-                <OrnateFrame className="overflow-hidden">
-                  <div
-                    className="flex flex-col bg-dungeon/95 backdrop-blur-sm"
-                    style={{ maxHeight: "40vh" }}
-                  >
-                    {/* Chat header with hide button */}
-                    <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1 flex items-center justify-between">
-                      <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
-                        Combat Log
-                      </span>
-                      <button
-                        onClick={() => setCombatChatOpen(false)}
-                        className="font-cinzel text-[10px] tracking-widest text-parchment/50 uppercase hover:text-gold transition-colors"
-                      >
-                        ▼ Hide
-                      </button>
-                    </div>
-                    <CompactChatPanel
-                      messages={messages}
-                      playerName={player.name}
-                      isNarrating={isNarrating}
+                {/* Combat map canvas — fills remaining space */}
+                <OrnateFrame className="flex-1 overflow-hidden min-w-0">
+                  <div className="relative h-full">
+                    <CombatGrid
+                      ref={gridRef}
+                      player={player}
+                      activeNPCs={activeNPCs}
+                      positions={positions}
+                      onMoveToken={moveToken}
+                      gridSize={gridSize}
+                      targetingAbility={selectedAbility}
+                      onTargetSelected={handleTargetSelected}
+                      onCancel={() => setSelectedAbility(null)}
+                      headerExtra={encounter?.turnOrder ? (
+                        <TurnOrderBar
+                          turnOrder={encounter.turnOrder}
+                          currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                          activeNPCs={activeNPCs}
+                        />
+                      ) : undefined}
                     />
-                    {rangeWarning && (
-                      <div className="flex-shrink-0 px-3 py-1.5 bg-amber-900/30 border-t border-amber-500/30">
-                        <p className="font-crimson text-amber-300/80 text-sm italic">
-                          {rangeWarning}
-                        </p>
-                      </div>
-                    )}
-                    <Input
-                      userInput={userInput}
-                      setUserInput={setUserInput}
-                      handleSubmit={handleSubmit}
-                      disabled={isBusy}
+
+                    {/* Last action toast — floating on the map canvas */}
+                    <LastActionToast
+                      messages={messages}
+                      chatOpen={combatChatOpen}
+                      onOpenChat={handleOpenChatPanel}
                     />
                   </div>
                 </OrnateFrame>
               </div>
-              <button
-                onClick={() => setCombatChatOpen(true)}
-                className={`absolute bottom-3 left-1/2 -translate-x-1/2 z-30 font-cinzel text-[10px] tracking-widest text-parchment/60 uppercase bg-dungeon-mid/95 border border-gold/30 rounded-full px-4 py-1.5 hover:text-gold hover:border-gold/50 transition-colors backdrop-blur-sm ${combatChatOpen ? "hidden" : ""}`}
-              >
-                ▲ Show Chat
-              </button>
+
+              {/* Bottom hotbar — always visible during combat */}
+              <CombatHotbar
+                abilities={player.abilities ?? []}
+                selectedAbility={selectedAbility}
+                onSelectAbility={handleSelectAbility}
+                abilityBarDisabled={isBusy}
+                chatOpen={combatChatOpen}
+                onToggleChat={handleToggleChat}
+                hasUnread={hasUnread}
+                userInput={userInput}
+                setUserInput={setUserInput}
+                handleSubmit={handleSubmit}
+                inputDisabled={isBusy}
+                isTargeting={selectedAbility?.requiresTarget === true}
+                rangeWarning={rangeWarning}
+              />
             </div>
           ) : (
             /* ── Normal chat layout ── */
