@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, memo } from "react";
+import { memo } from "react";
 import CompactChatPanel from "./CompactChatPanel";
 import type { ChatMessage } from "../hooks/useChat";
 
@@ -12,20 +12,14 @@ interface Props {
   open: boolean;
   /** Called to close the panel. */
   onClose: () => void;
-  /** Called to open the panel (for auto-open on new message). */
-  onOpen: () => void;
 }
-
-/** Seconds of no new messages before auto-closing. */
-const AUTO_CLOSE_DELAY = 5000;
 
 /**
  * Left-side slide panel showing the combat log.
  *
  * - Wraps CompactChatPanel (last ~6 messages, dice rolls, markdown)
  * - Map resizes horizontally (no overlap) via CSS transition
- * - Auto-opens when a new DM message arrives (if closed)
- * - Auto-closes after 5 seconds of no new messages
+ * - Toggled via the chat button in the hotbar; toast + unread dot handle notifications
  * - Read-only — input stays in the hotbar
  */
 const CombatChatPanel = memo(function CombatChatPanel({
@@ -34,35 +28,7 @@ const CombatChatPanel = memo(function CombatChatPanel({
   isNarrating,
   open,
   onClose,
-  onOpen,
 }: Props) {
-  const lastMsgCountRef = useRef(messages.length);
-  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Auto-open on new DM message, auto-close after 5 seconds of quiet
-  useEffect(() => {
-    if (messages.length <= lastMsgCountRef.current) {
-      lastMsgCountRef.current = messages.length;
-      return;
-    }
-    lastMsgCountRef.current = messages.length;
-
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg?.role === "assistant") {
-      onOpen();
-
-      // Reset auto-close timer
-      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
-      autoCloseTimerRef.current = setTimeout(() => {
-        onClose();
-      }, AUTO_CLOSE_DELAY);
-    }
-
-    return () => {
-      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
-    };
-  }, [messages, onOpen, onClose]);
-
   return (
     <div
       className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out border-r border-gold/20 ${

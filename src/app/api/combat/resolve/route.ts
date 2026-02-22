@@ -117,8 +117,8 @@ export async function POST(req: NextRequest) {
         turnOrder: encounter.turnOrder,
         currentTurnIndex: encounter.currentTurnIndex,
         combatStats: encounter.combatStats,
-        defeatedNPCs: encounter.defeatedNPCs,
-        totalXPAwarded: encounter.totalXPAwarded,
+        defeatedNPCs: encounter.defeatedNPCs ?? [],
+        totalXPAwarded: encounter.totalXPAwarded ?? 0,
       }),
     ]);
 

@@ -313,11 +313,11 @@ body {
   background: rgba(201, 168, 76, 0.1);
 }
 
-/* Spell popup above hotbar */
+/* Spell popup above the Spells button */
 .combat-hotbar-spell-popup {
   position: absolute;
   bottom: 100%;
-  left: 6px;
+  left: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;

@@ -115,32 +115,6 @@ export default function CombatHotbar({
         </div>
       )}
 
-      {/* Spell submenu — pops upward from the hotbar */}
-      {spellPanelOpen && spellAbilities.length > 0 && (
-        <div className="combat-hotbar-spell-popup">
-          {spellAbilities.map((ability) => {
-            const isSelected = selectedAbility?.id === ability.id;
-            const range = abilityRangeTag(ability);
-            return (
-              <button
-                key={ability.id}
-                onClick={() => handleAbilityClick(ability)}
-                disabled={abilityBarDisabled}
-                className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
-                title={`${toDisplayCase(ability.name)} (${range})`}
-              >
-                <span className="combat-ability-name">
-                  {toDisplayCase(ability.name)}
-                </span>
-                <span className="combat-ability-range">
-                  {range}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Main hotbar strip */}
       <div className="combat-hotbar">
         {/* Ability buttons — horizontal row, scrollable */}
@@ -166,8 +140,35 @@ export default function CombatHotbar({
             );
           })}
 
-          {/* Spells toggle */}
-          {spellAbilities.length > 0 && (
+        </div>
+
+        {/* Spells toggle — outside the scrollable area so popup isn't clipped */}
+        {spellAbilities.length > 0 && (
+          <div className="relative flex-shrink-0">
+            {spellPanelOpen && (
+              <div className="combat-hotbar-spell-popup">
+                {spellAbilities.map((ability) => {
+                  const isSelected = selectedAbility?.id === ability.id;
+                  const range = abilityRangeTag(ability);
+                  return (
+                    <button
+                      key={ability.id}
+                      onClick={() => handleAbilityClick(ability)}
+                      disabled={abilityBarDisabled}
+                      className={`combat-ability-btn ${isSelected ? "combat-ability-btn-selected" : ""}`}
+                      title={`${toDisplayCase(ability.name)} (${range})`}
+                    >
+                      <span className="combat-ability-name">
+                        {toDisplayCase(ability.name)}
+                      </span>
+                      <span className="combat-ability-range">
+                        {range}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <button
               onClick={toggleSpellPanel}
               disabled={abilityBarDisabled}
@@ -179,8 +180,8 @@ export default function CombatHotbar({
                 {spellAbilities.length}
               </span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Separator */}
         <div className="w-px h-8 bg-gold/20 flex-shrink-0" />

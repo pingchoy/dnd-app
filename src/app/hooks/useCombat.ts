@@ -56,6 +56,14 @@ export function useCombat({
   // Combat floating label callback (set by dashboard, called on hit/miss results)
   const combatLabelRef = useRef<((tokenId: string, hit: boolean, damage: number) => void) | null>(null);
 
+  // Track victoryData in a ref so the encounterId effect can check it synchronously
+  // without adding victoryData to the dependency array (which would re-run the listener).
+  const victoryRef = useRef<VictoryData | null>(null);
+  victoryRef.current = victoryData;
+
+  // Timer for delayed victory screen reveal (lets player see the killing blow land).
+  const victoryDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   /**
    * Real-time Firestore listener for the active encounter document.
    * Updates turn tracker (currentTurnIndex) and NPC state in real time
@@ -64,7 +72,8 @@ export function useCombat({
   const encounterId = gameState?.story?.activeEncounterId ?? null;
   useEffect(() => {
     if (!encounterId) {
-      setEncounter(null);
+      // Don't clear encounter while victory screen is showing — dismissVictory handles cleanup.
+      if (!victoryRef.current && !victoryDelayRef.current) setEncounter(null);
       return;
     }
     const db = getClientDb();
@@ -119,9 +128,34 @@ export function useCombat({
 
       const data = await res.json();
 
+      // Mark combat as processing BEFORE updating encounter, so inCombat stays
+      // true even if this action killed the last hostile.
+      setIsCombatProcessing(true);
+
       // Update game state and encounter (damage already applied server-side)
       setGameState(data.gameState);
       setEncounter(data.encounter ?? null);
+
+      // If the player's action killed the last hostile, delay the victory screen
+      // by ~2s so the player can see the killing blow land on the combat grid.
+      // Loot + narrative sections appear when /api/combat/resolve returns.
+      const enc = data.encounter as StoredEncounter | null;
+      if (enc && !enc.activeNPCs.some((n: { disposition: string; currentHp: number }) => n.disposition === "hostile" && n.currentHp > 0)) {
+        victoryDelayRef.current = setTimeout(() => {
+          victoryDelayRef.current = null;
+          setVictoryData({
+            totalXP: enc.totalXPAwarded ?? 0,
+            combatStats: enc.combatStats ?? {},
+            loot: [],
+            goldAwarded: 0,
+            defeatedNPCs: (enc.defeatedNPCs ?? []).map((n: { name: string }) => n.name),
+            rounds: enc.round,
+            narrative: "",
+            tokensUsed: 0,
+            estimatedCostUsd: 0,
+          });
+        }, 2000);
+      }
 
       // Show floating HIT/MISS label on the targeted NPC
       if (targetId && !data.playerResult.noCheck) {
@@ -184,8 +218,13 @@ export function useCombat({
         }
       }
 
-      // If combat ended, show victory screen instead of immediately clearing
+      // If combat ended, show victory screen instead of immediately clearing.
+      // Cancel any pending delayed reveal — full data supersedes preliminary.
       if (data.combatEnded && data.victoryData) {
+        if (victoryDelayRef.current) {
+          clearTimeout(victoryDelayRef.current);
+          victoryDelayRef.current = null;
+        }
         setVictoryData(data.victoryData);
       } else if (data.combatEnded) {
         // No victory data (fallback) — clear encounter immediately

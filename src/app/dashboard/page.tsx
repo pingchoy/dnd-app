@@ -150,7 +150,7 @@ export default function Dashboard() {
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
   const inCombat =
     encounter != null &&
-    activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0);
+    (activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0) || victoryData != null || isCombatProcessing);
   const { positions, moveToken, gridSize } = useCombatGrid(
     activeNPCs,
     inCombat,
@@ -402,7 +402,6 @@ export default function Dashboard() {
                   isNarrating={isNarrating}
                   open={combatChatOpen}
                   onClose={handleCloseChatPanel}
-                  onOpen={handleOpenChatPanel}
                 />
 
                 {/* Combat map canvas — fills remaining space */}
