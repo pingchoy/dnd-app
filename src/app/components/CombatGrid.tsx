@@ -1,14 +1,17 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from "react";
-import type { NPC, PlayerState, GridPosition, Ability } from "../lib/gameTypes";
+import type { NPC, PlayerState, GridPosition, Ability, AOEData } from "../lib/gameTypes";
 import {
   cellsInRange,
   validateMovement,
   validateAttackRange,
   feetDistance,
+  getAOECells,
   DEFAULT_MELEE_REACH,
+  FEET_PER_SQUARE as ENFORCEMENT_FPS,
 } from "../lib/combatEnforcement";
+import type { AOEShape } from "../lib/combatEnforcement";
 import { getTokenImageKey, preloadTokenImages, isImageReady } from "../lib/tokenImages";
 
 interface Props {
@@ -23,6 +26,14 @@ interface Props {
   onTargetSelected?: (targetId: string) => void;
   /** Called on right-click to cancel pending actions (targeting, etc.). */
   onCancel?: () => void;
+  /** When set, grid renders an AOE shape preview following the cursor. */
+  aoePreview?: {
+    shape: AOEData;
+    originType: "self" | "ranged";
+    rangeFeet?: number;
+  };
+  /** Called when the player confirms AOE placement by clicking. */
+  onAOEConfirm?: (origin: GridPosition, direction?: GridPosition) => void;
   /** Optional element rendered below the combat map header (e.g. TurnOrderBar). */
   headerExtra?: React.ReactNode;
 }
@@ -78,6 +89,8 @@ interface DrawState {
   dragOrigin: GridPosition | null;
   playerSpeed: number;
   targetingAbility: Ability | null;
+  aoePreview: Props["aoePreview"] | null;
+  aoeHoverCell: GridPosition | null;
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -227,6 +240,44 @@ function getDragTokenInfo(s: DrawState): {
 }
 
 /**
+ * Build an AOEShape for preview rendering given the hover cell and player position.
+ */
+function buildPreviewShape(
+  aoe: AOEData,
+  originType: "self" | "ranged",
+  playerPos: GridPosition,
+  hoverCell: GridPosition,
+): AOEShape {
+  if (originType === "self") {
+    // Self-origin: shape emanates from caster
+    switch (aoe.shape) {
+      case "cone":
+        return { type: "cone", origin: playerPos, lengthFeet: aoe.size, direction: hoverCell };
+      case "line":
+        return { type: "line", origin: playerPos, lengthFeet: aoe.size, widthFeet: aoe.width ?? 5, direction: hoverCell };
+      case "sphere":
+      case "cylinder":
+        return { type: aoe.shape, origin: playerPos, radiusFeet: aoe.size };
+      case "cube":
+        return { type: "cube", origin: playerPos, radiusFeet: aoe.size };
+    }
+  } else {
+    // Ranged: shape centered on hover cell
+    switch (aoe.shape) {
+      case "sphere":
+      case "cylinder":
+        return { type: aoe.shape, origin: hoverCell, radiusFeet: aoe.size };
+      case "cube":
+        return { type: "cube", origin: hoverCell, radiusFeet: aoe.size };
+      case "cone":
+        return { type: "cone", origin: hoverCell, lengthFeet: aoe.size, direction: { row: hoverCell.row - 1, col: hoverCell.col } };
+      case "line":
+        return { type: "line", origin: hoverCell, lengthFeet: aoe.size, widthFeet: aoe.width ?? 5, direction: { row: hoverCell.row - 1, col: hoverCell.col } };
+    }
+  }
+}
+
+/**
  * 20×20 tactical combat grid rendered on <canvas>.
  *
  * The canvas fills its container (possibly rectangular); the square grid
@@ -247,6 +298,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   targetingAbility = null,
   onTargetSelected,
   onCancel,
+  aoePreview,
+  onAOEConfirm,
   headerExtra,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -271,6 +324,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragPixel, setDragPixel] = useState<{ x: number; y: number } | null>(null);
   const [dragOrigin, setDragOrigin] = useState<GridPosition | null>(null);
+
+  // AOE hover tracking
+  const [aoeHoverCell, setAoeHoverCell] = useState<GridPosition | null>(null);
 
   // Pan (left-click on empty space, or middle-click anywhere)
   const [isPanning, setIsPanning] = useState(false);
@@ -308,6 +364,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
     dragOrigin: null,
     playerSpeed: player.speed ?? DEFAULT_SPEED,
     targetingAbility: null,
+    aoePreview: null,
+    aoeHoverCell: null,
   });
 
   // Keep stateRef in sync every render
@@ -331,6 +389,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       dragOrigin,
       playerSpeed: player.speed ?? DEFAULT_SPEED,
       targetingAbility,
+      aoePreview: aoePreview ?? null,
+      aoeHoverCell,
     };
   });
 
@@ -461,6 +521,66 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
             s.cellSize,
             s.cellSize,
           );
+        }
+      }
+
+      // 1c) AOE shape preview — semi-transparent red overlay on affected cells
+      if (s.aoePreview && pPos && s.aoeHoverCell) {
+        const shape = buildPreviewShape(
+          s.aoePreview.shape,
+          s.aoePreview.originType,
+          pPos,
+          s.aoeHoverCell,
+        );
+        const aoeCells = getAOECells(shape, s.gridSize);
+
+        // Draw red tint on affected cells
+        ctx!.fillStyle = "rgba(239, 68, 68, 0.2)";
+        for (const rc of aoeCells) {
+          ctx!.fillRect(rc.col * s.cellStep, rc.row * s.cellStep, s.cellSize, s.cellSize);
+        }
+
+        // Pulsing red ring around NPCs inside the AOE
+        const aoeCellSet = new Set(aoeCells.map(c => `${c.row},${c.col}`));
+        const ringPulse = (Math.sin((now % 1500) / 1500 * Math.PI * 2) + 1) / 2;
+        let targetCount = 0;
+        for (const npc of s.activeNPCs) {
+          if (npc.currentHp <= 0 || npc.disposition !== "hostile") continue;
+          const npcPos = s.positions.get(npc.id);
+          if (!npcPos || !aoeCellSet.has(`${npcPos.row},${npcPos.col}`)) continue;
+          targetCount++;
+          const ncx = npcPos.col * s.cellStep + s.cellSize / 2;
+          const ncy = npcPos.row * s.cellStep + s.cellSize / 2;
+          const radius = s.cellSize * 0.4;
+          ctx!.save();
+          ctx!.beginPath();
+          ctx!.arc(ncx, ncy, radius + 3 + ringPulse * 2, 0, Math.PI * 2);
+          ctx!.strokeStyle = `rgba(239, 68, 68, ${0.5 + ringPulse * 0.4})`;
+          ctx!.lineWidth = 2;
+          ctx!.stroke();
+          ctx!.restore();
+        }
+
+        // Target count badge near the hover cell
+        if (targetCount > 0) {
+          const badgeX = s.aoeHoverCell.col * s.cellStep + s.cellSize;
+          const badgeY = s.aoeHoverCell.row * s.cellStep;
+          const badgeText = `${targetCount} target${targetCount > 1 ? "s" : ""}`;
+          const badgeFont = `bold ${Math.max(9, s.cellSize * 0.22)}px Cinzel, Georgia, serif`;
+          ctx!.save();
+          ctx!.font = badgeFont;
+          const bm = ctx!.measureText(badgeText);
+          const bw = bm.width + 10;
+          const bh = 18;
+          ctx!.fillStyle = "rgba(153, 27, 27, 0.9)";
+          ctx!.beginPath();
+          ctx!.roundRect(badgeX - bw / 2, badgeY - bh / 2, bw, bh, 4);
+          ctx!.fill();
+          ctx!.fillStyle = "#fee2e2";
+          ctx!.textAlign = "center";
+          ctx!.textBaseline = "middle";
+          ctx!.fillText(badgeText, badgeX, badgeY);
+          ctx!.restore();
         }
       }
 
@@ -755,6 +875,25 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
       if (e.button === 0) {
         const hit = hitTest(vx, vy);
 
+        // AOE targeting mode: click to confirm placement
+        if (aoePreview && onAOEConfirm) {
+          e.preventDefault();
+          const cell = pixelToCell(vx, vy);
+          if (cell) {
+            const playerPos = positions.get("player");
+            if (playerPos) {
+              // For self-origin, the origin is the player; direction is the clicked cell
+              // For ranged, the origin is the clicked cell
+              if (aoePreview.originType === "self") {
+                onAOEConfirm(playerPos, cell);
+              } else {
+                onAOEConfirm(cell);
+              }
+            }
+          }
+          return;
+        }
+
         // Targeting mode: clicking an NPC selects it as target
         if (targetingAbility && hit && hit !== "player") {
           e.preventDefault();
@@ -784,7 +923,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         }
       }
     },
-    [offset, hitTest, viewportToGrid, positions, targetingAbility, onTargetSelected],
+    [offset, hitTest, viewportToGrid, positions, targetingAbility, onTargetSelected, aoePreview, onAOEConfirm, pixelToCell],
   );
 
   const handlePointerMove = useCallback(
@@ -804,6 +943,17 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         setDragPixel(gp);
       }
 
+      // AOE hover tracking — update the hover cell for shape preview
+      if (aoePreview && !dragId) {
+        const cell = pixelToCell(vx, vy);
+        if (cell) {
+          stateRef.current.aoeHoverCell = cell;
+          setAoeHoverCell(cell);
+        }
+        if (canvasRef.current) canvasRef.current.style.cursor = "crosshair";
+        return;
+      }
+
       // Cursor hint (only when not panning or dragging)
       if (!dragId) {
         const hit = hitTest(vx, vy);
@@ -818,7 +968,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid({
         }
       }
     },
-    [isPanning, dragId, hitTest, viewportToGrid, targetingAbility, activeNPCs],
+    [isPanning, dragId, hitTest, viewportToGrid, targetingAbility, activeNPCs, aoePreview, pixelToCell],
   );
 
   const handlePointerUp = useCallback(

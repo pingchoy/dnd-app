@@ -18,21 +18,25 @@ import {
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
 import { saveEncounterState } from "../../../lib/encounterStore";
-import { resolvePlayerAction } from "../../../lib/combatResolver";
+import { resolvePlayerAction, resolveAOEAction, buildAOEShape } from "../../../lib/combatResolver";
+import type { AOEResult } from "../../../lib/combatResolver";
 import { emptyCombatStats } from "../../../lib/gameTypes";
 import type { GridPosition } from "../../../lib/gameTypes";
+import { getAOECells, getAOETargets } from "../../../lib/combatEnforcement";
 import { addMessage } from "../../../lib/messageStore";
 
 interface CombatActionBody {
   characterId: string;
   abilityId: string;    // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
   targetId?: string;    // NPC id (required for targeted abilities)
+  aoeOrigin?: GridPosition;    // for ranged AOEs: center point chosen by player
+  aoeDirection?: GridPosition; // for cone/line: cursor position indicating direction
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CombatActionBody;
-    const { characterId, abilityId, targetId } = body;
+    const { characterId, abilityId, targetId, aoeOrigin, aoeDirection } = body;
 
     if (!characterId || !abilityId) {
       return NextResponse.json(
@@ -87,43 +91,87 @@ export async function POST(req: NextRequest) {
       Object.entries(encounter.positions),
     );
 
-    // Resolve player action (deterministic — no AI call)
-    const playerResult = resolvePlayerAction(player, ability, targetNPC, positions);
-
-    // Apply player damage to target NPC
-    let targetDied = false;
-    if (playerResult.success && playerResult.damage && targetNPC) {
-      const npcResult = updateNPC({
-        id: targetNPC.id,
-        hp_delta: -playerResult.damage.totalDamage,
-      });
-      targetDied = npcResult.died;
-    }
-
     // ── Accumulate player combat stats ──────────────────────────────────────
     if (!encounter.combatStats) encounter.combatStats = {};
     if (!encounter.combatStats[characterId]) encounter.combatStats[characterId] = emptyCombatStats();
     const stats = encounter.combatStats[characterId];
 
-    const isAttack = ability.type === "weapon" || ability.attackType === "melee" || ability.attackType === "ranged";
-    if (isAttack && !playerResult.noCheck) {
-      stats.attacksMade += 1;
-      if (playerResult.success) stats.attacksHit += 1;
-      if (playerResult.damage?.isCrit) stats.criticalHits += 1;
-      if (playerResult.success && playerResult.damage) stats.damageDealt += playerResult.damage.totalDamage;
-    }
+    let playerResult = null;
+    let aoeResult: AOEResult | null = null;
 
-    if (ability.type === "spell" || ability.type === "cantrip") {
+    // ── AOE resolution path ─────────────────────────────────────────────────
+    if (ability.aoe) {
+      const casterPos = positions.get("player");
+      if (!casterPos) {
+        return NextResponse.json(
+          { error: "Player position not found on grid" },
+          { status: 400 },
+        );
+      }
+
+      const shape = buildAOEShape(ability.aoe, casterPos, aoeOrigin, aoeDirection);
+      const affectedCells = getAOECells(shape, encounter.gridSize);
+      const hitIds = getAOETargets(shape, positions, encounter.gridSize);
+
+      // Filter to living hostile NPCs in the AOE
+      const targetNPCs = encounter.activeNPCs.filter(
+        n => hitIds.includes(n.id) && n.currentHp > 0 && n.disposition === "hostile",
+      );
+
+      aoeResult = resolveAOEAction(player, ability, targetNPCs, affectedCells);
+
+      // Apply damage to each target
+      for (const targetRes of aoeResult.targets) {
+        const npcResult = updateNPC({
+          id: targetRes.npcId,
+          hp_delta: -targetRes.damageTaken,
+        });
+        stats.damageDealt += targetRes.damageTaken;
+        if (npcResult.died) {
+          stats.killCount += 1;
+          const npcName = targetRes.npcName;
+          stats.npcsDefeated.push(npcName);
+        }
+      }
+
       stats.spellsCast += 1;
-    }
+      if (!stats.abilitiesUsed.includes(ability.name)) {
+        stats.abilitiesUsed.push(ability.name);
+      }
+    } else {
+      // ── Single-target resolution path ───────────────────────────────────────
+      playerResult = resolvePlayerAction(player, ability, targetNPC, positions);
 
-    if (!stats.abilitiesUsed.includes(ability.name)) {
-      stats.abilitiesUsed.push(ability.name);
-    }
+      // Apply player damage to target NPC
+      let targetDied = false;
+      if (playerResult.success && playerResult.damage && targetNPC) {
+        const npcResult = updateNPC({
+          id: targetNPC.id,
+          hp_delta: -playerResult.damage.totalDamage,
+        });
+        targetDied = npcResult.died;
+      }
 
-    if (targetDied && targetNPC) {
-      stats.killCount += 1;
-      stats.npcsDefeated.push(targetNPC.name);
+      const isAttack = ability.type === "weapon" || ability.attackType === "melee" || ability.attackType === "ranged";
+      if (isAttack && !playerResult.noCheck) {
+        stats.attacksMade += 1;
+        if (playerResult.success) stats.attacksHit += 1;
+        if (playerResult.damage?.isCrit) stats.criticalHits += 1;
+        if (playerResult.success && playerResult.damage) stats.damageDealt += playerResult.damage.totalDamage;
+      }
+
+      if (ability.type === "spell" || ability.type === "cantrip") {
+        stats.spellsCast += 1;
+      }
+
+      if (!stats.abilitiesUsed.includes(ability.name)) {
+        stats.abilitiesUsed.push(ability.name);
+      }
+
+      if (targetDied && targetNPC) {
+        stats.killCount += 1;
+        stats.npcsDefeated.push(targetNPC.name);
+      }
     }
 
     // Write to messages subcollection (roll result visible via real-time listener)
@@ -132,7 +180,8 @@ export async function POST(req: NextRequest) {
       role: "assistant",
       content: "",
       timestamp: Date.now(),
-      rollResult: playerResult,
+      ...(playerResult ? { rollResult: playerResult } : {}),
+      ...(aoeResult ? { aoeResult } : {}),
     });
 
     // Persist state after player action
@@ -155,6 +204,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       playerResult,
+      aoeResult,
       gameState: getGameState(),
       encounter,
     });

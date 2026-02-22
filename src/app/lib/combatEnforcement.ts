@@ -7,7 +7,7 @@
  * No React, no server imports — safe for client and server.
  */
 
-import type { GridPosition, AbilityRange } from "./gameTypes";
+import type { GridPosition, AbilityRange, AOEData } from "./gameTypes";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -139,6 +139,39 @@ export function parseSpellRange(rangeStr: string): AbilityRange {
   return { type: "ranged" };
 }
 
+// ─── AOE data parsing ────────────────────────────────────────────────────────
+
+const AOE_PATTERN = /(\d+)-foot(?:-radius)?\s+(cone|sphere|cube|line|cylinder)/i;
+
+/**
+ * Parse AOE data from an SRD range string like "Self (15-foot cone)".
+ * Returns null if the range string doesn't describe an AOE.
+ */
+export function parseAOEFromRange(rangeStr: string): AOEData | null {
+  const match = rangeStr.match(AOE_PATTERN);
+  if (!match) return null;
+  const size = parseInt(match[1]);
+  const shape = match[2].toLowerCase() as AOEData["shape"];
+  const result: AOEData = { shape, size };
+  if (shape === "line") result.width = 5;
+  return result;
+}
+
+/**
+ * Parse AOE data from a spell description (fallback for ranged AOEs like Fireball
+ * where the range string is "150 feet" but the description mentions "20-foot-radius sphere").
+ * Returns null if no AOE pattern is found.
+ */
+export function parseAOEFromDescription(description: string): AOEData | null {
+  const match = description.match(AOE_PATTERN);
+  if (!match) return null;
+  const size = parseInt(match[1]);
+  const shape = match[2].toLowerCase() as AOEData["shape"];
+  const result: AOEData = { shape, size };
+  if (shape === "line") result.width = 5;
+  return result;
+}
+
 // ─── Range validation ────────────────────────────────────────────────────────
 
 export interface RangeCheck {
@@ -233,14 +266,14 @@ export function validateAttackRange(
 
 // ─── AOE targeting ───────────────────────────────────────────────────────────
 
-type AOEShape =
+export type AOEShape =
   | { type: "sphere" | "cube"; origin: GridPosition; radiusFeet: number }
   | { type: "cone"; origin: GridPosition; lengthFeet: number; direction: GridPosition }
   | { type: "line"; origin: GridPosition; lengthFeet: number; widthFeet: number; direction: GridPosition }
   | { type: "cylinder"; origin: GridPosition; radiusFeet: number };
 
 /** Grid cells affected by an AOE shape. */
-function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
+export function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
   switch (shape.type) {
     case "sphere":
     case "cylinder": {
@@ -312,7 +345,7 @@ function getAOECells(shape: AOEShape, gridSize: number): GridPosition[] {
 }
 
 /** Token IDs caught in an AOE. */
-function getAOETargets(
+export function getAOETargets(
   shape: AOEShape,
   positions: Map<string, GridPosition>,
   gridSize: number,

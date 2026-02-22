@@ -23,13 +23,18 @@ import {
   DamageBreakdown,
   CharacterStats,
   Ability,
+  AOEData,
 } from "./gameTypes";
 import { isWeaponProficient } from "./dnd5eData";
 import {
   getPositionalModifiers,
+  getAOECells,
+  getAOETargets,
   CombatModifier,
+  FEET_PER_SQUARE,
 } from "./combatEnforcement";
 import type { GridPosition } from "./gameTypes";
+import type { AOEShape } from "./combatEnforcement";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -404,6 +409,104 @@ export function resolveNPCTurns(
   return results;
 }
 
+// ─── AOE Resolution ─────────────────────────────────────────────────────────
+
+export interface AOETargetResult {
+  npcId: string;
+  npcName: string;
+  saved: boolean;
+  saveRoll: number;
+  saveTotal: number;
+  damageTaken: number;
+}
+
+export interface AOEResult {
+  checkType: string;           // "Fireball (DEX save)"
+  spellDC: number;
+  damageRoll: string;          // "8d6"
+  totalRolled: number;         // 28 (rolled once, shared across all targets)
+  damageType: string;
+  targets: AOETargetResult[];
+  affectedCells: GridPosition[];
+}
+
+/**
+ * Build an AOEShape from ability AOE data, caster position, and targeting info.
+ * Self-origin spells use the caster position as origin.
+ * Ranged AOE spells use the player-chosen aoeOrigin.
+ */
+export function buildAOEShape(
+  aoe: AOEData,
+  casterPos: GridPosition,
+  aoeOrigin?: GridPosition,
+  aoeDirection?: GridPosition,
+): AOEShape {
+  const origin = aoeOrigin ?? casterPos;
+  const direction = aoeDirection ?? { row: origin.row - 1, col: origin.col }; // default: north
+
+  switch (aoe.shape) {
+    case "sphere":
+    case "cylinder":
+      return { type: aoe.shape, origin, radiusFeet: aoe.size };
+    case "cube":
+      return { type: "cube", origin, radiusFeet: aoe.size };
+    case "cone":
+      return { type: "cone", origin: casterPos, lengthFeet: aoe.size, direction };
+    case "line":
+      return { type: "line", origin: casterPos, lengthFeet: aoe.size, widthFeet: aoe.width ?? 5, direction };
+  }
+}
+
+/**
+ * Resolve an AOE spell: roll damage once, then each target NPC saves individually.
+ * Failed save = full damage, successful save = half damage (rounded down).
+ */
+export function resolveAOEAction(
+  player: PlayerState,
+  ability: Ability,
+  targetNPCs: NPC[],
+  affectedCells: GridPosition[],
+): AOEResult {
+  const spellAbility = ability.saveDCAbility ?? player.spellcastingAbility ?? "intelligence";
+  const abilityMod = getModifier(player.stats[spellAbility as keyof CharacterStats] as number);
+  const profBonus = getProficiencyBonus(player.level);
+  const spellDC = 8 + abilityMod + profBonus;
+
+  // Roll damage once for the entire AOE
+  const damageExpr = ability.damageRoll ?? "1d6";
+  const damageResult = rollDice(damageExpr);
+  const totalRolled = damageResult.total;
+  const halfDamage = Math.floor(totalRolled / 2);
+  const saveAbility = ability.saveAbility ?? "dexterity";
+
+  // Each target rolls an individual save
+  const targets: AOETargetResult[] = targetNPCs.map(npc => {
+    const saveRoll = rollD20();
+    const saveTotal = saveRoll + npc.savingThrowBonus;
+    const saved = saveTotal >= spellDC;
+    const damageTaken = saved ? halfDamage : totalRolled;
+
+    return {
+      npcId: npc.id,
+      npcName: npc.name,
+      saved,
+      saveRoll,
+      saveTotal,
+      damageTaken,
+    };
+  });
+
+  return {
+    checkType: `${ability.name} (${saveAbility} save)`,
+    spellDC,
+    damageRoll: damageExpr,
+    totalRolled,
+    damageType: ability.damageType ?? "magical",
+    targets,
+    affectedCells,
+  };
+}
+
 /**
  * Orchestrator: routes to the correct resolver based on ability type.
  * For non-targeted actions (Dodge/Dash/Disengage), returns a noCheck result.
@@ -414,6 +517,21 @@ export function resolvePlayerAction(
   targetNPC: NPC | null,
   positions?: Map<string, GridPosition>,
 ): ParsedRollResult {
+  // AOE abilities are resolved separately via resolveAOEAction — skip single-target routing
+  if (ability.aoe) {
+    return {
+      checkType: ability.name,
+      components: "",
+      dieResult: 0,
+      totalModifier: "+0",
+      total: 0,
+      dcOrAc: "N/A",
+      success: true,
+      notes: `${ability.name} — AOE resolved separately`,
+      noCheck: true,
+    };
+  }
+
   // Non-targeted actions
   if (!ability.requiresTarget) {
     return {

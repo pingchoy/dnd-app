@@ -12,7 +12,7 @@ import {
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
 import { StoredMessage, OPENING_NARRATIVE } from "../lib/gameTypes";
-import type { GameState, StoredEncounter } from "../lib/gameTypes";
+import type { GameState, StoredEncounter, AOEResultData } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -25,6 +25,8 @@ export interface ChatMessage {
   id: string;
   /** If present, renders a dice-roll card instead of normal text. */
   rollResult?: ParsedRollResult;
+  /** If present, renders an AOE result card with per-target breakdown. */
+  aoeResult?: AOEResultData;
   /** True for roll results that arrived after the session started (should animate). */
   isNewRoll?: boolean;
   /** True for messages that appeared after initial load (should animate entrance). */
@@ -159,7 +161,8 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
         const isHistorical = historicalIds.has(doc.id);
         // A roll animates only if it's new to this session AND recent (<5s).
         // The age check prevents replaying animations when components remount.
-        const isNewRoll = data.rollResult
+        const hasRollOrAoe = data.rollResult || data.aoeResult;
+        const isNewRoll = hasRollOrAoe
           ? !isHistorical && (now - data.timestamp) < 5000
           : undefined;
         // Don't animate user messages from this client — they already appeared optimistically.
@@ -172,6 +175,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
           content: data.content,
           timestamp: data.timestamp,
           rollResult: data.rollResult,
+          aoeResult: data.aoeResult,
           isNewRoll: isNewRoll,
           isNew,
         };

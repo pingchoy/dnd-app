@@ -9,6 +9,7 @@ import type {
   Ability,
   GameState,
   VictoryData,
+  GridPosition,
 } from "../lib/gameTypes";
 
 export interface UseCombatReturn {
@@ -17,7 +18,7 @@ export interface UseCombatReturn {
   /** True while the turn-by-turn combat loop is processing. */
   isCombatProcessing: boolean;
   /** Execute a deterministic combat action (ability bar click). */
-  executeCombatAction: (ability: Ability, targetId?: string) => Promise<void>;
+  executeCombatAction: (ability: Ability, targetId?: string, aoeParams?: { aoeOrigin?: GridPosition; aoeDirection?: GridPosition }) => Promise<void>;
   /** Ref to set a callback for showing floating combat labels on the grid. */
   combatLabelRef: React.MutableRefObject<
     ((tokenId: string, hit: boolean, damage: number) => void) | null
@@ -126,6 +127,7 @@ export function useCombat({
   async function executeCombatAction(
     ability: Ability,
     targetId?: string,
+    aoeParams?: { aoeOrigin?: GridPosition; aoeDirection?: GridPosition },
   ): Promise<void> {
     if (!characterId || isNarrating || isCombatProcessing) return;
 
@@ -137,7 +139,12 @@ export function useCombat({
       const res = await fetch("/api/combat/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, abilityId: ability.id, targetId }),
+        body: JSON.stringify({
+          characterId,
+          abilityId: ability.id,
+          targetId,
+          ...aoeParams,
+        }),
       });
 
       if (!res.ok) {
@@ -180,8 +187,15 @@ export function useCombat({
       //   }, 2000);
       // }
 
-      // Show floating HIT/MISS label on the targeted NPC
-      if (targetId && !data.playerResult.noCheck) {
+      // Show floating labels — AOE: one per target, single-target: one label
+      if (data.aoeResult?.targets?.length) {
+        for (let i = 0; i < data.aoeResult.targets.length; i++) {
+          const t = data.aoeResult.targets[i];
+          setTimeout(() => {
+            combatLabelRef.current?.(t.npcId, true, t.damageTaken);
+          }, i * 200);
+        }
+      } else if (targetId && data.playerResult && !data.playerResult.noCheck) {
         combatLabelRef.current?.(
           targetId,
           data.playerResult.success,
@@ -191,7 +205,7 @@ export function useCombat({
 
       // Immediately proceed to narration + NPC turns
       setIsNarrating(false);
-      await requestCombatResolve(data.playerResult, targetId);
+      await requestCombatResolve(data.playerResult ?? data.aoeResult, targetId);
     } catch (err) {
       console.error("[useCombat] executeCombatAction error:", err);
       onError?.();

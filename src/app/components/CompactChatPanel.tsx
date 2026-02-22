@@ -4,12 +4,55 @@ import { useRef, useEffect, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../hooks/useChat";
+import type { AOEResultData } from "../lib/gameTypes";
 import DiceRoll from "./DiceRoll";
 
 interface Props {
   messages: ChatMessage[];
   playerName: string;
   isNarrating: boolean;
+}
+
+/** Compact AOE result card showing spell name, total damage, and per-target breakdown. */
+function AOEResultCard({ result, isHistorical }: { result: AOEResultData; isHistorical: boolean }) {
+  return (
+    <div className={`rounded border border-red-900/40 bg-dungeon-mid/80 ${isHistorical ? "" : "animate-fade-in"}`}>
+      {/* Header: spell name + total damage */}
+      <div className="px-3 py-1.5 border-b border-red-900/30 flex items-center justify-between">
+        <span className="font-cinzel text-[11px] tracking-widest text-red-400 uppercase">
+          {result.checkType}
+        </span>
+        <span className="font-cinzel text-sm text-parchment/90">
+          {result.totalRolled} {result.damageType}
+        </span>
+      </div>
+      {/* Per-target breakdown */}
+      <div className="px-3 py-1.5 space-y-0.5">
+        <div className="font-cinzel text-[10px] text-parchment/40 tracking-wider uppercase mb-1">
+          DC {result.spellDC} &middot; {result.damageRoll} damage
+        </div>
+        {result.targets.map((t) => (
+          <div key={t.npcId} className="flex items-center justify-between text-sm font-crimson">
+            <span className="text-parchment/80">{t.npcName}</span>
+            <span className="flex items-center gap-2">
+              <span className={`text-[10px] font-cinzel tracking-wider uppercase ${t.saved ? "text-green-400" : "text-red-400"}`}>
+                {t.saved ? "SAVED" : "FAILED"}
+              </span>
+              <span className="text-parchment/50 text-[10px]">
+                ({t.saveRoll}+{t.saveTotal - t.saveRoll}={t.saveTotal})
+              </span>
+              <span className="text-parchment/90 font-semibold">
+                -{t.damageTaken}
+              </span>
+            </span>
+          </div>
+        ))}
+        {result.targets.length === 0 && (
+          <div className="text-parchment/40 text-sm font-crimson italic">No targets in area</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** Loading dots reused from the dashboard — compact version. */
@@ -57,6 +100,15 @@ function CompactChatPanel({
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2">
         {recentMessages.map((msg, idx) => {
+          // AOE result cards
+          if (msg.aoeResult) {
+            return (
+              <div key={msg.id} className={`my-1 ${msg.isNew ? "animate-chat-enter" : ""}`}>
+                <AOEResultCard result={msg.aoeResult} isHistorical={!msg.isNewRoll} />
+              </div>
+            );
+          }
+
           // Roll cards — animate if new, compact if historical
           if (msg.rollResult) {
             return (

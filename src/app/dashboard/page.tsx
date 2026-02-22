@@ -18,7 +18,7 @@ import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombat } from "../hooks/useCombat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
-import type { GameState, Ability, StoredEncounter } from "../lib/gameTypes";
+import type { GameState, Ability, StoredEncounter, AOEData, GridPosition } from "../lib/gameTypes";
 import { feetDistance, validateAttackRange } from "../lib/combatEnforcement";
 
 interface LoadingIndicatorProps {
@@ -221,6 +221,11 @@ export default function Dashboard() {
   const handleSelectAbility = useCallback(
     (ability: Ability) => {
       if (isBusy) return;
+      // AOE spells enter AOE targeting mode (grid shows shape preview)
+      if (ability.aoe) {
+        setSelectedAbility((prev) => (prev?.id === ability.id ? null : ability));
+        return;
+      }
       if (!ability.requiresTarget) {
         setSelectedAbility(null);
         executeCombatAction(ability);
@@ -229,6 +234,29 @@ export default function Dashboard() {
       setSelectedAbility((prev) => (prev?.id === ability.id ? null : ability));
     },
     [isBusy, executeCombatAction],
+  );
+
+  /** Derive AOE preview data from the selected ability (if it's an AOE spell). */
+  const aoePreview = useMemo(() => {
+    if (!selectedAbility?.aoe) return undefined;
+    const originType = selectedAbility.range?.type === "self" ? "self" as const : "ranged" as const;
+    return {
+      shape: selectedAbility.aoe,
+      originType,
+      rangeFeet: selectedAbility.range?.shortRange,
+    };
+  }, [selectedAbility]);
+
+  /** Handle AOE confirm: player clicks to place the AOE on the grid. */
+  const handleAOEConfirm = useCallback(
+    (origin: GridPosition, direction?: GridPosition) => {
+      if (!selectedAbility || isBusy) return;
+      const ability = selectedAbility;
+      setSelectedAbility(null);
+      setRangeWarning(null);
+      executeCombatAction(ability, undefined, { aoeOrigin: origin, aoeDirection: direction });
+    },
+    [selectedAbility, isBusy, executeCombatAction],
   );
 
   /** Handle target click on the combat grid during targeting mode. */
@@ -459,6 +487,8 @@ export default function Dashboard() {
                       targetingAbility={selectedAbility}
                       onTargetSelected={handleTargetSelected}
                       onCancel={() => setSelectedAbility(null)}
+                      aoePreview={aoePreview}
+                      onAOEConfirm={handleAOEConfirm}
                       headerExtra={
                         encounter?.turnOrder ? (
                           <TurnOrderBar
@@ -491,7 +521,7 @@ export default function Dashboard() {
                     chatOpen={combatChatOpen}
                     onToggleChat={handleToggleChat}
                     hasUnread={hasUnread}
-                    isTargeting={selectedAbility?.requiresTarget === true}
+                    isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
                     rangeWarning={rangeWarning}
                   />
                 </OrnateFrame>

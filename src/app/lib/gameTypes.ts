@@ -34,6 +34,12 @@ export interface SRDWeaponData {
 
 // ─── Ability Types ───────────────────────────────────────────────────────────
 
+export interface AOEData {
+  shape: "cone" | "sphere" | "cube" | "line" | "cylinder";
+  size: number;       // radius (sphere/cylinder/cube) or length (cone/line) in feet
+  width?: number;     // for line spells only, in feet (default 5)
+}
+
 export type SpellAttackType = "ranged" | "melee" | "save" | "auto" | "none";
 
 /** Per-level scaling override for spells (upcast) and cantrips (player level). */
@@ -69,6 +75,8 @@ export interface Ability {
   weaponStat?: "str" | "dex" | "finesse" | "none";
   /** Flat bonus to attack/damage for weapons (e.g. +1 magic weapon). */
   weaponBonus?: number;
+  /** AOE shape data for area-of-effect spells (absent for single-target). */
+  aoe?: AOEData;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -421,6 +429,25 @@ export interface StoredMessage {
   characterId?: string;
   timestamp: number;
   rollResult?: ParsedRollResult;
+  aoeResult?: AOEResultData;
+}
+
+/** AOE result stored in messages — mirrors AOEResult from combatResolver. */
+export interface AOEResultData {
+  checkType: string;
+  spellDC: number;
+  damageRoll: string;
+  totalRolled: number;
+  damageType: string;
+  targets: Array<{
+    npcId: string;
+    npcName: string;
+    saved: boolean;
+    saveRoll: number;
+    saveTotal: number;
+    damageTaken: number;
+  }>;
+  affectedCells: GridPosition[];
 }
 
 // ─── Action Queue Types ──────────────────────────────────────────────────────
