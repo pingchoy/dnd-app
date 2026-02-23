@@ -200,7 +200,7 @@ export function serializeActiveNPCs(npcs: NPC[]): string {
  * Outputs all memory tiers:
  *   1. campaignSummary (living synopsis) — falls back to campaignBackground
  *   2. milestones (permanent plot beats)
- *   3. activeQuests + importantNPCs (tracked state)
+ *   3. activeQuests + metNPCs (tracked state)
  *   4. recentEvents (all stored, up to 10)
  */
 export function serializeStoryState(s: StoryState): string {
@@ -222,8 +222,8 @@ export function serializeStoryState(s: StoryState): string {
   if (s.activeQuests.length) {
     lines.push(`Active Quests: ${s.activeQuests.join("; ")}`);
   }
-  if (s.importantNPCs.length) {
-    lines.push(`Notable NPCs: ${s.importantNPCs.join(", ")}`);
+  if (s.metNPCs.length) {
+    lines.push(`Notable NPCs: ${s.metNPCs.join(", ")}`);
   }
   if (s.recentEvents.length) {
     lines.push(`Recent: ${s.recentEvents.join(" | ")}`);
@@ -254,7 +254,7 @@ export function serializeRegionContext(
 ): string {
   if (!map || playerPositions.size === 0) return "";
 
-  const lines: string[] = ["Spatial context:"];
+  const lines: string[] = ["CURRENT POSITION (authoritative — overrides any prior location references):"];
 
   for (const [playerName, pos] of Array.from(playerPositions.entries())) {
     // Find which region(s) the player is standing in
@@ -291,6 +291,8 @@ export function serializeRegionContext(
 export function serializeCampaignContext(
   campaign: Campaign,
   act: CampaignAct | null,
+  completedEncounters?: string[],
+  metNPCs?: string[],
 ): string {
   const lines: string[] = [];
 
@@ -304,23 +306,71 @@ export function serializeCampaignContext(
     if (act.plotPoints?.length) {
       lines.push(`Plot points: ${act.plotPoints.join("; ")}`);
     }
+
+    // Encounter progression — full details for next, names-only for upcoming
+    const completed = new Set((completedEncounters ?? []).map((e) => e.toLowerCase()));
+    const remaining = act.encounters.filter((e) => !completed.has(e.name.toLowerCase()));
+
+    if (remaining.length > 0) {
+      const next = remaining[0];
+      lines.push("");
+      lines.push(`NEXT ENCOUNTER: ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`);
+      if (next.dmGuidance) lines.push(next.dmGuidance);
+      if (next.enemies?.length) {
+        lines.push(`Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`);
+      }
+      if (next.npcInvolvement?.length) {
+        lines.push(`NPCs involved: ${next.npcInvolvement.join(", ")}`);
+      }
+      if (next.rewards) {
+        const parts: string[] = [];
+        if (next.rewards.xp) parts.push(`${next.rewards.xp} XP`);
+        if (next.rewards.gold) parts.push(`${next.rewards.gold} gold`);
+        if (next.rewards.items?.length) parts.push(next.rewards.items.join(", "));
+        if (parts.length) lines.push(`Rewards: ${parts.join(", ")}`);
+      }
+
+      if (remaining.length > 1) {
+        lines.push("");
+        lines.push("UPCOMING ENCOUNTERS:");
+        for (const enc of remaining.slice(1)) {
+          lines.push(`  - ${enc.name} (${enc.type}, ${enc.difficulty})`);
+        }
+      }
+    }
   }
 
-  // Compact NPC summaries for narration — only act-relevant NPCs
+  // Compact NPC summaries — act-relevant only, split by met/unmet using campaign NPC IDs
   const relevantIds = act?.relevantNPCIds ?? campaign.npcs.map((n) => n.id);
   const npcs = campaign.npcs.filter((n) => relevantIds.includes(n.id));
+  const metIdSet = new Set((metNPCs ?? []).map((id) => id.toLowerCase()));
 
   if (npcs.length > 0) {
-    lines.push("");
-    lines.push("KEY NPCs:");
-    for (const npc of npcs) {
-      const traits = npc.personality.traits.slice(0, 2).join(", ");
-      const actKey = act ? `act${act.actNumber}` as keyof typeof npc.relationshipArc : undefined;
-      const rel = actKey ? npc.relationshipArc[actKey] : undefined;
-      let line = `  ${npc.name} (${npc.role}): ${traits}`;
-      if (rel) line += ` | This act: ${rel}`;
-      if (npc.voiceNotes) line += ` | Voice: ${npc.voiceNotes.slice(0, 100)}`;
-      lines.push(line);
+    const metNPCList = npcs.filter((n) => metIdSet.has(n.id.toLowerCase()));
+    const unmetNPCList = npcs.filter((n) => !metIdSet.has(n.id.toLowerCase()));
+
+    if (metNPCList.length > 0) {
+      lines.push("");
+      lines.push("NPCs MET BY PLAYER:");
+      for (const npc of metNPCList) {
+        const traits = npc.personality.traits.slice(0, 2).join(", ");
+        const actKey = act ? `act${act.actNumber}` as keyof typeof npc.relationshipArc : undefined;
+        const rel = actKey ? npc.relationshipArc[actKey] : undefined;
+        let line = `  ${npc.name} [id=${npc.id}]: ${traits}`;
+        if (rel) line += ` | This act: ${rel}`;
+        if (npc.voiceNotes) line += ` | Voice: ${npc.voiceNotes.slice(0, 100)}`;
+        lines.push(line);
+      }
+    }
+
+    if (unmetNPCList.length > 0) {
+      lines.push("");
+      lines.push("NPCs NOT YET MET (do not assume the player knows them — introduce naturally when the story calls for it):");
+      for (const npc of unmetNPCList) {
+        const traits = npc.personality.traits.slice(0, 2).join(", ");
+        let line = `  ${npc.name} [id=${npc.id}]: ${traits}`;
+        lines.push(line);
+      }
     }
   }
 
@@ -385,7 +435,7 @@ let state: GameState = {
     currentLocation: "",
     currentScene: "",
     activeQuests: [],
-    importantNPCs: [],
+    metNPCs: [],
     recentEvents: [],
   },
 };
@@ -493,6 +543,8 @@ export interface StateChanges {
   npcs_met?: string[];
   /** Advance to a new campaign act number. */
   act_advance?: number;
+  /** Mark a campaign encounter as completed by name (e.g. "Dockside Smuggler Ambush"). */
+  encounter_completed?: string;
 }
 
 /**
@@ -563,12 +615,18 @@ export function applyStateChanges(changes: StateChanges): void {
   if (changes.npcs_met?.length) {
     for (const npc of changes.npcs_met) {
       const lower = npc.toLowerCase();
-      if (!s.importantNPCs.includes(lower)) s.importantNPCs.push(lower);
+      if (!s.metNPCs.includes(lower)) s.metNPCs.push(lower);
     }
-    if (s.importantNPCs.length > 30) s.importantNPCs = s.importantNPCs.slice(-30);
+    if (s.metNPCs.length > 30) s.metNPCs = s.metNPCs.slice(-30);
   }
   if (changes.act_advance != null && changes.act_advance > 0) {
     s.currentAct = changes.act_advance;
+    s.completedEncounters = [];
+  }
+  if (changes.encounter_completed) {
+    if (!s.completedEncounters) s.completedEncounters = [];
+    const lower = changes.encounter_completed.toLowerCase();
+    if (!s.completedEncounters.includes(lower)) s.completedEncounters.push(lower);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   // Defer XP during combat — accumulate on encounter, flush to all players when combat ends
@@ -1009,7 +1067,7 @@ export async function applyStateChangesAndPersist(
         round: encounter.round,
         turnOrder: encounter.turnOrder,
         currentTurnIndex: encounter.currentTurnIndex,
-        totalXPAwarded: encounter.totalXPAwarded,
+        totalXPAwarded: encounter.totalXPAwarded ?? 0,
       });
     } else {
       // Combat is over — award full encounter XP to every participating character

@@ -19,16 +19,16 @@ export const anthropic = new Anthropic({
  */
 export const MODELS = {
   NARRATIVE: "claude-haiku-4-5-20251001", // swap to "claude-sonnet-4-6" for richer prose
-  UTILITY:   "claude-haiku-4-5-20251001",
+  UTILITY: "claude-haiku-4-5-20251001",
 } as const;
 
 export const MAX_TOKENS = {
-  NARRATIVE: 2048,        // DM: 2-4 paragraphs prose + tool_use blocks
-  COMBAT: 1024,           // Combat: 2-3 paragraphs prose + tool_use blocks
-  COMBAT_TURN: 400,       // Single turn narration (1-2 paragraphs, no tool calls)
-  UTILITY: 300,           // Sub-agent answers should be concise
-  NPC_AGENT: 512,         // NPC stat block generation
-  RULES_CLASSIFIER: 256,  // Tool call JSON from rules classifier (~40-80 tokens)
+  NARRATIVE: 2048, // DM: 2-4 paragraphs prose + tool_use blocks
+  COMBAT: 1024, // Combat: 2-3 paragraphs prose + tool_use blocks
+  COMBAT_TURN: 400, // Single turn narration (1-2 paragraphs, no tool calls)
+  UTILITY: 300, // Sub-agent answers should be concise
+  NPC_AGENT: 512, // NPC stat block generation
+  RULES_CLASSIFIER: 256, // Tool call JSON from rules classifier (~40-80 tokens)
 } as const;
 
 /** Max conversation turns kept in context to bound input-token growth. */
@@ -41,11 +41,11 @@ export const HISTORY_WINDOW = 10;
  */
 export const TOKEN_COSTS: Record<string, { input: number; output: number }> = {
   "claude-haiku-4-5-20251001": {
-    input:  0.8 / 1_000_000, // $0.80 per million input tokens
+    input: 0.8 / 1_000_000, // $0.80 per million input tokens
     output: 4.0 / 1_000_000, // $4.00 per million output tokens
   },
   "claude-sonnet-4-6": {
-    input:  3.0 / 1_000_000,  // $3.00 per million input tokens
+    input: 3.0 / 1_000_000, // $3.00 per million input tokens
     output: 15.0 / 1_000_000, // $15.00 per million output tokens
   },
 };

@@ -79,12 +79,13 @@ export function useCombatGrid(
       setPositions(loaded);
       initializedExplorationRef.current = true;
     } else {
-      // No saved positions — place player at center
+      // No saved positions yet — place player at center as a default.
+      // Don't mark as initialized so that when persisted positions arrive
+      // from the async fetch, the effect can re-run and load them.
       setPositions((prev) => {
         if (prev.has("player")) return prev;
         return new Map([["player", { row: 10, col: 10 }]]);
       });
-      initializedExplorationRef.current = true;
     }
   }, [inCombat, explorationPositions]);
 

@@ -69,7 +69,7 @@ function makeStoredCharacter() {
       currentLocation: "Tavern",
       currentScene: "Drinking ale",
       activeQuests: [],
-      importantNPCs: [],
+      metNPCs: [],
       recentEvents: [],
     },
     createdAt: Date.now(),
@@ -365,10 +365,10 @@ describe("applyStateChanges", () => {
       expect(getGameState().story.activeQuests).toHaveLength(0);
     });
 
-    it("tracks important NPCs (deduped)", async () => {
+    it("tracks met NPCs (deduped)", async () => {
       await hydrateState();
       applyStateChanges({ npcs_met: ["Gandalf", "Gandalf"] });
-      expect(getGameState().story.importantNPCs).toEqual(["gandalf"]);
+      expect(getGameState().story.metNPCs).toEqual(["gandalf"]);
     });
   });
 });

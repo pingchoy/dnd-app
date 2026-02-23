@@ -386,7 +386,7 @@ export interface StoryState {
   currentLocation: string;
   currentScene: string;
   activeQuests: string[];
-  importantNPCs: string[];
+  metNPCs: string[];
   /** Permanent major plot beats (boss defeats, betrayals, quest completions). Cap 20. */
   milestones?: string[];
   recentEvents: string[];
@@ -394,6 +394,8 @@ export interface StoryState {
   activeEncounterId?: string;
   /** Current act number within the campaign (1-indexed). Defaults to 1. */
   currentAct?: number;
+  /** Encounter names completed in the current act. Reset on act advance. */
+  completedEncounters?: string[];
 }
 
 /** The only campaign currently available. Used as default for all new sessions. */
@@ -497,7 +499,7 @@ export interface Campaign {
   hooks: string[];
   actSlugs: string[];                  // ["the-crimson-accord_act-1", ...]
   npcs: CampaignNPC[];
-  dmSummary: string;                   // Compact overall arc for DM injection (~200 tokens)
+  dmSummary: string;                   // Spoiler-free theme/tone/setting for DM injection (~50 tokens)
   mapSpecs?: CampaignMapSpec[];        // Blueprints for maps this campaign needs
 }
 

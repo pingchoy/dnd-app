@@ -125,13 +125,14 @@ async function processChatAction(
       if (campaign) {
         const actNumber = gameState.story.currentAct ?? 1;
         const act = await getCampaignAct(campaignSlug, actNumber);
-        contextParts.push(serializeCampaignContext(campaign, act));
+        contextParts.push(serializeCampaignContext(campaign, act, gameState.story.completedEncounters, gameState.story.metNPCs));
       }
     }
 
     // Spatial context
     const activeMapId = getActiveMapId();
     const explorationPositions = getExplorationPositions();
+    console.log("[Spatial] activeMapId:", activeMapId, "positions:", JSON.stringify(explorationPositions));
     if (activeMapId && explorationPositions && Object.keys(explorationPositions).length > 0) {
       const map = await loadMap(sessionId, activeMapId);
       if (map) {
@@ -140,6 +141,7 @@ async function processChatAction(
           posMap.set(key === "player" ? gameState.player.name : key, pos);
         }
         const spatial = serializeRegionContext(posMap, map);
+        console.log("[Spatial] Injected into DM context:", spatial);
         if (spatial) contextParts.push(spatial);
       }
     }

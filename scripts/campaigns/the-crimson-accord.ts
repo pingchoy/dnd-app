@@ -531,7 +531,7 @@ export const theCrimsonAccord: CampaignData = {
     ],
     mapSpecs: CRIMSON_ACCORD_MAP_SPECS,
     dmSummary:
-      "The Crimson Accord is a political intrigue campaign set in the free city of Valdris. The party is hired by Councilor Lysara Thorne to investigate kidnappings, but Lysara herself is the mastermind — using victims to fuel an ancient blood magic ritual for immortality. Act 1 follows the smuggling trail, Act 2 uncovers the hospital front and features Lysara's framing of rival Lord Blackwood, and Act 3 is the confrontation in the underground temple. Key NPCs: Aldric (honest cop ally, poisoned in Act 2), Mira (informant/betrayer who can be redeemed), Zephyr (kid searching for kidnapped sibling), Caelum (unwitting hospital front), Blackwood (framed rival, murdered in Act 2). The campaign rewards investigation and relationship-building over combat.",
+      "Political intrigue in the free city of Valdris. Dark fantasy tone with themes of trust, power, and corruption beneath gilded surfaces. A trade hub governed by a council of merchant lords where people are vanishing from the lower quarters. The campaign rewards careful investigation, relationship-building, and paying attention to NPC motivations over brute force.",
   },
 
   acts: [

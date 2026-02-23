@@ -185,7 +185,7 @@ interface CampaignOutput {
   hooks: string[];                     // 3-4 adventure hooks
   actSlugs: string[];                  // ["{slug}_act-1", "{slug}_act-2", "{slug}_act-3"]
   npcs: CampaignNPC[];                 // 5-7 important NPCs
-  dmSummary: string;                   // ~200 token overall arc summary for DM
+  dmSummary: string;                   // ~50 token spoiler-free theme/tone/setting for DM injection
 }
 
 // Calls 2-4 output:
@@ -370,7 +370,7 @@ CRITICAL RULES:
 - Combat encounters must reference REAL SRD 5e monster slugs from the provided list.
 - All acts must build toward a climactic revelation in Act 3.
 - The playerTeaser must be compelling but completely spoiler-free.
-- The dmSummary must be a compact (~200 token) overview of the full arc for DM reference.
+- The dmSummary must be a compact (~50 token) spoiler-free summary of the campaign's theme, tone, setting, and play style. It must NOT reveal the villain's identity, plot twists, betrayals, or future events — it is injected directly into the DM agent's context on every turn.
 - The dmBriefing for each act must be a detailed (~500 token) guide for running that act.
 - Include a mix of encounter types: combat, social, exploration, puzzle, and boss.
 - Scale encounter difficulty appropriately for the suggested level range.
@@ -433,7 +433,10 @@ Output ONLY the JSON object, no markdown code blocks.`;
 
     const actPrompt = `Generate Act ${actNum} for the campaign "${campaign.title}" (slug: "${slug}").
 
-Campaign summary: ${campaign.dmSummary}
+Campaign theme: ${campaign.dmSummary}
+
+Full campaign NPC roster with roles and secrets (for writing act-specific content):
+${(campaign.npcs as Array<{ name: string; role: string; motivations: string[] }>).map((n) => `- ${n.name} (${n.role}): ${n.motivations.join("; ")}`).join("\n")}
 
 Available NPCs:
 ${npcSummary}
@@ -484,7 +487,7 @@ Output ONLY the JSON object, no markdown code blocks.`;
 
   const mapSpecPrompt = `Generate map specifications for the campaign "${campaign.title}" (slug: "${slug}").
 
-Campaign summary: ${campaign.dmSummary}
+Campaign theme: ${campaign.dmSummary}
 
 All encounters and their locations:
 ${encounterSummary}

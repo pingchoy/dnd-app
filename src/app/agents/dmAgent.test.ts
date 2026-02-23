@@ -84,7 +84,7 @@ function makeGameState(): GameState {
       currentLocation: "Tavern",
       currentScene: "Drinking ale",
       activeQuests: [],
-      importantNPCs: [],
+      metNPCs: [],
       recentEvents: [],
     },
   };

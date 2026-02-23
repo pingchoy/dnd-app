@@ -126,7 +126,7 @@ const mockGameState = {
     currentLocation: "Tavern",
     currentScene: "Resting",
     activeQuests: [],
-    importantNPCs: [],
+    metNPCs: [],
     recentEvents: [],
   },
 };

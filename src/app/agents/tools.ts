@@ -183,12 +183,17 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       npcs_met: {
         type: "array",
         items: { type: "string" },
-        description: "Names of important NPCs the player has met or interacted with significantly. Not every shopkeeper — only story-relevant characters.",
+        description: "IDs of campaign NPCs the player has met or interacted with significantly (use the [id] shown in the NPC list, e.g. \"lysara-thorne\"). Not every shopkeeper — only story-relevant characters from the campaign.",
       },
       act_advance: {
         type: "integer",
         description:
           "Advance the campaign to a new act number (e.g. 2 or 3). Use when the party completes the current act's climax or major plot milestone.",
+      },
+      encounter_completed: {
+        type: "string",
+        description:
+          "Mark a campaign encounter as completed when the set-piece wraps up. Use the exact encounter name from the NEXT ENCOUNTER section (e.g. 'Dockside Smuggler Ambush').",
       },
     },
     required: [],

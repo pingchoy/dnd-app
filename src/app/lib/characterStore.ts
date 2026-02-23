@@ -401,15 +401,17 @@ export async function deleteCharacter(id: string): Promise<void> {
           // explicitly remove messages and actions to avoid orphaned data.
           // Batches are capped at 500 ops, so we chunk if needed.
           const sessionRef = adminDb.collection("sessions").doc(sessionId);
-          const [encSnaps, msgSnaps, actSnaps] = await Promise.all([
+          const [encSnaps, msgSnaps, actSnaps, mapSnaps] = await Promise.all([
             adminDb.collection("encounters").where("sessionId", "==", sessionId).get(),
             sessionRef.collection("messages").get(),
             sessionRef.collection("actions").get(),
+            sessionRef.collection("maps").get(),
           ]);
           const allRefs = [
             ...encSnaps.docs.map((d) => d.ref),
             ...msgSnaps.docs.map((d) => d.ref),
             ...actSnaps.docs.map((d) => d.ref),
+            ...mapSnaps.docs.map((d) => d.ref),
             sessionRef,
           ];
           const BATCH_LIMIT = 500;
