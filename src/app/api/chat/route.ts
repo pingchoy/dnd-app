@@ -27,21 +27,24 @@ import {
   createNPC,
   getActiveNPCs,
   getEncounter,
+  getExplorationMapId,
   getGameState,
   getSessionId,
   getActiveMapId,
   getExplorationPositions,
   getCurrentPOIId,
+  setCurrentPOIId,
   getCampaignSlug,
   loadGameState,
   NPCToCreate,
   serializeCampaignContext,
+  serializeExplorationContext,
   serializeRegionContext,
   setEncounter,
 } from "../../lib/gameState";
 import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
-import { loadMap } from "../../lib/mapStore";
-import { querySRD, loadSession, getCampaign, getCampaignAct } from "../../lib/characterStore";
+import { loadExplorationMap, loadMap, updateMap } from "../../lib/mapStore";
+import { querySRD, loadSession, saveSessionState, getCampaign, getCampaignAct } from "../../lib/characterStore";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 import { addMessage } from "../../lib/messageStore";
 import { enqueueAction, claimNextAction, completeAction, failAction } from "../../lib/actionQueue";
@@ -130,20 +133,33 @@ async function processChatAction(
       }
     }
 
-    // Spatial context
-    const activeMapId = getActiveMapId();
-    const explorationPositions = getExplorationPositions();
-    console.log("[Spatial] activeMapId:", activeMapId, "positions:", JSON.stringify(explorationPositions));
-    if (activeMapId && explorationPositions && Object.keys(explorationPositions).length > 0) {
-      const map = await loadMap(sessionId, activeMapId);
-      if (map) {
-        const posMap = new Map<string, GridPosition>();
-        for (const [key, pos] of Object.entries(explorationPositions)) {
-          posMap.set(key === "player" ? gameState.player.name : key, pos);
+    // Spatial context — exploration maps use POI context, combat maps use region context
+    const explorationMapId = getExplorationMapId();
+    if (explorationMapId) {
+      const explMap = await loadExplorationMap(sessionId, explorationMapId);
+      if (explMap) {
+        const explorationCtx = serializeExplorationContext(explMap, getCurrentPOIId());
+        console.log("[Spatial] Exploration context injected:", explorationCtx.slice(0, 200));
+        if (explorationCtx) contextParts.push(explorationCtx);
+      }
+    }
+
+    // Fall back to region context for combat maps if no exploration map is active
+    if (!explorationMapId) {
+      const activeMapId = getActiveMapId();
+      const explorationPositions = getExplorationPositions();
+      console.log("[Spatial] activeMapId:", activeMapId, "positions:", JSON.stringify(explorationPositions));
+      if (activeMapId && explorationPositions && Object.keys(explorationPositions).length > 0) {
+        const map = await loadMap(sessionId, activeMapId);
+        if (map) {
+          const posMap = new Map<string, GridPosition>();
+          for (const [key, pos] of Object.entries(explorationPositions)) {
+            posMap.set(key === "player" ? gameState.player.name : key, pos);
+          }
+          const spatial = serializeRegionContext(posMap, map);
+          console.log("[Spatial] Injected into DM context:", spatial);
+          if (spatial) contextParts.push(spatial);
         }
-        const spatial = serializeRegionContext(posMap, map);
-        console.log("[Spatial] Injected into DM context:", spatial);
-        if (spatial) contextParts.push(spatial);
       }
     }
 
@@ -269,6 +285,50 @@ async function processChatAction(
       changes.hp_delta = -dmResult.npcDamagePreRolled;
       if (!dmResult.stateChanges) dmResult.stateChanges = changes;
     }
+  }
+
+  // Handle exploration map POI mutations from update_game_state
+  if (dmResult.stateChanges?.reveal_poi || dmResult.stateChanges?.set_current_poi) {
+    const explMapId = getExplorationMapId();
+    if (explMapId) {
+      const explMap = await loadExplorationMap(sessionId, explMapId);
+      if (explMap) {
+        let mapDirty = false;
+
+        // Reveal a hidden POI
+        if (dmResult.stateChanges.reveal_poi) {
+          const poi = explMap.pointsOfInterest.find(
+            (p) => p.id === dmResult.stateChanges!.reveal_poi,
+          );
+          if (poi && poi.isHidden) {
+            poi.isHidden = false;
+            mapDirty = true;
+            console.log(`[POI] Revealed POI "${poi.name}" (${poi.id})`);
+          }
+        }
+
+        // Update the current POI
+        if (dmResult.stateChanges.set_current_poi) {
+          const newPoiId = dmResult.stateChanges.set_current_poi;
+          const poi = explMap.pointsOfInterest.find((p) => p.id === newPoiId);
+          if (poi) {
+            setCurrentPOIId(newPoiId);
+            await saveSessionState(sessionId, { currentPOIId: newPoiId });
+            console.log(`[POI] Set current POI to "${poi.name}" (${poi.id})`);
+          }
+        }
+
+        if (mapDirty) {
+          await updateMap(sessionId, explMapId, {
+            pointsOfInterest: explMap.pointsOfInterest,
+          });
+        }
+      }
+    }
+
+    // Clean up — these are handled here, not by applyStateChanges
+    delete dmResult.stateChanges.reveal_poi;
+    delete dmResult.stateChanges.set_current_poi;
   }
 
   // Apply state changes and persist to Firestore (including encounter state if active)

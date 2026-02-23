@@ -85,6 +85,7 @@ CAMPAIGN CONTEXT:
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
 - When a campaign encounter (shown in NEXT ENCOUNTER) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with encounter_completed set to the encounter name. This advances the story to the next set-piece.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
+- EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists the Points of Interest (POIs) the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them. Use set_current_poi when the party travels to a new POI.
 
 WHEN TO USE query_campaign:
 - type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen.

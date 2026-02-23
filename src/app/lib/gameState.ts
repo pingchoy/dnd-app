@@ -516,6 +516,10 @@ export function getCurrentPOIId(): string | undefined {
   return currentPOIId;
 }
 
+export function setCurrentPOIId(poiId: string | undefined): void {
+  currentPOIId = poiId;
+}
+
 export function getExplorationPositions(): Record<string, GridPosition> | undefined {
   return currentExplorationPositions;
 }
@@ -589,6 +593,10 @@ export interface StateChanges {
   act_advance?: number;
   /** Mark a campaign encounter as completed by name (e.g. "Dockside Smuggler Ambush"). */
   encounter_completed?: string;
+  /** POI ID to reveal on the exploration map (sets isHidden to false). */
+  reveal_poi?: string;
+  /** Set the current POI ID where the party is located. */
+  set_current_poi?: string;
 }
 
 /**

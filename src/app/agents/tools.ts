@@ -195,6 +195,16 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         description:
           "Mark a campaign encounter as completed when the set-piece wraps up. Use the exact encounter name from the NEXT ENCOUNTER section (e.g. 'Dockside Smuggler Ambush').",
       },
+      reveal_poi: {
+        type: "string",
+        description:
+          "POI ID to reveal on the exploration map (sets isHidden to false). Use when the party discovers a new location.",
+      },
+      set_current_poi: {
+        type: "string",
+        description:
+          "Set the current POI ID where the party is located. Use when the party travels to a new point of interest.",
+      },
     },
     required: [],
   },
