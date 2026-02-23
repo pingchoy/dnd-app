@@ -372,6 +372,146 @@ export interface StoryState {
   activeEncounterId?: string;
 }
 
+// ─── Campaign Map Types ──────────────────────────────────────────────────────
+
+/** Region blueprint for a campaign map — guides the map generator. */
+export interface CampaignMapRegionSpec {
+  id: string;                      // "region_main_hall"
+  name: string;                    // "main hall"
+  type: RegionType;
+  approximateSize: "small" | "medium" | "large";
+  position?: "north" | "south" | "east" | "west" | "center"
+    | "northeast" | "northwest" | "southeast" | "southwest";
+  dmNote?: string;
+  defaultNPCSlugs?: string[];
+  shopInventory?: string[];
+}
+
+/** Connection from one campaign map to another. */
+export interface CampaignMapConnection {
+  targetMapSpecId: string;
+  direction: string;               // "north", "underground", "through the tunnel"
+  description: string;             // "a heavy iron door leads down into the undercity"
+}
+
+/**
+ * Blueprint for a map that a campaign needs.
+ * Contains enough detail for a future generator to produce a MapDocument.
+ */
+export interface CampaignMapSpec {
+  id: string;                      // "valdris-docks" — unique within the campaign
+  name: string;                    // "Valdris Docks, Pier 7"
+  layoutDescription: string;       // Prose description of physical layout for the generator
+  feetPerSquare: number;           // 5 for indoor/dungeon, 50-100 for zone
+  terrain: "urban" | "dungeon" | "wilderness" | "underground" | "interior" | "mixed";
+  lighting: "bright" | "dim" | "dark" | "mixed";
+  atmosphereNotes?: string;        // Visual/mood hints for image generation
+  regions: CampaignMapRegionSpec[];
+  connections?: CampaignMapConnection[];
+  actNumbers: number[];            // Which acts this map appears in
+  locationTags: string[];          // Patterns for DM agent location matching
+}
+
+/** Pre-generated map template for a campaign location. */
+export interface CampaignMap {
+  campaignSlug: string;
+  mapSpecId: string;               // References CampaignMapSpec.id
+  name: string;
+  gridSize: number;                // 20
+  feetPerSquare: number;
+  tileData: number[];              // 400-element flat array
+  regions: MapRegion[];
+  generatedAt: number;
+}
+
+// ─── Campaign Types ──────────────────────────────────────────────────────────
+
+export interface CampaignNPC {
+  id: string;                          // "lysara-thorne"
+  name: string;                        // "Lysara Thorne"
+  srdMonsterSlug?: string;             // SRD creature slug for combat stats (e.g. "noble")
+  role: "patron" | "ally" | "rival" | "villain" | "informant" | "betrayer" | "neutral";
+  appearance: string;
+  personality: {
+    traits: string[];
+    ideals: string[];
+    bonds: string[];
+    flaws: string[];
+  };
+  motivations: string[];
+  secrets: string[];
+  betrayalTrigger?: string;
+  relationshipArc: {
+    act1: string;
+    act2: string;
+    act3: string;
+  };
+  combatStats?: {
+    ac: number;
+    hp: number;
+    attackBonus: number;
+    damageDice: string;
+    damageBonus: number;
+    xpValue: number;
+    specialAbilities?: string;
+  };
+  dmNotes: string;
+  voiceNotes?: string;
+}
+
+export interface Campaign {
+  slug: string;                        // "the-crimson-accord"
+  title: string;                       // "The Crimson Accord"
+  playerTeaser: string;                // Spoiler-free hook
+  theme: string;                       // "political intrigue"
+  suggestedLevel: { min: number; max: number };
+  estimatedDurationHours: number;
+  hooks: string[];
+  actSlugs: string[];                  // ["the-crimson-accord_act-1", ...]
+  npcs: CampaignNPC[];
+  dmSummary: string;                   // Compact overall arc for DM injection (~200 tokens)
+  mapSpecs?: CampaignMapSpec[];        // Blueprints for maps this campaign needs
+}
+
+export interface CampaignEnemy {
+  srdMonsterSlug: string;              // "bandit", "thug", "guard"
+  count: number;
+  notes?: string;
+}
+
+export interface CampaignEncounter {
+  name: string;                        // "Smuggler Warehouse Raid"
+  description: string;
+  type: "combat" | "social" | "exploration" | "puzzle" | "boss";
+  difficulty: "easy" | "medium" | "hard" | "deadly";
+  enemies?: CampaignEnemy[];
+  npcInvolvement?: string[];           // CampaignNPC ids involved
+  location: string;
+  mapSpecId?: string;                  // References CampaignMapSpec.id
+  rewards?: {
+    xp?: number;
+    gold?: number;
+    items?: string[];
+  };
+  dmGuidance?: string;
+}
+
+export interface CampaignAct {
+  campaignSlug: string;                // "the-crimson-accord"
+  actNumber: number;                   // 1, 2, or 3
+  title: string;                       // "Shadows in the Market"
+  summary: string;                     // Player-facing act summary
+  suggestedLevel: { min: number; max: number };
+  setting: string;                     // Primary location description
+  plotPoints: string[];
+  mysteries: string[];
+  keyEvents: string[];
+  encounters: CampaignEncounter[];
+  relevantNPCIds: string[];
+  transitionToNextAct?: string;
+  dmBriefing: string;                  // Compact DM briefing for injection (~500 tokens)
+}
+
 export interface ConversationTurn {
   role: "user" | "assistant";
   content: string;

@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx scripts/seedFirestore.ts",
+    "seed:campaigns": "tsx scripts/seedCampaigns.ts",
+    "generate:campaign": "tsx scripts/generateCampaign.ts",
+    "generate:maps": "tsx scripts/generateCampaignMaps.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

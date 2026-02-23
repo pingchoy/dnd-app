@@ -9,7 +9,7 @@
  */
 
 import { adminDb } from "./firebaseAdmin";
-import type { MapDocument } from "./gameTypes";
+import type { CampaignMap, MapDocument } from "./gameTypes";
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -68,4 +68,59 @@ export async function loadSessionMaps(sessionId: string): Promise<MapDocument[]>
     id: doc.id,
     ...(doc.data() as Omit<MapDocument, "id">),
   }));
+}
+
+// ─── Campaign Map Templates ─────────────────────────────────────────────────
+
+/** Load a campaign map template by campaign slug and map spec ID. */
+export async function loadCampaignMap(
+  campaignSlug: string,
+  mapSpecId: string,
+): Promise<CampaignMap | null> {
+  const docId = `${campaignSlug}_${mapSpecId}`;
+  const snap = await adminDb.collection("campaignMaps").doc(docId).get();
+  if (!snap.exists) return null;
+  return snap.data() as CampaignMap;
+}
+
+/**
+ * Instantiate all campaign map templates into session-scoped maps.
+ * Copies each campaignMaps/ template into maps/ with the given sessionId.
+ * Called once when a campaign session is first created.
+ */
+export async function instantiateCampaignMaps(
+  campaignSlug: string,
+  sessionId: string,
+): Promise<MapDocument[]> {
+  const snap = await adminDb
+    .collection("campaignMaps")
+    .where("campaignSlug", "==", campaignSlug)
+    .get();
+
+  if (snap.empty) return [];
+
+  const now = Date.now();
+  const maps: MapDocument[] = [];
+
+  for (const doc of snap.docs) {
+    const template = doc.data() as CampaignMap;
+
+    const mapDoc: Omit<MapDocument, "id"> = {
+      sessionId,
+      name: template.name,
+      gridSize: template.gridSize,
+      feetPerSquare: template.feetPerSquare,
+      tileData: template.tileData,
+      regions: template.regions,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const ref = adminDb.collection("maps").doc();
+    await ref.set(mapDoc);
+
+    maps.push({ id: ref.id, ...mapDoc });
+  }
+
+  return maps;
 }
