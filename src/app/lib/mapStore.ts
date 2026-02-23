@@ -111,7 +111,7 @@ export async function loadCombatMapForPOI(
   if (!explMap) return null;
 
   const poi = explMap.pointsOfInterest.find((p) => p.id === poiId);
-  if (!poi) return null;
+  if (!poi?.combatMapId) return null;
 
   const map = await loadMap(sessionId, poi.combatMapId);
   if (!map || map.mapType !== "combat") return null;
