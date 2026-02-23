@@ -10,8 +10,9 @@
 import { useState, useCallback, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapEditor from "../components/MapEditor";
+import ExplorationMapEditor from "../components/ExplorationMapEditor";
 import { normalizeRegions } from "../lib/gameTypes";
-import type { CampaignMap, MapRegion } from "../lib/gameTypes";
+import type { CampaignMap, CampaignPOISpec, MapRegion } from "../lib/gameTypes";
 
 const GRID_SIZE = 20;
 
@@ -28,11 +29,13 @@ function MapEditorContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId") ?? "";
 
+  const [mapType, setMapType] = useState<"exploration" | "combat">("combat");
   const [mapName, setMapName] = useState("");
   const [feetPerSquare, setFeetPerSquare] = useState(5);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | undefined>();
   const [tileData, setTileData] = useState<number[]>(new Array(GRID_SIZE * GRID_SIZE).fill(0));
   const [regions, setRegions] = useState<MapRegion[]>([]);
+  const [pointsOfInterest, setPointsOfInterest] = useState<CampaignPOISpec[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisConfidence, setAnalysisConfidence] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,29 +144,54 @@ function MapEditorContent() {
     }
   }, [campaignSlug]);
 
-  // Load a selected campaign map into the editor
+  // Load a selected campaign map into the editor, detecting its type automatically
   const handleLoadCampaignMap = useCallback(() => {
     const map = campaignMaps.find((m) => m.mapSpecId === selectedMapSpecId);
     if (!map) return;
 
+    const detectedType = map.mapType ?? "combat";
+    setMapType(detectedType);
     setMapName(map.name);
     setFeetPerSquare(map.feetPerSquare ?? 5);
-    setTileData(map.tileData ?? new Array(GRID_SIZE * GRID_SIZE).fill(0));
-    setRegions(normalizeRegions(map.regions ?? []));
     setBackgroundImageUrl(map.backgroundImageUrl);
     setEditingCampaignMap({ campaignSlug: map.campaignSlug, mapSpecId: map.mapSpecId });
     setAnalysisConfidence(null);
     setSaveSuccess(false);
     setError(null);
+
+    if (detectedType === "exploration") {
+      // Convert PointOfInterest[] to CampaignPOISpec[] for the editor
+      const pois: CampaignPOISpec[] = (map.pointsOfInterest ?? []).map((poi) => ({
+        id: poi.id,
+        number: poi.number,
+        name: poi.name,
+        description: poi.description,
+        combatMapSpecId: poi.combatMapId,
+        isHidden: poi.isHidden,
+        actNumbers: poi.actNumbers,
+        locationTags: poi.locationTags,
+        defaultNPCSlugs: poi.defaultNPCSlugs,
+        position: poi.position,
+      }));
+      setPointsOfInterest(pois);
+      setTileData(new Array(GRID_SIZE * GRID_SIZE).fill(0));
+      setRegions([]);
+    } else {
+      setTileData(map.tileData ?? new Array(GRID_SIZE * GRID_SIZE).fill(0));
+      setRegions(normalizeRegions(map.regions ?? []));
+      setPointsOfInterest([]);
+    }
   }, [campaignMaps, selectedMapSpecId]);
 
   // Clear campaign edit mode and reset to fresh state
   const handleClearCampaignEdit = useCallback(() => {
     setEditingCampaignMap(null);
+    setMapType("combat");
     setMapName("");
     setFeetPerSquare(5);
     setTileData(new Array(GRID_SIZE * GRID_SIZE).fill(0));
     setRegions([]);
+    setPointsOfInterest([]);
     setBackgroundImageUrl(undefined);
     setAnalysisConfidence(null);
     setSaveSuccess(false);
@@ -180,6 +208,20 @@ function MapEditorContent() {
 
       if (editingCampaignMap) {
         // Save back to campaignMaps/{slug}_{specId}
+        const changes = mapType === "exploration"
+          ? {
+              name: mapName.trim().toLowerCase(),
+              mapType,
+              pointsOfInterest,
+              backgroundImageUrl,
+            }
+          : {
+              name: mapName.trim().toLowerCase(),
+              mapType,
+              feetPerSquare,
+              tileData,
+              regions,
+            };
         response = await fetch("/api/maps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -187,12 +229,7 @@ function MapEditorContent() {
             action: "update-campaign-map",
             campaignSlug: editingCampaignMap.campaignSlug,
             mapSpecId: editingCampaignMap.mapSpecId,
-            changes: {
-              name: mapName.trim().toLowerCase(),
-              feetPerSquare,
-              tileData,
-              regions,
-            },
+            changes,
           }),
         });
       } else {
@@ -202,16 +239,26 @@ function MapEditorContent() {
           setIsSaving(false);
           return;
         }
+        const payload = mapType === "exploration"
+          ? {
+              sessionId,
+              name: mapName.trim().toLowerCase(),
+              mapType,
+              pointsOfInterest,
+              backgroundImageUrl,
+            }
+          : {
+              sessionId,
+              name: mapName.trim().toLowerCase(),
+              mapType,
+              feetPerSquare,
+              tileData,
+              regions,
+            };
         response = await fetch("/api/maps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            name: mapName.trim().toLowerCase(),
-            feetPerSquare,
-            tileData,
-            regions,
-          }),
+          body: JSON.stringify(payload),
         });
       }
 
@@ -227,7 +274,7 @@ function MapEditorContent() {
     } finally {
       setIsSaving(false);
     }
-  }, [sessionId, mapName, feetPerSquare, tileData, regions, editingCampaignMap]);
+  }, [sessionId, mapName, mapType, feetPerSquare, tileData, regions, pointsOfInterest, backgroundImageUrl, editingCampaignMap]);
 
   return (
     <main className="min-h-screen bg-dungeon bg-stone-texture p-6">
@@ -242,6 +289,30 @@ function MapEditorContent() {
             className="font-cinzel text-xs text-parchment/40 tracking-widest uppercase border border-parchment/20 rounded px-3 py-1.5 hover:text-gold hover:border-gold/40 transition-colors"
           >
             Back
+          </button>
+        </div>
+
+        {/* Map type selector */}
+        <div className="flex gap-1 border-b border-parchment/10 pb-0">
+          <button
+            onClick={() => setMapType("combat")}
+            className={`px-5 py-2 font-cinzel text-xs tracking-wide uppercase rounded-t transition-colors ${
+              mapType === "combat"
+                ? "bg-dungeon-mid border border-b-0 border-parchment/20 text-gold"
+                : "text-parchment/40 hover:text-parchment/70"
+            }`}
+          >
+            Combat Map
+          </button>
+          <button
+            onClick={() => setMapType("exploration")}
+            className={`px-5 py-2 font-cinzel text-xs tracking-wide uppercase rounded-t transition-colors ${
+              mapType === "exploration"
+                ? "bg-dungeon-mid border border-b-0 border-parchment/20 text-gold"
+                : "text-parchment/40 hover:text-parchment/70"
+            }`}
+          >
+            Exploration Map
           </button>
         </div>
 
@@ -335,21 +406,25 @@ function MapEditorContent() {
               className="bg-dungeon-mid border border-parchment/20 rounded px-3 py-1.5 text-parchment font-crimson text-sm w-64 focus:border-gold/50 focus:outline-none"
             />
           </div>
-          <div className="space-y-1">
-            <label className="font-cinzel text-xs text-parchment/50 tracking-wide uppercase">
-              Feet / Square
-            </label>
-            <select
-              value={feetPerSquare}
-              onChange={(e) => setFeetPerSquare(Number(e.target.value))}
-              className="bg-dungeon-mid border border-parchment/20 rounded px-3 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
-            >
-              <option value={5}>5 ft (detailed)</option>
-              <option value={10}>10 ft</option>
-              <option value={50}>50 ft (zone)</option>
-              <option value={100}>100 ft (overworld)</option>
-            </select>
-          </div>
+
+          {/* Feet per square — combat maps only */}
+          {mapType === "combat" && (
+            <div className="space-y-1">
+              <label className="font-cinzel text-xs text-parchment/50 tracking-wide uppercase">
+                Feet / Square
+              </label>
+              <select
+                value={feetPerSquare}
+                onChange={(e) => setFeetPerSquare(Number(e.target.value))}
+                className="bg-dungeon-mid border border-parchment/20 rounded px-3 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
+              >
+                <option value={5}>5 ft (detailed)</option>
+                <option value={10}>10 ft</option>
+                <option value={50}>50 ft (zone)</option>
+                <option value={100}>100 ft (overworld)</option>
+              </select>
+            </div>
+          )}
 
           {/* Image upload */}
           <div className="space-y-1">
@@ -364,8 +439,8 @@ function MapEditorContent() {
             />
           </div>
 
-          {/* AI analyze button */}
-          {backgroundImageUrl && (
+          {/* AI analyze button — combat maps only */}
+          {mapType === "combat" && backgroundImageUrl && (
             <button
               onClick={handleAnalyze}
               disabled={isAnalyzing}
@@ -376,8 +451,8 @@ function MapEditorContent() {
           )}
         </div>
 
-        {/* Confidence badge */}
-        {analysisConfidence && (
+        {/* Confidence badge — combat maps only */}
+        {mapType === "combat" && analysisConfidence && (
           <div className={`inline-block px-3 py-1 rounded font-cinzel text-xs tracking-wide ${
             analysisConfidence === "high" ? "bg-green-900/30 text-green-400 border border-green-800/40" :
             analysisConfidence === "medium" ? "bg-amber-900/30 text-amber-400 border border-amber-800/40" :
@@ -394,14 +469,28 @@ function MapEditorContent() {
           </div>
         )}
 
-        {/* Map editor canvas + controls */}
-        <MapEditor
-          tileData={tileData}
-          regions={regions}
-          backgroundImageUrl={backgroundImageUrl}
-          onTileDataChange={setTileData}
-          onRegionsChange={setRegions}
-        />
+        {/* Map editor canvas + controls — swap based on map type */}
+        {mapType === "exploration" ? (
+          backgroundImageUrl ? (
+            <ExplorationMapEditor
+              imageUrl={backgroundImageUrl}
+              pointsOfInterest={pointsOfInterest}
+              onPOIsChange={setPointsOfInterest}
+            />
+          ) : (
+            <div className="rounded border border-dashed border-parchment/20 p-12 text-center text-parchment/40 font-crimson">
+              Upload a background image above to start placing POIs
+            </div>
+          )
+        ) : (
+          <MapEditor
+            tileData={tileData}
+            regions={regions}
+            backgroundImageUrl={backgroundImageUrl}
+            onTileDataChange={setTileData}
+            onRegionsChange={setRegions}
+          />
+        )}
 
         {/* Save */}
         <div className="flex items-center gap-3">

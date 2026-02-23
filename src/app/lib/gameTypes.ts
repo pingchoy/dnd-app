@@ -458,6 +458,7 @@ export interface CampaignPOISpec {
   actNumbers: number[];
   locationTags: string[];
   defaultNPCSlugs?: string[];
+  position?: { x: number; y: number }; // percentage coordinates for map editor placement
 }
 
 /** Blueprint for an exploration map — a background image with numbered POIs. */
