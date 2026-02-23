@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, deleteCharacter, getCampaign, saveSessionState } from "../../lib/characterStore";
+import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, deleteCharacter, getCampaign } from "../../lib/characterStore";
+import { adminDb } from "../../lib/firebaseAdmin";
 import type { PlayerState, StoryState } from "../../lib/gameTypes";
 import { DEFAULT_CAMPAIGN_SLUG } from "../../lib/gameTypes";
 import { instantiateCampaignMaps } from "../../lib/mapStore";
@@ -63,13 +64,9 @@ export async function POST(request: NextRequest) {
     if (campaign) {
       story.campaignTitle = campaign.title;
       story.campaignBackground = campaign.playerTeaser;
+      story.currentAct = 1;
     } else {
       console.warn(`[/api/characters] Campaign "${DEFAULT_CAMPAIGN_SLUG}" not found in Firestore — session will have no campaign data`);
-    }
-
-    // Set a fallback currentLocation if the client sent it empty
-    if (!story.currentLocation) {
-      story.currentLocation = "the starting location";
     }
 
     const { characterId, sessionId } = await createCharacter(player, story, DEFAULT_CAMPAIGN_SLUG);
@@ -79,9 +76,15 @@ export async function POST(request: NextRequest) {
     // and session still exist but without maps. This is recoverable (maps can be
     // instantiated later) and preferable to rolling back the entire character.
     if (campaign && sessionId) {
-      const maps = await instantiateCampaignMaps(DEFAULT_CAMPAIGN_SLUG, sessionId);
+      const maps = await instantiateCampaignMaps(DEFAULT_CAMPAIGN_SLUG, sessionId, campaign);
       if (maps.length > 0) {
-        await saveSessionState(sessionId, { activeMapId: maps[0].id });
+        // Set the first map as active and use its name as the starting location
+        const startingMap = maps[0];
+        await adminDb.collection("sessions").doc(sessionId).update({
+          activeMapId: startingMap.id,
+          "story.currentLocation": startingMap.name || "the starting location",
+          updatedAt: Date.now(),
+        });
       }
     }
 

@@ -50,6 +50,7 @@ export default function Dashboard() {
     addTokens,
     addCost,
     explorationPositions,
+    activeMap,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
   const {
@@ -503,6 +504,10 @@ export default function Dashboard() {
                   onMoveToken={moveToken}
                   gridSize={gridSize}
                   mode={inCombat ? "combat" : "exploration"}
+                  tileData={activeMap?.tileData}
+                  regions={activeMap?.regions}
+                  mapBackgroundUrl={activeMap?.backgroundImageUrl}
+                  feetPerSquare={activeMap?.feetPerSquare}
                   targetingAbility={inCombat ? selectedAbility : null}
                   onTargetSelected={inCombat ? handleTargetSelected : undefined}
                   onCancel={inCombat ? () => setSelectedAbility(null) : undefined}

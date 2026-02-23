@@ -264,8 +264,8 @@ function CharacterSidebar({ player, onOpenFullSheet, onClose }: Props) {
       <div className="flex-shrink-0 border-t border-gold-dark/30 px-4 py-4">
         <button
           onClick={onOpenFullSheet}
-          className="w-full font-cinzel text-base tracking-widest text-gold-dark uppercase
-                     border-2 border-gold-dark/50 rounded-lg py-3
+          className="w-full font-cinzel text-sm tracking-widest text-gold-dark uppercase
+                     border-2 border-gold-dark/50 rounded-lg px-4 py-3
                      bg-gradient-to-b from-gold/10 to-gold/5
                      hover:from-gold/20 hover:to-gold/10 hover:border-gold-dark
                      shadow-sm hover:shadow-gold-glow

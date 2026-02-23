@@ -31,17 +31,20 @@ import {
   getSessionId,
   getActiveMapId,
   getExplorationPositions,
+  getCampaignSlug,
   loadGameState,
   NPCToCreate,
+  serializeCampaignContext,
+  serializeRegionContext,
   setEncounter,
 } from "../../lib/gameState";
 import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
 import { loadMap } from "../../lib/mapStore";
-import { querySRD, loadSession } from "../../lib/characterStore";
+import { querySRD, loadSession, getCampaign, getCampaignAct } from "../../lib/characterStore";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 import { addMessage } from "../../lib/messageStore";
 import { enqueueAction, claimNextAction, completeAction, failAction } from "../../lib/actionQueue";
-import type { StoredAction } from "../../lib/gameTypes";
+import type { StoredAction, GridPosition } from "../../lib/gameTypes";
 
 interface ChatRequestBody {
   characterId: string;
@@ -109,13 +112,50 @@ async function processChatAction(
   const agentLabel = inCombat ? "Combat Agent" : "DM Agent";
   const agentModel = inCombat ? MODELS.UTILITY : MODELS.NARRATIVE;
 
+  // Build DM context (campaign briefing + spatial awareness) — skipped during combat
+  let dmContext: string | undefined;
+  let campaignSlug: string | undefined;
+  if (!inCombat) {
+    const contextParts: string[] = [];
+
+    // Campaign context
+    campaignSlug = getCampaignSlug();
+    if (campaignSlug) {
+      const campaign = await getCampaign(campaignSlug);
+      if (campaign) {
+        const actNumber = gameState.story.currentAct ?? 1;
+        const act = await getCampaignAct(campaignSlug, actNumber);
+        contextParts.push(serializeCampaignContext(campaign, act));
+      }
+    }
+
+    // Spatial context
+    const activeMapId = getActiveMapId();
+    const explorationPositions = getExplorationPositions();
+    if (activeMapId && explorationPositions && Object.keys(explorationPositions).length > 0) {
+      const map = await loadMap(sessionId, activeMapId);
+      if (map) {
+        const posMap = new Map<string, GridPosition>();
+        for (const [key, pos] of Object.entries(explorationPositions)) {
+          posMap.set(key === "player" ? gameState.player.name : key, pos);
+        }
+        const spatial = serializeRegionContext(posMap, map);
+        if (spatial) contextParts.push(spatial);
+      }
+    }
+
+    if (contextParts.length > 0) {
+      dmContext = contextParts.join("\n\n");
+    }
+  }
+
   console.log(`[${agentLabel}] Calling with player input:`, playerInput.slice(0, 100));
   const dmResult = inCombat
     ? await getCombatResponse(playerInput, {
         player: gameState.player,
         encounter: currentEncounter!,
       }, rulesOutcome, sessionId)
-    : await getDMResponse(playerInput, gameState, rulesOutcome, sessionId);
+    : await getDMResponse(playerInput, gameState, rulesOutcome, sessionId, dmContext, campaignSlug);
   const dmCost = calculateCost(agentModel, dmResult.inputTokens, dmResult.outputTokens);
   console.log(`[${agentLabel}] Done:`, {
     narrativeLength: dmResult.narrative.length,
@@ -147,7 +187,7 @@ async function processChatAction(
 
     // Load active map (if any) for region-aware NPC placement
     const activeMapId = getActiveMapId();
-    const activeMap = needsEncounter && activeMapId ? await loadMap(activeMapId) : null;
+    const activeMap = needsEncounter && activeMapId ? await loadMap(sessionId, activeMapId) : null;
 
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
@@ -354,12 +394,15 @@ export async function GET(req: NextRequest) {
     }
     const gameState = await loadGameState(characterId);
     const sessionId = getSessionId();
+    const activeMapId = getActiveMapId();
+    const activeMap = activeMapId ? await loadMap(sessionId, activeMapId) : null;
     return NextResponse.json({
       gameState,
       encounter: getEncounter(),
       sessionId,
       explorationPositions: getExplorationPositions() ?? null,
-      activeMapId: getActiveMapId() ?? null,
+      activeMapId: activeMapId ?? null,
+      activeMap,
     });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);

@@ -185,6 +185,11 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         items: { type: "string" },
         description: "Names of important NPCs the player has met or interacted with significantly. Not every shopkeeper — only story-relevant characters.",
       },
+      act_advance: {
+        type: "integer",
+        description:
+          "Advance the campaign to a new act number (e.g. 2 or 3). Use when the party completes the current act's climax or major plot milestone.",
+      },
     },
     required: [],
   },
@@ -313,6 +318,38 @@ export const QUERY_SRD_TOOL: Anthropic.Messages.Tool = {
       level: {
         type: "number",
         description: "Level 1–20. Required when type is 'class_level'.",
+      },
+    },
+    required: ["type"],
+  },
+};
+
+export const QUERY_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "query_campaign",
+  description:
+    "Look up detailed campaign data. Use when you need more detail than the compact campaign briefing provides — e.g. full NPC personality/secrets/motivations, an encounter's dmGuidance with specific DC checks and NPC behavior, or an act's mysteries/keyEvents.",
+  input_schema: {
+    type: "object",
+    properties: {
+      type: {
+        type: "string",
+        enum: ["npc", "act", "encounter"],
+        description:
+          "'npc' = full personality, secrets, motivations, voice notes for a campaign NPC. " +
+          "'act' = encounters list, mysteries, keyEvents, transitionToNextAct for an act. " +
+          "'encounter' = a specific encounter's dmGuidance, enemies, rewards, NPC involvement.",
+      },
+      npc_id: {
+        type: "string",
+        description: "NPC id (e.g. 'lysara-thorne'). Required when type='npc'.",
+      },
+      act_number: {
+        type: "integer",
+        description: "Act number (1, 2, 3). Used by type='act' and type='encounter'. Defaults to current act.",
+      },
+      encounter_name: {
+        type: "string",
+        description: "Encounter name to look up (e.g. 'Smuggler Warehouse Raid'). Required when type='encounter'.",
       },
     },
     required: ["type"],

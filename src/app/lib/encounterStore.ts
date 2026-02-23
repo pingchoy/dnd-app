@@ -33,15 +33,15 @@ function findEdgeSlot(occupied: Set<string>): GridPosition {
 }
 
 /**
- * Find an unoccupied cell within a region's bounding box.
+ * Find an unoccupied cell within a region's cells.
  * Returns null if the region is full.
  */
 function findRegionSlot(region: MapRegion, occupied: Set<string>): GridPosition | null {
-  for (let row = region.bounds.minRow; row <= region.bounds.maxRow; row++) {
-    for (let col = region.bounds.minCol; col <= region.bounds.maxCol; col++) {
-      const key = `${row},${col}`;
-      if (!occupied.has(key)) return { row, col };
-    }
+  for (const cellIndex of region.cells ?? []) {
+    const row = Math.floor(cellIndex / GRID_SIZE);
+    const col = cellIndex % GRID_SIZE;
+    const key = `${row},${col}`;
+    if (!occupied.has(key)) return { row, col };
   }
   return null;
 }

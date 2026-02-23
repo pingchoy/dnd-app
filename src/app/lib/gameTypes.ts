@@ -27,21 +27,43 @@ export interface MapRegion {
   id: string;                    // "region_tavern_main"
   name: string;                  // "The Rusty Flagon — Common Room"
   type: RegionType;
-  bounds: {                      // Bounding box (inclusive cell range)
-    minRow: number;
-    maxRow: number;
-    minCol: number;
-    maxCol: number;
-  };
+  cells: number[];               // flat cell indices (row * 20 + col) — arbitrary shape
   dmNote?: string;               // "Barkeep Mira behind counter. Patrons are tense."
   defaultNPCSlugs?: string[];    // ["guard", "commoner"] — NPCs placed here by default
   shopInventory?: string[];      // for type="shop" — items the DM can reference
 }
 
-/** Full map document — stored in Firestore `maps/{id}`. */
+/**
+ * Normalize a region from Firestore — converts legacy `bounds` format to `cells`.
+ * Safe to call on regions that already have `cells`.
+ */
+export function normalizeRegion(r: Record<string, unknown>): MapRegion {
+  const region = r as unknown as MapRegion & { bounds?: { minRow: number; maxRow: number; minCol: number; maxCol: number } };
+  if (region.cells && Array.isArray(region.cells)) return { ...region, cells: region.cells };
+  // Convert legacy bounds → cells
+  if (region.bounds) {
+    const { minRow, maxRow, minCol, maxCol } = region.bounds;
+    const cells: number[] = [];
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        cells.push(row * 20 + col);
+      }
+    }
+    const { bounds: _, ...rest } = region;
+    return { ...rest, cells } as MapRegion;
+  }
+  return { ...region, cells: [] } as MapRegion;
+}
+
+/** Normalize an array of regions from Firestore (handles missing `cells`). */
+export function normalizeRegions(regions: unknown[]): MapRegion[] {
+  if (!Array.isArray(regions)) return [];
+  return regions.map((r) => normalizeRegion(r as Record<string, unknown>));
+}
+
+/** Full map document — stored in Firestore `sessions/{sessionId}/maps/{id}`. */
 export interface MapDocument {
   id?: string;
-  sessionId: string;
   name: string;                  // "The Rusty Flagon"
   backgroundImageUrl?: string;   // user-uploaded image (Firebase Storage)
   gridSize: number;              // always 20
@@ -370,6 +392,8 @@ export interface StoryState {
   recentEvents: string[];
   /** Firestore ID of the active combat encounter, if any. */
   activeEncounterId?: string;
+  /** Current act number within the campaign (1-indexed). Defaults to 1. */
+  currentAct?: number;
 }
 
 /** The only campaign currently available. Used as default for all new sessions. */
@@ -424,6 +448,7 @@ export interface CampaignMap {
   feetPerSquare: number;
   tileData: number[];              // 400-element flat array
   regions: MapRegion[];
+  backgroundImageUrl?: string;
   generatedAt: number;
 }
 
@@ -623,7 +648,7 @@ export interface StoredEncounter {
 export interface StoredSession {
   id?: string;
   story: StoryState;
-  /** Campaign this session belongs to. */
+  /** Campaign this session is running (e.g. "the-crimson-accord"). */
   campaignSlug?: string;
   characterIds: string[];
   /** Which map is currently displayed in the grid. */

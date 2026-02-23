@@ -7,10 +7,11 @@
  * Workflow: Upload image → AI analysis (optional) → Review/correct → Save.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapEditor from "../components/MapEditor";
-import type { MapRegion } from "../lib/gameTypes";
+import { normalizeRegions } from "../lib/gameTypes";
+import type { CampaignMap, MapRegion } from "../lib/gameTypes";
 
 const GRID_SIZE = 20;
 
@@ -29,6 +30,25 @@ export default function MapEditorPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Campaign map loader state
+  const [campaignSlugs, setCampaignSlugs] = useState<string[]>([]);
+  const [campaignSlug, setCampaignSlug] = useState("");
+  const [campaignMaps, setCampaignMaps] = useState<CampaignMap[]>([]);
+  const [selectedMapSpecId, setSelectedMapSpecId] = useState("");
+  const [isLoadingCampaignMaps, setIsLoadingCampaignMaps] = useState(false);
+  const [editingCampaignMap, setEditingCampaignMap] = useState<{ campaignSlug: string; mapSpecId: string } | null>(null);
+
+  // Fetch available campaign slugs on mount
+  useEffect(() => {
+    fetch("/api/maps?slugs=true")
+      .then((r) => r.json())
+      .then((data) => {
+        setCampaignSlugs(data.slugs || []);
+        if (data.slugs?.length > 0) setCampaignSlug(data.slugs[0]);
+      })
+      .catch(() => {});
+  }, []);
 
   // Handle image upload — convert to base64 for AI analysis + data URL for preview
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,7 +98,7 @@ export default function MapEditorPage() {
 
       const result = await response.json();
       setTileData(result.tileData);
-      setRegions(result.regions);
+      setRegions(normalizeRegions(result.regions));
       setAnalysisConfidence(result.confidence);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
@@ -87,28 +107,105 @@ export default function MapEditorPage() {
     }
   }, [backgroundImageUrl, feetPerSquare]);
 
-  // Save map to Firestore
-  const handleSave = useCallback(async () => {
-    if (!sessionId || !mapName.trim()) {
-      setError("Session ID and map name are required.");
-      return;
+  // Fetch campaign map list
+  const handleLoadCampaignList = useCallback(async () => {
+    if (!campaignSlug.trim()) return;
+    setIsLoadingCampaignMaps(true);
+    setError(null);
+    setCampaignMaps([]);
+    setSelectedMapSpecId("");
+
+    try {
+      const response = await fetch(`/api/maps?campaign=${encodeURIComponent(campaignSlug.trim())}`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to load campaign maps");
+      }
+      const data = await response.json();
+      setCampaignMaps(data.maps);
+      if (data.maps.length > 0) {
+        setSelectedMapSpecId(data.maps[0].mapSpecId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load campaign maps");
+    } finally {
+      setIsLoadingCampaignMaps(false);
     }
+  }, [campaignSlug]);
+
+  // Load a selected campaign map into the editor
+  const handleLoadCampaignMap = useCallback(() => {
+    const map = campaignMaps.find((m) => m.mapSpecId === selectedMapSpecId);
+    if (!map) return;
+
+    setMapName(map.name);
+    setFeetPerSquare(map.feetPerSquare);
+    setTileData(map.tileData);
+    setRegions(normalizeRegions(map.regions));
+    setBackgroundImageUrl(map.backgroundImageUrl);
+    setEditingCampaignMap({ campaignSlug: map.campaignSlug, mapSpecId: map.mapSpecId });
+    setAnalysisConfidence(null);
+    setSaveSuccess(false);
+    setError(null);
+  }, [campaignMaps, selectedMapSpecId]);
+
+  // Clear campaign edit mode and reset to fresh state
+  const handleClearCampaignEdit = useCallback(() => {
+    setEditingCampaignMap(null);
+    setMapName("");
+    setFeetPerSquare(5);
+    setTileData(new Array(GRID_SIZE * GRID_SIZE).fill(0));
+    setRegions([]);
+    setBackgroundImageUrl(undefined);
+    setAnalysisConfidence(null);
+    setSaveSuccess(false);
+    setError(null);
+  }, []);
+
+  // Save map to Firestore — campaign template or session-scoped
+  const handleSave = useCallback(async () => {
     setIsSaving(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          name: mapName.trim().toLowerCase(),
-          feetPerSquare,
-          tileData,
-          regions,
-          // backgroundImageUrl is excluded for now — would need Firebase Storage upload
-        }),
-      });
+      let response: Response;
+
+      if (editingCampaignMap) {
+        // Save back to campaignMaps/{slug}_{specId}
+        response = await fetch("/api/maps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update-campaign-map",
+            campaignSlug: editingCampaignMap.campaignSlug,
+            mapSpecId: editingCampaignMap.mapSpecId,
+            changes: {
+              name: mapName.trim().toLowerCase(),
+              feetPerSquare,
+              tileData,
+              regions,
+            },
+          }),
+        });
+      } else {
+        // Existing session-scoped create
+        if (!sessionId || !mapName.trim()) {
+          setError("Session ID and map name are required.");
+          setIsSaving(false);
+          return;
+        }
+        response = await fetch("/api/maps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            name: mapName.trim().toLowerCase(),
+            feetPerSquare,
+            tileData,
+            regions,
+          }),
+        });
+      }
 
       if (!response.ok) {
         const data = await response.json();
@@ -122,7 +219,7 @@ export default function MapEditorPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [sessionId, mapName, feetPerSquare, tileData, regions]);
+  }, [sessionId, mapName, feetPerSquare, tileData, regions, editingCampaignMap]);
 
   return (
     <main className="min-h-screen bg-dungeon bg-stone-texture p-6">
@@ -138,6 +235,82 @@ export default function MapEditorPage() {
           >
             Back
           </button>
+        </div>
+
+        {/* Campaign map loader */}
+        <div className="space-y-3 p-4 rounded border border-parchment/10 bg-dungeon-mid/50">
+          <h2 className="font-cinzel text-xs text-parchment/50 tracking-wide uppercase">
+            Load Campaign Map
+          </h2>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="space-y-1">
+              <label className="font-cinzel text-xs text-parchment/40 tracking-wide uppercase">
+                Campaign
+              </label>
+              <select
+                value={campaignSlug}
+                onChange={(e) => setCampaignSlug(e.target.value)}
+                className="bg-dungeon border border-parchment/20 rounded px-3 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
+              >
+                {campaignSlugs.length === 0 && (
+                  <option value="">No campaigns found</option>
+                )}
+                {campaignSlugs.map((slug) => (
+                  <option key={slug} value={slug}>{slug}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleLoadCampaignList}
+              disabled={isLoadingCampaignMaps || !campaignSlug}
+              className="px-4 py-1.5 rounded border border-parchment/30 text-parchment/70 font-cinzel text-xs tracking-wide uppercase hover:text-gold hover:border-gold/40 transition-colors disabled:opacity-30"
+            >
+              {isLoadingCampaignMaps ? "Loading..." : "Load List"}
+            </button>
+
+            {campaignMaps.length > 0 && (
+              <>
+                <div className="space-y-1">
+                  <label className="font-cinzel text-xs text-parchment/40 tracking-wide uppercase">
+                    Select Map
+                  </label>
+                  <select
+                    value={selectedMapSpecId}
+                    onChange={(e) => setSelectedMapSpecId(e.target.value)}
+                    className="bg-dungeon border border-parchment/20 rounded px-3 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
+                  >
+                    {campaignMaps.map((m) => (
+                      <option key={m.mapSpecId} value={m.mapSpecId}>
+                        {m.name} ({m.mapSpecId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handleLoadCampaignMap}
+                  disabled={!selectedMapSpecId}
+                  className="px-4 py-1.5 rounded border border-gold/50 text-gold font-cinzel text-xs tracking-wide uppercase hover:bg-gold/10 transition-colors disabled:opacity-30"
+                >
+                  Load Map
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Editing badge */}
+          {editingCampaignMap && (
+            <div className="flex items-center gap-2">
+              <span className="inline-block px-3 py-1 rounded bg-blue-900/30 text-blue-400 border border-blue-800/40 font-cinzel text-xs tracking-wide">
+                Editing: {editingCampaignMap.campaignSlug}/{editingCampaignMap.mapSpecId}
+              </span>
+              <button
+                onClick={handleClearCampaignEdit}
+                className="text-parchment/40 hover:text-red-400 font-cinzel text-xs tracking-wide uppercase transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Map metadata */}
@@ -226,7 +399,7 @@ export default function MapEditorPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleSave}
-            disabled={isSaving || !mapName.trim()}
+            disabled={isSaving || (!editingCampaignMap && (!mapName.trim() || !sessionId))}
             className="px-6 py-2 rounded border border-gold/50 text-gold font-cinzel text-sm tracking-wide uppercase hover:bg-gold/10 transition-colors disabled:opacity-30"
           >
             {isSaving ? "Saving..." : "Save Map"}
@@ -236,7 +409,11 @@ export default function MapEditorPage() {
               Map saved successfully!
             </span>
           )}
-          {!sessionId && (
+          {editingCampaignMap ? (
+            <span className="text-blue-400/70 font-crimson text-sm">
+              Saving to campaignMaps/{editingCampaignMap.campaignSlug}_{editingCampaignMap.mapSpecId}
+            </span>
+          ) : !sessionId && (
             <span className="text-amber-400/70 font-crimson text-sm">
               Add ?sessionId=xxx to the URL to save
             </span>

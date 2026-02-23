@@ -22,6 +22,7 @@ import type {
   Ability,
   AOEData,
   Campaign,
+  CampaignAct,
   GameplayEffects,
   PlayerState,
   StoryState,
@@ -138,15 +139,6 @@ export interface StoredCharacter {
   story: StoryState;
   createdAt?: number;
   updatedAt?: number;
-}
-
-// ─── Campaign Lookup ──────────────────────────────────────────────────────────
-
-/** Fetch a campaign document by slug. Returns null if not found. */
-export async function getCampaign(slug: string): Promise<Campaign | null> {
-  const snap = await adminDb.collection("campaigns").doc(slug).get();
-  if (!snap.exists) return null;
-  return snap.data() as Campaign;
 }
 
 // ─── Session CRUD ─────────────────────────────────────────────────────────────
@@ -448,16 +440,18 @@ export async function deleteCharacter(id: string): Promise<void> {
  * class_level IDs are formatted as "{classSlug}_{level}" by the caller.
  */
 const SRD_COLLECTION_MAP: Record<string, string> = {
-  monster:     "srdMonsters",
-  spell:       "srdSpells",
-  magic_item:  "srdMagicItems",
-  condition:   "srdConditions",
-  feat:        "srdFeats",
-  background:  "srdBackgrounds",
-  armor:       "srdArmor",
-  spell_list:  "srdSpellLists",
-  class_level: "srdClassLevels",
-  equipment:   "srdEquipment",
+  monster:       "srdMonsters",
+  spell:         "srdSpells",
+  magic_item:    "srdMagicItems",
+  condition:     "srdConditions",
+  feat:          "srdFeats",
+  background:    "srdBackgrounds",
+  armor:         "srdArmor",
+  spell_list:    "srdSpellLists",
+  class_level:   "srdClassLevels",
+  equipment:     "srdEquipment",
+  campaign:      "campaigns",
+  campaign_act:  "campaignActs",
 };
 
 /** Module-level cache — SRD data is static so we never need to invalidate. */
@@ -725,6 +719,38 @@ export async function getSRDStartingEquipment(classSlug: string): Promise<SRDSta
   if (!snap.exists) return null;
 
   const data = snap.data() as SRDStartingEquipment;
+  srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
+  return data;
+}
+
+// ─── Campaign Queries ──────────────────────────────────────────────────────────
+
+/** Fetch a campaign by slug. Cached after first read. */
+export async function getCampaign(slug: string): Promise<Campaign | null> {
+  const cacheKey = `campaigns/${slug}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey) as unknown as Campaign;
+
+  const snap = await adminDb.collection("campaigns").doc(slug).get();
+  if (!snap.exists) return null;
+
+  const data = snap.data() as Campaign;
+  srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
+  return data;
+}
+
+/** Fetch a campaign act by campaign slug and act number. Cached after first read. */
+export async function getCampaignAct(
+  campaignSlug: string,
+  actNumber: number,
+): Promise<CampaignAct | null> {
+  const id = `${campaignSlug}_act-${actNumber}`;
+  const cacheKey = `campaignActs/${id}`;
+  if (srdCache.has(cacheKey)) return srdCache.get(cacheKey) as unknown as CampaignAct;
+
+  const snap = await adminDb.collection("campaignActs").doc(id).get();
+  if (!snap.exists) return null;
+
+  const data = snap.data() as CampaignAct;
   srdCache.set(cacheKey, data as unknown as Record<string, unknown>);
   return data;
 }

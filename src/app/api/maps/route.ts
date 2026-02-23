@@ -6,9 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createMap, loadSessionMaps, updateMap } from "../../lib/mapStore";
+import { createMap, loadSessionMaps, updateMap, listCampaignMaps, listCampaignSlugs, updateCampaignMap } from "../../lib/mapStore";
 import { analyzeMapImage } from "../../agents/mapAnalysisAgent";
-import type { MapDocument } from "../../lib/gameTypes";
+import type { CampaignMap, MapDocument } from "../../lib/gameTypes";
 
 // ─── POST: create map or analyze image ───────────────────────────────────────
 
@@ -30,8 +30,16 @@ interface AnalyzeMapBody {
 
 interface UpdateMapBody {
   action: "update";
+  sessionId: string;
   mapId: string;
-  changes: Partial<Omit<MapDocument, "id" | "sessionId" | "createdAt">>;
+  changes: Partial<Omit<MapDocument, "id" | "createdAt">>;
+}
+
+interface UpdateCampaignMapBody {
+  action: "update-campaign-map";
+  campaignSlug: string;
+  mapSpecId: string;
+  changes: Partial<Omit<CampaignMap, "campaignSlug" | "mapSpecId" | "generatedAt">>;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,13 +56,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
+    // Update existing campaign map template
+    if (body.action === "update-campaign-map") {
+      const { campaignSlug, mapSpecId, changes } = body as UpdateCampaignMapBody;
+      if (!campaignSlug || !mapSpecId) {
+        return NextResponse.json({ error: "campaignSlug and mapSpecId required" }, { status: 400 });
+      }
+      await updateCampaignMap(campaignSlug, mapSpecId, changes);
+      return NextResponse.json({ ok: true });
+    }
+
     // Update existing map
     if (body.action === "update") {
-      const { mapId, changes } = body as UpdateMapBody;
-      if (!mapId) {
-        return NextResponse.json({ error: "mapId required" }, { status: 400 });
+      const { sessionId, mapId, changes } = body as UpdateMapBody;
+      if (!sessionId || !mapId) {
+        return NextResponse.json({ error: "sessionId and mapId required" }, { status: 400 });
       }
-      await updateMap(mapId, changes);
+      await updateMap(sessionId, mapId, changes);
       return NextResponse.json({ ok: true });
     }
 
@@ -87,9 +105,23 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    // List all campaign slugs
+    if (req.nextUrl.searchParams.has("slugs")) {
+      const slugs = await listCampaignSlugs();
+      return NextResponse.json({ slugs });
+    }
+
+    // Campaign map templates
+    const campaignSlug = req.nextUrl.searchParams.get("campaign");
+    if (campaignSlug) {
+      const maps = await listCampaignMaps(campaignSlug);
+      return NextResponse.json({ maps });
+    }
+
+    // Session-scoped maps
     const sessionId = req.nextUrl.searchParams.get("sessionId");
     if (!sessionId) {
-      return NextResponse.json({ error: "sessionId query param required" }, { status: 400 });
+      return NextResponse.json({ error: "sessionId or campaign query param required" }, { status: 400 });
     }
     const maps = await loadSessionMaps(sessionId);
     return NextResponse.json({ maps });

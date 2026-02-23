@@ -573,45 +573,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
         }
       }
 
-      // 1a) Tile data overlay — walls and doors rendered on top of checkerboard
-      if (s.tileData && s.tileData.length === s.gridSize * s.gridSize) {
-        for (let row = 0; row < s.gridSize; row++) {
-          for (let col = 0; col < s.gridSize; col++) {
-            const tile = s.tileData[row * s.gridSize + col];
-            if (tile === 1) {
-              // Wall — dark solid overlay
-              ctx!.fillStyle = "rgba(30, 20, 10, 0.7)";
-              ctx!.fillRect(col * s.cellStep, row * s.cellStep, s.cellSize, s.cellSize);
-            } else if (tile === 2) {
-              // Door — amber outline
-              ctx!.strokeStyle = "rgba(217, 119, 6, 0.6)";
-              ctx!.lineWidth = 2;
-              ctx!.strokeRect(col * s.cellStep + 2, row * s.cellStep + 2, s.cellSize - 4, s.cellSize - 4);
-            }
-          }
-        }
-      }
-
-      // 1a.ii) Region overlays — semi-transparent color-coded areas
-      if (s.regions && s.regions.length > 0) {
-        for (const region of s.regions) {
-          const color = REGION_OVERLAY_COLORS[region.type] ?? REGION_OVERLAY_COLORS.custom;
-          ctx!.fillStyle = color;
-          const rx = region.bounds.minCol * s.cellStep;
-          const ry = region.bounds.minRow * s.cellStep;
-          const rw = (region.bounds.maxCol - region.bounds.minCol + 1) * s.cellStep - GAP;
-          const rh = (region.bounds.maxRow - region.bounds.minRow + 1) * s.cellStep - GAP;
-          ctx!.fillRect(rx, ry, rw, rh);
-
-          // Region name label (small, top-left corner)
-          ctx!.save();
-          ctx!.font = `${Math.max(8, s.cellSize * 0.18)}px Cinzel, Georgia, serif`;
-          ctx!.fillStyle = "rgba(255, 255, 255, 0.5)";
-          ctx!.textBaseline = "top";
-          ctx!.fillText(region.name, rx + 3, ry + 2);
-          ctx!.restore();
-        }
-      }
+      // 1a) Tile data and region overlays are only rendered in the map editor.
+      // The player grid uses tileData for collision logic only (wall-blocking),
+      // but does not paint walls, doors, water, indoor tints, or region zones.
 
       // 1b) Range overlay — targeting ability range or default melee reach
       const pPos = s.positions.get("player");
@@ -1250,17 +1214,19 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
         const cell = pixelToCell(vx, vy);
         if (!cell) return;
 
+        // Tile collision — walls block movement (both modes)
+        const tileValue = (tileData && tileData.length === gridSize * gridSize)
+          ? tileData[cell.row * gridSize + cell.col]
+          : 0;
+        if (tileValue === 1) return; // wall — blocked
+
         // Speed check — combat mode only (exploration has free movement)
+        // Water (3) = difficult terrain → half speed
         if (mode === "combat" && origin) {
-          const speed = player.speed ?? DEFAULT_SPEED;
+          let speed = player.speed ?? DEFAULT_SPEED;
+          if (tileValue === 3) speed = Math.floor(speed / 2);
           const { allowed } = validateMovement(origin, cell, speed);
           if (!allowed) return;
-        }
-
-        // Tile collision — walls block movement (both modes)
-        if (tileData && tileData.length === gridSize * gridSize) {
-          const tileValue = tileData[cell.row * gridSize + cell.col];
-          if (tileValue === 1) return; // wall — blocked
         }
 
         // Token collision — don't drop on another living token (dead corpses are walkable)

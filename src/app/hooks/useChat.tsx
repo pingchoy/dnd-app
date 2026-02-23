@@ -13,7 +13,7 @@ import {
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
 import { StoredMessage, OPENING_NARRATIVE } from "../lib/gameTypes";
-import type { GameState, StoredEncounter, AOEResultData, GridPosition } from "../lib/gameTypes";
+import type { GameState, StoredEncounter, AOEResultData, GridPosition, MapDocument } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -64,6 +64,8 @@ export interface UseChatReturn {
   explorationPositions: Record<string, GridPosition> | null;
   /** Active map ID from the session (null until loaded). */
   activeMapId: string | null;
+  /** Active map document (tileData, regions, backgroundImageUrl). */
+  activeMap: MapDocument | null;
 }
 
 interface UseChatParams {
@@ -82,6 +84,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
   const [explorationPositions, setExplorationPositions] = useState<Record<string, GridPosition> | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
+  const [activeMap, setActiveMap] = useState<MapDocument | null>(null);
 
   // Ref to hold the latest onEncounterData callback (avoids stale closures in async handlers)
   const onEncounterDataRef = useRef(onEncounterData);
@@ -124,6 +127,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
         setSessionId(data.sessionId ?? null);
         setExplorationPositions(data.explorationPositions ?? null);
         setActiveMapId(data.activeMapId ?? null);
+        setActiveMap(data.activeMap ?? null);
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
@@ -306,5 +310,6 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     addCost,
     explorationPositions,
     activeMapId,
+    activeMap,
   };
 }

@@ -2,13 +2,12 @@
 
 /**
  * MapEditor — Canvas-based map editor for painting tile collision data
- * and defining semantic regions on a 20×20 grid.
+ * and defining semantic regions on a 20x20 grid.
  *
- * Four modes:
+ * Three modes:
  *   1. Upload: set background image and feetPerSquare
- *   2. Analyze: send image to AI vision agent for auto-population
- *   3. Collision: click/drag cells to toggle wall (1) / floor (0) / door (2)
- *   4. Region: click+drag rectangles to define named regions
+ *   2. Collision: click/drag cells to toggle wall (1) / floor (0) / door (2)
+ *   3. Region: paint cells to assign them to a named region (arbitrary shapes)
  */
 
 import { useRef, useState, useCallback, useEffect } from "react";
@@ -22,13 +21,15 @@ const GAP = 1;
 const CELL_SIZE = (CANVAS_DIM - (GRID_SIZE - 1) * GAP) / GRID_SIZE;
 const CELL_STEP = CELL_SIZE + GAP;
 
-/** Tile types: 0=floor, 1=wall, 2=door. */
-type TileType = 0 | 1 | 2;
+/** Tile types: 0=floor, 1=wall, 2=door, 3=water, 4=indoors. */
+type TileType = 0 | 1 | 2 | 3 | 4;
 
 const TILE_COLORS: Record<TileType, string> = {
   0: "rgba(139, 105, 20, 0.15)",  // floor — faint gold
   1: "rgba(60, 40, 20, 0.85)",     // wall — dark brown
   2: "rgba(100, 80, 40, 0.6)",     // door — medium brown
+  3: "rgba(30, 100, 200, 0.45)",   // water — blue
+  4: "rgba(180, 140, 80, 0.30)",   // indoors — warm interior
 };
 
 /** Region type → overlay color for visualization. */
@@ -73,10 +74,13 @@ export default function MapEditor({
   const [paintTile, setPaintTile] = useState<TileType>(1); // wall by default
   const [isPainting, setIsPainting] = useState(false);
 
-  // Region drawing state
-  const [regionStart, setRegionStart] = useState<{ row: number; col: number } | null>(null);
-  const [regionEnd, setRegionEnd] = useState<{ row: number; col: number } | null>(null);
-  const [editingRegion, setEditingRegion] = useState<Partial<MapRegion> | null>(null);
+  // Region paint state
+  const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
+  /** Stroke mode: determined on mouseDown, held through drag. "add" paints cells, "erase" removes them. */
+  const [regionStrokeMode, setRegionStrokeMode] = useState<"add" | "erase" | null>(null);
+  const [editingRegion, setEditingRegion] = useState<{ name: string; type: RegionType; dmNote: string } | null>(null);
+  const [editingRegionId, setEditingRegionId] = useState<string | null>(null); // non-null = editing existing
+  const [bgLoaded, setBgLoaded] = useState(0);
 
   // Load background image
   useEffect(() => {
@@ -86,9 +90,14 @@ export default function MapEditor({
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = backgroundImageUrl;
+    // Cache-bust external URLs to avoid stale CDN responses without CORS headers
+    const url = backgroundImageUrl.startsWith("http")
+      ? `${backgroundImageUrl}${backgroundImageUrl.includes("?") ? "&" : "?"}cb=1`
+      : backgroundImageUrl;
+    img.src = url;
     img.onload = () => {
       bgImageRef.current = img;
+      setBgLoaded((n) => n + 1);
     };
   }, [backgroundImageUrl]);
 
@@ -117,57 +126,71 @@ export default function MapEditor({
       ctx.restore();
     }
 
-    // Tile cells
-    for (let row = 0; row < GRID_SIZE; row++) {
-      for (let col = 0; col < GRID_SIZE; col++) {
-        const idx = row * GRID_SIZE + col;
-        const tile = (tileData[idx] ?? 0) as TileType;
-        ctx.fillStyle = TILE_COLORS[tile] ?? TILE_COLORS[0];
-        ctx.fillRect(col * CELL_STEP, row * CELL_STEP, CELL_SIZE, CELL_SIZE);
+    // Tile cells (collision mode only)
+    if (mode === "collision") {
+      for (let row = 0; row < GRID_SIZE; row++) {
+        for (let col = 0; col < GRID_SIZE; col++) {
+          const idx = row * GRID_SIZE + col;
+          const tile = (tileData[idx] ?? 0) as TileType;
+          ctx.fillStyle = TILE_COLORS[tile] ?? TILE_COLORS[0];
+          ctx.fillRect(col * CELL_STEP, row * CELL_STEP, CELL_SIZE, CELL_SIZE);
+        }
       }
     }
 
-    // Region overlays
-    for (const region of regions) {
-      const color = REGION_COLORS[region.type] ?? REGION_COLORS.custom;
-      ctx.fillStyle = color;
-      const x = region.bounds.minCol * CELL_STEP;
-      const y = region.bounds.minRow * CELL_STEP;
-      const w = (region.bounds.maxCol - region.bounds.minCol + 1) * CELL_STEP - GAP;
-      const h = (region.bounds.maxRow - region.bounds.minRow + 1) * CELL_STEP - GAP;
-      ctx.fillRect(x, y, w, h);
+    // Region overlays (region mode only) — paint each cell individually
+    if (mode === "region") {
+      for (const region of regions) {
+        if (!region.cells || region.cells.length === 0) continue;
+        const isActive = region.id === activeRegionId;
+        const color = REGION_COLORS[region.type] ?? REGION_COLORS.custom;
+        ctx.fillStyle = color;
 
-      // Region label
-      ctx.save();
-      ctx.font = "bold 10px Cinzel, Georgia, serif";
-      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-      ctx.textBaseline = "top";
-      ctx.fillText(region.name, x + 3, y + 3);
-      ctx.restore();
-    }
+        let sumRow = 0;
+        let sumCol = 0;
+        for (const cellIndex of region.cells) {
+          const row = Math.floor(cellIndex / GRID_SIZE);
+          const col = cellIndex % GRID_SIZE;
+          ctx.fillRect(col * CELL_STEP, row * CELL_STEP, CELL_SIZE, CELL_SIZE);
+          sumRow += row;
+          sumCol += col;
+        }
 
-    // Active region selection preview
-    if (regionStart && regionEnd) {
-      const minRow = Math.min(regionStart.row, regionEnd.row);
-      const maxRow = Math.max(regionStart.row, regionEnd.row);
-      const minCol = Math.min(regionStart.col, regionEnd.col);
-      const maxCol = Math.max(regionStart.col, regionEnd.col);
-      ctx.strokeStyle = "rgba(201, 168, 76, 0.9)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      const x = minCol * CELL_STEP;
-      const y = minRow * CELL_STEP;
-      const w = (maxCol - minCol + 1) * CELL_STEP - GAP;
-      const h = (maxRow - minRow + 1) * CELL_STEP - GAP;
-      ctx.strokeRect(x, y, w, h);
-      ctx.setLineDash([]);
+        // Highlight border on cells of the active (painting) region
+        if (isActive) {
+          ctx.strokeStyle = "rgba(201, 168, 76, 0.9)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          for (const cellIndex of region.cells) {
+            const row = Math.floor(cellIndex / GRID_SIZE);
+            const col = cellIndex % GRID_SIZE;
+            ctx.strokeRect(col * CELL_STEP + 1, row * CELL_STEP + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+          }
+          ctx.setLineDash([]);
+        }
+
+        // Region label at centroid
+        const centroidRow = sumRow / region.cells.length;
+        const centroidCol = sumCol / region.cells.length;
+        ctx.save();
+        ctx.font = "bold 10px Cinzel, Georgia, serif";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          region.name,
+          centroidCol * CELL_STEP + CELL_SIZE / 2,
+          centroidRow * CELL_STEP + CELL_SIZE / 2,
+        );
+        ctx.restore();
+      }
     }
 
     // Grid border
     ctx.strokeStyle = "rgba(139, 105, 20, 0.3)";
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, CANVAS_DIM, CANVAS_DIM);
-  }, [tileData, regions, regionStart, regionEnd]);
+  }, [mode, tileData, regions, bgLoaded, activeRegionId]);
 
   useEffect(() => {
     draw();
@@ -197,6 +220,37 @@ export default function MapEditor({
     [tileData, paintTile, onTileDataChange],
   );
 
+  /**
+   * Add or remove a cell from the active region.
+   * "add" assigns the cell to the active region (removing from any other).
+   * "erase" removes the cell from the active region only.
+   */
+  const paintRegionCell = useCallback(
+    (row: number, col: number, stroke: "add" | "erase") => {
+      if (!activeRegionId) return;
+      const cellIndex = row * GRID_SIZE + col;
+
+      const updatedRegions = regions.map((r) => {
+        const cells = r.cells ?? [];
+        if (r.id === activeRegionId) {
+          if (stroke === "erase") {
+            return { ...r, cells: cells.filter((c) => c !== cellIndex) };
+          }
+          // Add if not already present
+          return cells.includes(cellIndex) ? r : { ...r, cells: [...cells, cellIndex] };
+        }
+        // When adding, remove this cell from any other region (exclusive ownership)
+        if (stroke === "add" && cells.includes(cellIndex)) {
+          return { ...r, cells: cells.filter((c) => c !== cellIndex) };
+        }
+        return r;
+      });
+
+      onRegionsChange(updatedRegions);
+    },
+    [activeRegionId, regions, onRegionsChange],
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const cell = pixelToCell(e);
@@ -205,12 +259,17 @@ export default function MapEditor({
       if (mode === "collision") {
         setIsPainting(true);
         paintCell(cell.row, cell.col);
-      } else if (mode === "region") {
-        setRegionStart(cell);
-        setRegionEnd(cell);
+      } else if (mode === "region" && activeRegionId) {
+        // Determine stroke mode: if cell is already in this region, erase; otherwise add
+        const cellIndex = cell.row * GRID_SIZE + cell.col;
+        const activeRegion = regions.find((r) => r.id === activeRegionId);
+        const stroke = (activeRegion?.cells ?? []).includes(cellIndex) ? "erase" : "add";
+        setRegionStrokeMode(stroke);
+        setIsPainting(true);
+        paintRegionCell(cell.row, cell.col, stroke);
       }
     },
-    [mode, paintCell],
+    [mode, paintCell, paintRegionCell, activeRegionId, regions],
   );
 
   const handleMouseMove = useCallback(
@@ -220,51 +279,66 @@ export default function MapEditor({
 
       if (mode === "collision" && isPainting) {
         paintCell(cell.row, cell.col);
-      } else if (mode === "region" && regionStart) {
-        setRegionEnd(cell);
+      } else if (mode === "region" && isPainting && activeRegionId && regionStrokeMode) {
+        paintRegionCell(cell.row, cell.col, regionStrokeMode);
       }
     },
-    [mode, isPainting, paintCell, regionStart],
+    [mode, isPainting, paintCell, activeRegionId, regionStrokeMode, paintRegionCell],
   );
 
   const handleMouseUp = useCallback(() => {
-    if (mode === "collision") {
-      setIsPainting(false);
-    } else if (mode === "region" && regionStart && regionEnd) {
-      // Open region form
-      setEditingRegion({
-        bounds: {
-          minRow: Math.min(regionStart.row, regionEnd.row),
-          maxRow: Math.max(regionStart.row, regionEnd.row),
-          minCol: Math.min(regionStart.col, regionEnd.col),
-          maxCol: Math.max(regionStart.col, regionEnd.col),
-        },
-        type: "custom",
-        name: "",
-      });
-      setRegionStart(null);
-      setRegionEnd(null);
-    }
-  }, [mode, regionStart, regionEnd]);
+    setIsPainting(false);
+    setRegionStrokeMode(null);
+  }, []);
 
   const saveRegion = useCallback(() => {
-    if (!editingRegion?.name || !editingRegion.bounds) return;
-    const newRegion: MapRegion = {
-      id: `region_${editingRegion.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}_${Date.now()}`,
-      name: editingRegion.name,
-      type: editingRegion.type ?? "custom",
-      bounds: editingRegion.bounds as MapRegion["bounds"],
-      ...(editingRegion.dmNote ? { dmNote: editingRegion.dmNote } : {}),
-    };
-    onRegionsChange([...regions, newRegion]);
+    if (!editingRegion?.name) return;
+
+    if (editingRegionId) {
+      // Update existing region metadata in-place
+      const updated = regions.map((r) =>
+        r.id === editingRegionId
+          ? {
+              ...r,
+              name: editingRegion.name,
+              type: editingRegion.type,
+              ...(editingRegion.dmNote ? { dmNote: editingRegion.dmNote } : { dmNote: undefined }),
+            }
+          : r,
+      );
+      onRegionsChange(updated);
+    } else {
+      // Create new region with empty cells
+      const newRegion: MapRegion = {
+        id: `region_${editingRegion.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}_${Date.now()}`,
+        name: editingRegion.name,
+        type: editingRegion.type,
+        cells: [],
+        ...(editingRegion.dmNote ? { dmNote: editingRegion.dmNote } : {}),
+      };
+      onRegionsChange([...regions, newRegion]);
+      // Auto-select the new region for painting
+      setActiveRegionId(newRegion.id);
+    }
     setEditingRegion(null);
-  }, [editingRegion, regions, onRegionsChange]);
+    setEditingRegionId(null);
+  }, [editingRegion, editingRegionId, regions, onRegionsChange]);
+
+  const startEditRegion = useCallback((region: MapRegion) => {
+    setEditingRegionId(region.id);
+    setEditingRegion({
+      name: region.name,
+      type: region.type,
+      dmNote: region.dmNote ?? "",
+    });
+  }, []);
 
   const deleteRegion = useCallback(
     (id: string) => {
       onRegionsChange(regions.filter((r) => r.id !== id));
+      if (activeRegionId === id) setActiveRegionId(null);
     },
-    [regions, onRegionsChange],
+    [regions, onRegionsChange, activeRegionId],
   );
 
   const clearTiles = useCallback(() => {
@@ -277,17 +351,11 @@ export default function MapEditor({
       <div className="flex-shrink-0">
         <canvas
           ref={canvasRef}
-          style={{ width: CANVAS_DIM, height: CANVAS_DIM, cursor: mode === "collision" ? "crosshair" : "cell" }}
+          style={{ width: CANVAS_DIM, height: CANVAS_DIM, cursor: mode === "collision" ? "crosshair" : (activeRegionId ? "cell" : "default") }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onMouseLeave={() => {
-            setIsPainting(false);
-            if (mode === "region") {
-              setRegionStart(null);
-              setRegionEnd(null);
-            }
-          }}
+          onMouseLeave={() => setIsPainting(false)}
         />
       </div>
 
@@ -323,11 +391,13 @@ export default function MapEditor({
             <p className="text-parchment/60 font-crimson text-sm">
               Click or drag to paint tiles. Right-click erases (sets to floor).
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {([
                 [1, "Wall", "bg-dungeon-mid"],
                 [2, "Door", "bg-amber-900/60"],
                 [0, "Floor", "bg-gold/10"],
+                [3, "Water", "bg-blue-800/40"],
+                [4, "Indoors", "bg-amber-700/30"],
               ] as [TileType, string, string][]).map(([tile, label, bg]) => (
                 <button
                   key={tile}
@@ -355,21 +425,33 @@ export default function MapEditor({
         {mode === "region" && (
           <div className="space-y-3">
             <p className="text-parchment/60 font-crimson text-sm">
-              Click and drag on the grid to define a rectangular region.
+              {activeRegionId
+                ? "Click cells to add/remove them from the selected region."
+                : "Select a region to paint, or create a new one."}
             </p>
 
-            {/* Region form (appears after drawing a rectangle) */}
+            {/* New Region button */}
+            {!editingRegion && (
+              <button
+                onClick={() => setEditingRegion({ name: "", type: "custom", dmNote: "" })}
+                className="px-3 py-1.5 rounded border border-gold/50 text-gold font-cinzel text-xs hover:bg-gold/10 transition-colors"
+              >
+                + New Region
+              </button>
+            )}
+
+            {/* Region form (new or editing metadata) */}
             {editingRegion && (
               <div className="space-y-2 border border-gold/30 rounded p-3 bg-dungeon-mid">
                 <input
                   type="text"
                   placeholder="Region name..."
-                  value={editingRegion.name ?? ""}
+                  value={editingRegion.name}
                   onChange={(e) => setEditingRegion({ ...editingRegion, name: e.target.value })}
                   className="w-full bg-dungeon border border-parchment/20 rounded px-2 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
                 />
                 <select
-                  value={editingRegion.type ?? "custom"}
+                  value={editingRegion.type}
                   onChange={(e) => setEditingRegion({ ...editingRegion, type: e.target.value as RegionType })}
                   className="w-full bg-dungeon border border-parchment/20 rounded px-2 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
                 >
@@ -381,7 +463,7 @@ export default function MapEditor({
                 </select>
                 <textarea
                   placeholder="DM note (optional)..."
-                  value={editingRegion.dmNote ?? ""}
+                  value={editingRegion.dmNote}
                   onChange={(e) => setEditingRegion({ ...editingRegion, dmNote: e.target.value })}
                   className="w-full bg-dungeon border border-parchment/20 rounded px-2 py-1.5 text-parchment font-crimson text-sm focus:border-gold/50 focus:outline-none"
                   rows={2}
@@ -392,10 +474,10 @@ export default function MapEditor({
                     disabled={!editingRegion.name}
                     className="px-3 py-1 rounded border border-gold/50 text-gold font-cinzel text-xs hover:bg-gold/10 transition-colors disabled:opacity-30"
                   >
-                    Save Region
+                    {editingRegionId ? "Update" : "Create Region"}
                   </button>
                   <button
-                    onClick={() => setEditingRegion(null)}
+                    onClick={() => { setEditingRegion(null); setEditingRegionId(null); }}
                     className="px-3 py-1 rounded border border-parchment/20 text-parchment/50 font-cinzel text-xs hover:border-parchment/40 transition-colors"
                   >
                     Cancel
@@ -413,22 +495,35 @@ export default function MapEditor({
                 {regions.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-dungeon-mid border border-parchment/10"
+                    onClick={() => setActiveRegionId(activeRegionId === r.id ? null : r.id)}
+                    className={`flex items-center justify-between gap-2 px-2 py-1 rounded border cursor-pointer transition-colors ${
+                      activeRegionId === r.id
+                        ? "bg-gold/10 border-gold/40"
+                        : "bg-dungeon-mid border-parchment/10 hover:border-parchment/20"
+                    }`}
                   >
                     <div className="min-w-0">
                       <span className="text-parchment font-crimson text-sm truncate block">
                         {r.name}
                       </span>
                       <span className="text-parchment/40 font-crimson text-xs">
-                        {r.type} ({r.bounds.minRow},{r.bounds.minCol})–({r.bounds.maxRow},{r.bounds.maxCol})
+                        {r.type} — {(r.cells ?? []).length} cells
                       </span>
                     </div>
-                    <button
-                      onClick={() => deleteRegion(r.id)}
-                      className="text-red-400/50 hover:text-red-400 text-xs flex-shrink-0"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startEditRegion(r); }}
+                        className="text-gold/50 hover:text-gold text-xs"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }}
+                        className="text-red-400/50 hover:text-red-400 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

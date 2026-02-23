@@ -27,11 +27,12 @@ import {
 } from "../lib/gameState";
 import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
-import { handleSRDQuery } from "./agentUtils";
+import { handleSRDQuery, handleCampaignQuery } from "./agentUtils";
 import {
   UPDATE_GAME_STATE_TOOL,
   UPDATE_NPC_TOOL,
   QUERY_SRD_TOOL,
+  QUERY_CAMPAIGN_TOOL,
 } from "./tools";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -76,7 +77,14 @@ FORMATTING:
 - Use --- to separate distinct scene beats when appropriate.
 - Do not use headers (#) or bullet lists in narrative prose.
 
-TONE: Dark fantasy. Evershade is a city of secrets, shadow, and danger. Rewards careful play.`;
+CAMPAIGN CONTEXT:
+- When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
+- Use query_campaign to fetch detailed NPC personality/secrets before roleplaying a named NPC. Use query_campaign with type='encounter' to get dmGuidance with specific DC checks and narrative beats before running a scripted encounter.
+- Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
+- Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
+- When spatial context describes the player's map position, use region names and DM notes for environmental detail.
+
+TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
 
 /** Static-only system prompt — cached across requests. */
 const SYSTEM_PROMPT: Anthropic.Messages.TextBlockParam[] = [
@@ -110,15 +118,17 @@ export async function getDMResponse(
   gameState: GameState,
   rulesOutcome: RulesOutcome | null,
   sessionId: string,
-  /** Optional spatial context from serializeRegionContext() — injected as-is when a map is active. */
-  spatialContext?: string,
+  /** Optional DM context (campaign briefing + spatial context) — injected as-is. */
+  dmContext?: string,
+  /** Campaign slug for on-demand query_campaign tool calls. */
+  campaignSlug?: string,
 ): Promise<DMResponse> {
   // Prepend dynamic game state so the static system prompt + tools stay fully cacheable
   let userContent = `CAMPAIGN STATE:\n${serializeStoryState(gameState.story)}`;
 
-  // Spatial context injection — only when a map is active and players have positions
-  if (spatialContext) {
-    userContent += `\n\n${spatialContext}`;
+  // DM context injection — campaign briefing and/or spatial context
+  if (dmContext) {
+    userContent += `\n\n${dmContext}`;
   }
 
   userContent += `\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
@@ -141,6 +151,7 @@ export async function getDMResponse(
   const tools: Anthropic.Messages.Tool[] = [
     UPDATE_GAME_STATE_TOOL,
     UPDATE_NPC_TOOL,
+    ...(campaignSlug ? [QUERY_CAMPAIGN_TOOL] : []),
     { ...QUERY_SRD_TOOL, cache_control: { type: "ephemeral" } },
   ];
 
@@ -149,6 +160,7 @@ export async function getDMResponse(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let srdQueryCount = 0;
+  let campaignQueryCount = 0;
 
   // Tool-use loop: the DM may call tools (update_game_state, update_npc, query_srd)
   // and we continue the conversation so it can incorporate tool results into its
@@ -219,6 +231,24 @@ export async function getDMResponse(
         const { resultContent, newCount } = await handleSRDQuery(input, srdQueryCount, MAX_SRD_QUERIES, "DM Agent");
         srdQueryCount = newCount;
 
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: resultContent,
+        });
+      } else if (block.name === "query_campaign") {
+        hasQuerySRD = true; // needs continuation like SRD queries
+        const input = block.input as {
+          type: string;
+          npc_id?: string;
+          act_number?: number;
+          encounter_name?: string;
+        };
+        const { resultContent, newCount } = await handleCampaignQuery(
+          input, campaignSlug, gameState.story.currentAct ?? 1,
+          campaignQueryCount, MAX_SRD_QUERIES, "DM Agent",
+        );
+        campaignQueryCount = newCount;
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,

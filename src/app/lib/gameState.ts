@@ -63,6 +63,8 @@ export {
   applyEffects,
   FIGHTING_STYLE_EFFECTS,
   emptyCombatStats,
+  normalizeRegion,
+  normalizeRegions,
 } from "./gameTypes";
 
 import {
@@ -80,6 +82,8 @@ import {
   GridPosition,
   MapDocument,
   MapRegion,
+  Campaign,
+  CampaignAct,
   FEATURE_CHOICE_OPTIONS,
   FIGHTING_STYLE_EFFECTS,
   emptyCombatStats,
@@ -254,12 +258,9 @@ export function serializeRegionContext(
 
   for (const [playerName, pos] of Array.from(playerPositions.entries())) {
     // Find which region(s) the player is standing in
+    const cellIndex = pos.row * 20 + pos.col;
     const matchingRegions = map.regions.filter(
-      (r) =>
-        pos.row >= r.bounds.minRow &&
-        pos.row <= r.bounds.maxRow &&
-        pos.col >= r.bounds.minCol &&
-        pos.col <= r.bounds.maxCol,
+      (r) => (r.cells ?? []).includes(cellIndex),
     );
 
     if (matchingRegions.length > 0) {
@@ -274,6 +275,52 @@ export function serializeRegionContext(
       }
     } else {
       lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → open area (no named region)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Serialize campaign context for the DM agent. Provides a compact briefing
+ * (campaign arc, current act objectives, NPC personalities) — enough for
+ * most narration. The DM can call query_campaign for deeper detail.
+ *
+ * Cost: ~800-1000 input tokens.
+ */
+export function serializeCampaignContext(
+  campaign: Campaign,
+  act: CampaignAct | null,
+): string {
+  const lines: string[] = [];
+
+  lines.push("CAMPAIGN BRIEFING (DM ONLY — never reveal plot spoilers, NPC secrets, or future events to the player):");
+  lines.push(campaign.dmSummary);
+
+  if (act) {
+    lines.push("");
+    lines.push(`CURRENT ACT: ${act.title} (Act ${act.actNumber})`);
+    lines.push(act.dmBriefing);
+    if (act.plotPoints?.length) {
+      lines.push(`Plot points: ${act.plotPoints.join("; ")}`);
+    }
+  }
+
+  // Compact NPC summaries for narration — only act-relevant NPCs
+  const relevantIds = act?.relevantNPCIds ?? campaign.npcs.map((n) => n.id);
+  const npcs = campaign.npcs.filter((n) => relevantIds.includes(n.id));
+
+  if (npcs.length > 0) {
+    lines.push("");
+    lines.push("KEY NPCs:");
+    for (const npc of npcs) {
+      const traits = npc.personality.traits.slice(0, 2).join(", ");
+      const actKey = act ? `act${act.actNumber}` as keyof typeof npc.relationshipArc : undefined;
+      const rel = actKey ? npc.relationshipArc[actKey] : undefined;
+      let line = `  ${npc.name} (${npc.role}): ${traits}`;
+      if (rel) line += ` | This act: ${rel}`;
+      if (npc.voiceNotes) line += ` | Voice: ${npc.voiceNotes.slice(0, 100)}`;
+      lines.push(line);
     }
   }
 
@@ -349,6 +396,8 @@ let currentSessionId = "";
 let currentActiveMapId: string | undefined;
 /** Exploration positions from the session — set by loadGameState(). */
 let currentExplorationPositions: Record<string, GridPosition> | undefined;
+/** Campaign slug from the session — set by loadGameState(). */
+let currentCampaignSlug: string | undefined;
 
 // ─── Encounter singleton ─────────────────────────────────────────────────────
 
@@ -375,6 +424,10 @@ export function getActiveMapId(): string | undefined {
 
 export function getExplorationPositions(): Record<string, GridPosition> | undefined {
   return currentExplorationPositions;
+}
+
+export function getCampaignSlug(): string | undefined {
+  return currentCampaignSlug;
 }
 
 export function getEncounter(): StoredEncounter | null {
@@ -438,6 +491,8 @@ export interface StateChanges {
   quests_completed?: string[];
   /** Names of important NPCs the player has met. */
   npcs_met?: string[];
+  /** Advance to a new campaign act number. */
+  act_advance?: number;
 }
 
 /**
@@ -511,6 +566,9 @@ export function applyStateChanges(changes: StateChanges): void {
       if (!s.importantNPCs.includes(lower)) s.importantNPCs.push(lower);
     }
     if (s.importantNPCs.length > 30) s.importantNPCs = s.importantNPCs.slice(-30);
+  }
+  if (changes.act_advance != null && changes.act_advance > 0) {
+    s.currentAct = changes.act_advance;
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   // Defer XP during combat — accumulate on encounter, flush to all players when combat ends
@@ -883,6 +941,7 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   const session = await loadSession(stored.sessionId);
   currentActiveMapId = session?.activeMapId;
   currentExplorationPositions = session?.explorationPositions;
+  currentCampaignSlug = session?.campaignSlug;
 
   // Hydrate encounter if one is active
   encounter = null;
