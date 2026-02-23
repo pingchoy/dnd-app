@@ -172,9 +172,9 @@ export interface UseCharacterCreationReturn extends CharacterCreationState {
 
 function buildDefaultStory(name: string, className: string): StoryState {
   return {
-    campaignTitle: "A New Adventure",
-    campaignBackground: "Your adventure is just beginning. The world awaits.",
-    currentLocation: "The Starting Town",
+    campaignTitle: "",
+    campaignBackground: "",
+    currentLocation: "",
     currentScene: `${name} the ${className} has arrived, ready to make their mark on the world.`,
     activeQuests: [],
     importantNPCs: [],
