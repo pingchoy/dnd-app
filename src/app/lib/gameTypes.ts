@@ -372,6 +372,9 @@ export interface StoryState {
   activeEncounterId?: string;
 }
 
+/** The only campaign currently available. Used as default for all new sessions. */
+export const DEFAULT_CAMPAIGN_SLUG = "the-crimson-accord";
+
 // ─── Campaign Map Types ──────────────────────────────────────────────────────
 
 /** Region blueprint for a campaign map — guides the map generator. */
@@ -620,6 +623,8 @@ export interface StoredEncounter {
 export interface StoredSession {
   id?: string;
   story: StoryState;
+  /** Campaign this session belongs to. */
+  campaignSlug?: string;
   characterIds: string[];
   /** Which map is currently displayed in the grid. */
   activeMapId?: string;
