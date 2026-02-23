@@ -116,7 +116,7 @@ function makeEncounter(npcs: NPC[] = []): StoredEncounter {
   return {
     id: "enc-1",
     sessionId: "session-1",
-    characterId: "char-1",
+    characterIds: ["char-1"],
     status: "active",
     activeNPCs: npcs,
     positions: { player: { row: 0, col: 0 } },
@@ -422,13 +422,14 @@ describe("updateNPC", () => {
     expect(getActiveNPCs()[0].currentHp).toBe(0);
   });
 
-  it("awards XP when hostile NPC is killed", async () => {
+  it("defers XP to encounter when hostile NPC is killed", async () => {
     const goblin = makeNPC({ currentHp: 1, maxHp: 7, xpValue: 50, disposition: "hostile" });
     await hydrateState({ xp: 100 }, [goblin]);
 
     const result = updateNPC({ id: goblin.id, hp_delta: -10 });
     expect(result.xpAwarded).toBe(50);
-    expect(getGameState().player.xp).toBe(150);
+    // XP is deferred to encounter end, not added to player inline
+    expect(getGameState().player.xp).toBe(100);
   });
 
   it("does NOT award XP for neutral NPCs", async () => {

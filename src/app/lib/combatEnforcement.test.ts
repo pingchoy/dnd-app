@@ -110,16 +110,16 @@ describe("parseAOEFromDescription", () => {
 
 describe("getAOECells", () => {
   describe("sphere", () => {
-    it("returns cells within Chebyshev radius, excluding origin", () => {
+    it("returns cells within Chebyshev radius, including origin", () => {
       const shape: AOEShape = { type: "sphere", origin: { row: 5, col: 5 }, radiusFeet: 10 };
       const cells = getAOECells(shape, 20);
 
       // 10 feet = 2 squares. Chebyshev circle of radius 2 around (5,5)
-      // That's a 5x5 square (rows 3-7, cols 3-7) minus the origin = 24 cells
-      expect(cells).toHaveLength(24);
+      // That's a 5x5 square (rows 3-7, cols 3-7) = 25 cells
+      expect(cells).toHaveLength(25);
 
-      // Origin excluded
-      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeUndefined();
+      // Origin included (target-origin AOEs hit the center cell)
+      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeDefined();
 
       // Corner cells included (Chebyshev: diagonals count as 1)
       expect(cells.find(c => c.row === 3 && c.col === 3)).toBeDefined();
@@ -135,9 +135,9 @@ describe("getAOECells", () => {
       const shape: AOEShape = { type: "cube", origin: { row: 5, col: 5 }, radiusFeet: 10 };
       const cells = getAOECells(shape, 20);
 
-      // Same as sphere: 5x5 square minus origin = 24 cells
-      expect(cells).toHaveLength(24);
-      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeUndefined();
+      // Same as sphere: 5x5 square = 25 cells (including origin)
+      expect(cells).toHaveLength(25);
+      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeDefined();
     });
   });
 
@@ -146,8 +146,8 @@ describe("getAOECells", () => {
       const shape: AOEShape = { type: "cylinder", origin: { row: 5, col: 5 }, radiusFeet: 10 };
       const cells = getAOECells(shape, 20);
 
-      expect(cells).toHaveLength(24);
-      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeUndefined();
+      expect(cells).toHaveLength(25);
+      expect(cells.find(c => c.row === 5 && c.col === 5)).toBeDefined();
     });
   });
 
@@ -329,14 +329,14 @@ describe("getAOETargets", () => {
     expect(targets).toHaveLength(3);
   });
 
-  it("excludes NPCs at the origin (origin is excluded from cells)", () => {
+  it("includes NPCs at the origin (center of target-origin AOE)", () => {
     const shape = makeSphere({ row: 5, col: 5 }, 10);
     const positions = new Map<string, GridPosition>([
       ["goblin-at-origin", { row: 5, col: 5 }],
       ["goblin-nearby", { row: 4, col: 5 }],
     ]);
     const targets = getAOETargets(shape, positions, 20);
-    expect(targets).not.toContain("goblin-at-origin");
+    expect(targets).toContain("goblin-at-origin");
     expect(targets).toContain("goblin-nearby");
   });
 });

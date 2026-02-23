@@ -91,7 +91,7 @@ function DiceRoll({
     // Compact inline card shown in chat history
     return (
       <div className="my-3 mx-auto max-w-xs animate-fade-in">
-        <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-md overflow-hidden">
+        <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-md">
           <div className="flex items-center gap-3 px-3 py-2">
             {/* Mini die — shows d20 roll */}
             <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
@@ -114,8 +114,26 @@ function DiceRoll({
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {hasDamage && (
-                <span className="font-cinzel text-[11px] text-white bg-red-800/80 border border-red-600/40 rounded px-1.5 py-0.5">
+                <span className="relative group/dmg cursor-default font-cinzel text-[11px] text-white bg-red-800/80 border border-red-600/40 rounded px-1.5 py-0.5">
                   {result.damage!.totalDamage} dmg
+                  {/* Hover tooltip: damage breakdown */}
+                  <span className="pointer-events-none absolute bottom-full right-0 mb-1.5 hidden group-hover/dmg:block z-50 whitespace-nowrap bg-dungeon border border-red-900/60 rounded px-2.5 py-1.5 shadow-lg">
+                    {result.damage!.isCrit && (
+                      <span className="block font-cinzel text-[10px] text-amber-400 tracking-widest uppercase mb-1">Critical Hit</span>
+                    )}
+                    {result.damage!.breakdown.map((b, i) => (
+                      <span key={i} className="flex items-center justify-between gap-3 font-crimson text-xs text-parchment/70 leading-relaxed">
+                        <span className="font-cinzel text-[10px] text-parchment/50 uppercase tracking-wide">{b.label}</span>
+                        <span>
+                          <span className="text-parchment/50">{b.dice}{b.flatBonus ? (b.flatBonus > 0 ? `+${b.flatBonus}` : b.flatBonus) : ""}</span>
+                          <span className="text-parchment/30 mx-1">→</span>
+                          <span className="text-parchment/40">({b.rolls.join("+")}){b.flatBonus ? (b.flatBonus > 0 ? `+${b.flatBonus}` : b.flatBonus) : ""}</span>
+                          <span className="font-bold text-parchment/80"> = {b.subtotal}</span>
+                          {b.damageType && <span className="text-parchment/40 italic ml-1">{b.damageType}</span>}
+                        </span>
+                      </span>
+                    ))}
+                  </span>
                 </span>
               )}
               <span className={`font-cinzel text-sm font-bold ${resultColour}`}>

@@ -46,6 +46,21 @@ body {
   scrollbar-color: rgba(139, 105, 20, 0.7) rgba(26, 20, 16, 0.6);
 }
 
+/* ── Parchment scrollbar (for light-background scroll areas) ── */
+.scroll-pane::-webkit-scrollbar-track {
+  background: rgba(180, 140, 60, 0.15);
+}
+.scroll-pane::-webkit-scrollbar-thumb {
+  background: rgba(139, 105, 20, 0.5);
+}
+.scroll-pane::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 105, 20, 0.8);
+}
+/* Firefox */
+.scroll-pane {
+  scrollbar-color: rgba(139, 105, 20, 0.5) rgba(180, 140, 60, 0.15);
+}
+
 /* ── Parchment card ────────────────────────────────────────── */
 .card-parchment {
   background-color: #f4e0ae;
@@ -287,8 +302,8 @@ body {
   align-items: center;
   gap: 3px;
   overflow-x: auto;
-  flex-shrink: 0;
-  max-width: 50%;
+  flex: 1;
+  min-width: 0;
   /* Hide scrollbar */
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -341,4 +356,36 @@ body {
 }
 .combat-hotbar-spell-popup::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Panel resize handle ──────────────────────────────────── */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.resize-handle-right {
+  right: -4px;
+}
+.resize-handle-left {
+  left: -4px;
+}
+.resize-handle::after {
+  content: "";
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: rgba(139, 105, 20, 0.25);
+  transition: background 0.2s, height 0.2s, box-shadow 0.2s;
+}
+.resize-handle:hover::after {
+  background: rgba(201, 168, 76, 0.6);
+  height: 48px;
+  box-shadow: 0 0 8px rgba(201, 168, 76, 0.15);
 }

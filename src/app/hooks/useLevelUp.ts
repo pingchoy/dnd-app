@@ -393,6 +393,9 @@ export function useLevelUp(
           level: lvl,
           asiChoices: asiState?.mode === "asi" ? asiState.points : undefined,
           featChoice: asiState?.mode === "feat" ? asiState.featChoice : undefined,
+          featDescription: asiState?.mode === "feat" && asiState.featChoice
+            ? feats.find((f) => f.name === asiState.featChoice)?.description
+            : undefined,
           subclassChoice:
             levelData.requiresSubclass && selectedSubclass
               ? archetypes.find((a) => a.slug === selectedSubclass)?.name ?? selectedSubclass

@@ -27,7 +27,7 @@ export function feetDistance(a: GridPosition, b: GridPosition): number {
   return gridDistance(a, b) * FEET_PER_SQUARE;
 }
 
-/** All cells within N feet of origin (Chebyshev). */
+/** All cells within N feet of origin (Chebyshev). Includes the origin cell. */
 export function cellsInRange(
   origin: GridPosition,
   rangeFeet: number,
@@ -38,7 +38,6 @@ export function cellsInRange(
   for (let row = origin.row - rangeSquares; row <= origin.row + rangeSquares; row++) {
     for (let col = origin.col - rangeSquares; col <= origin.col + rangeSquares; col++) {
       if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) continue;
-      if (row === origin.row && col === origin.col) continue;
       cells.push({ row, col });
     }
   }

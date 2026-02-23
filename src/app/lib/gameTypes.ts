@@ -446,7 +446,8 @@ export interface StoredCharacterV2 {
 export interface StoredEncounter {
   id?: string;
   sessionId: string;
-  characterId: string;
+  /** All player characters participating in this encounter. */
+  characterIds: string[];
   /** Map this encounter takes place on (inherits from session's activeMapId). */
   mapId?: string;
   status: "active" | "completed";
@@ -467,7 +468,7 @@ export interface StoredEncounter {
   combatStats?: Record<string, CombatStats>;
   /** Snapshot of NPCs before removal (for loot context). */
   defeatedNPCs?: NPC[];
-  /** Cumulative XP awarded from this encounter. */
+  /** Cumulative XP earned in this encounter. Flushed to all players when combat ends. */
   totalXPAwarded?: number;
   /** Populated when combat ends — consumed by the frontend victory screen. */
   victoryData?: VictoryData;
@@ -506,6 +507,7 @@ export interface AOEResultData {
   checkType: string;
   spellDC: number;
   damageRoll: string;
+  damageRolls?: number[];
   totalRolled: number;
   damageType: string;
   targets: Array<{

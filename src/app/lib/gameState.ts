@@ -513,7 +513,15 @@ export function applyStateChanges(changes: StateChanges): void {
     if (s.importantNPCs.length > 30) s.importantNPCs = s.importantNPCs.slice(-30);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
-  if (changes.xp_gained && changes.xp_gained > 0) p.xp = (p.xp ?? 0) + changes.xp_gained;
+  // Defer XP during combat — accumulate on encounter, flush to all players when combat ends
+  if (changes.xp_gained && changes.xp_gained > 0) {
+    if (encounter) {
+      encounter.totalXPAwarded = (encounter.totalXPAwarded ?? 0) + changes.xp_gained;
+      console.log(`[applyStateChanges] Deferred ${changes.xp_gained} XP to encounter (total: ${encounter.totalXPAwarded})`);
+    } else {
+      p.xp = (p.xp ?? 0) + changes.xp_gained;
+    }
+  }
   if (changes.feature_choice_updates) {
     for (const [featureName, choice] of Object.entries(changes.feature_choice_updates)) {
       const feature = p.features.find(
@@ -675,12 +683,11 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
     if (!encounter.defeatedNPCs) encounter.defeatedNPCs = [];
     encounter.defeatedNPCs.push({ ...npc });
 
-    // Auto-award XP for defeating hostile NPCs; level-up is checked in applyStateChangesAndPersist
+    // Track XP earned from hostile NPC kills — deferred until combat ends
     if (npc.disposition === "hostile" && npc.xpValue > 0) {
       xpAwarded = npc.xpValue;
-      state.player.xp = (state.player.xp ?? 0) + xpAwarded;
       encounter.totalXPAwarded = (encounter.totalXPAwarded ?? 0) + xpAwarded;
-      console.log(`[updateNPC] Awarded ${xpAwarded} XP for defeating "${npc.name}" (total XP: ${state.player.xp})`);
+      console.log(`[updateNPC] Deferred ${xpAwarded} XP for defeating "${npc.name}" (encounter total: ${encounter.totalXPAwarded})`);
     } else {
       console.log(`[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`);
     }
@@ -916,7 +923,8 @@ async function persistState(characterId: string): Promise<void> {
 
 /**
  * Apply state changes to the in-memory singleton and persist to Firestore.
- * Always calls awardXPAsync to catch level-ups from both xp_gained and NPC kills.
+ * XP and level-ups are deferred until combat ends — during combat, XP accumulates
+ * on the encounter and is flushed to the player when all hostiles are defeated.
  * If an encounter is active, also persists encounter state (NPCs, positions).
  */
 export async function applyStateChangesAndPersist(
@@ -926,8 +934,6 @@ export async function applyStateChangesAndPersist(
   applyStateChanges(changes);
   // Re-aggregate effects in case conditions changed
   applyEffects(state.player);
-  // Check for level-up regardless of source (xp_gained field or NPC kill XP)
-  await awardXPAsync(characterId, 0);
 
   // Persist encounter state alongside game state
   if (encounter?.id) {
@@ -937,19 +943,39 @@ export async function applyStateChangesAndPersist(
     );
 
     if (stillInCombat) {
+      // XP deferred — persist encounter state including accumulated XP, skip level-up check
       await saveEncounterState(encounter.id, {
         activeNPCs: encounter.activeNPCs,
         positions: encounter.positions,
         round: encounter.round,
         turnOrder: encounter.turnOrder,
         currentTurnIndex: encounter.currentTurnIndex,
+        totalXPAwarded: encounter.totalXPAwarded,
       });
     } else {
-      // Combat is over — complete the encounter and clear the link
+      // Combat is over — award full encounter XP to every participating character
+      const earnedXP = encounter.totalXPAwarded ?? 0;
+      const allCharacterIds = encounter.characterIds;
       await completeEncounterDoc(encounter.id);
       delete state.story.activeEncounterId;
       encounter = null;
+
+      if (earnedXP > 0) {
+        // Current character: update in-memory singleton directly
+        state.player.xp = (state.player.xp ?? 0) + earnedXP;
+        console.log(`[combat-end] Awarded ${earnedXP} XP to ${characterId} (total: ${state.player.xp})`);
+
+        // Other characters: load from Firestore, add XP, compute level-up, save back
+        const otherIds = allCharacterIds.filter(id => id !== characterId);
+        await Promise.all(otherIds.map(id => awardXPToCharacter(id, earnedXP)));
+      }
+
+      // Check level-up for the current character
+      await awardXPAsync(characterId, 0);
     }
+  } else {
+    // No active encounter — check for level-up from out-of-combat XP gains
+    await awardXPAsync(characterId, 0);
   }
 
   await persistState(characterId);
@@ -984,12 +1010,37 @@ export async function awardXPAsync(characterId: string, amount: number): Promise
   await persistState(characterId);
 }
 
+/**
+ * Award XP to a character who is NOT the in-memory singleton.
+ * Loads from Firestore, adds XP, computes pending level-up if needed, and saves back.
+ */
+async function awardXPToCharacter(characterId: string, amount: number): Promise<void> {
+  const charDoc = await loadCharacter(characterId);
+  if (!charDoc) {
+    console.warn(`[awardXPToCharacter] Character "${characterId}" not found — skipping`);
+    return;
+  }
+
+  const player = charDoc.player;
+  player.xp = (player.xp ?? 0) + amount;
+
+  const targetLevel = levelForXP(player.xp);
+  if (targetLevel > player.level) {
+    const fromLevel = player.pendingLevelUp?.fromLevel ?? player.level;
+    player.pendingLevelUp = await computePendingLevelUp(player, fromLevel, targetLevel);
+  }
+
+  await saveCharacterState(characterId, { player });
+  console.log(`[awardXPToCharacter] Awarded ${amount} XP to ${characterId} (total: ${player.xp})`);
+}
+
 // ─── Level-up Application ─────────────────────────────────────────────────────
 
 export interface LevelChoices {
   level: number;
   asiChoices?: Partial<Record<keyof CharacterStats, number>>;
   featChoice?: string;
+  featDescription?: string;
   subclassChoice?: string;
   featureChoices?: Record<string, string>;
   newCantrips?: string[];
@@ -1083,6 +1134,7 @@ export async function applyLevelUp(
         }
         state.player.features.push({
           name: feat.name,
+          description: feat.description,
           level: lvl,
           ...(chosenOption ? { chosenOption } : {}),
           ...(effects ? { gameplayEffects: effects } : {}),
@@ -1099,6 +1151,7 @@ export async function applyLevelUp(
       } else {
         state.player.features.push({
           name: feat.name,
+          description: feat.description,
           level: lvl,
           source: state.player.subclass ?? undefined,
           ...(feat.type ? { type: feat.type } : {}),
@@ -1118,6 +1171,7 @@ export async function applyLevelUp(
         // Add feat as a feature
         state.player.features.push({
           name: choice.featChoice,
+          ...(choice.featDescription ? { description: choice.featDescription } : {}),
           level: lvl,
           source: "Feat",
         });

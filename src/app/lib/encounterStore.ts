@@ -133,7 +133,7 @@ interface CreateEncounterOptions {
  */
 export async function createEncounter(
   sessionId: string,
-  characterId: string,
+  characterIds: string[],
   npcs: NPC[],
   location: string,
   scene: string,
@@ -151,7 +151,7 @@ export async function createEncounter(
 
   const doc: Omit<StoredEncounter, "id"> = {
     sessionId,
-    characterId,
+    characterIds,
     ...(options?.mapId ? { mapId: options.mapId } : {}),
     status: "active",
     activeNPCs: npcs,
@@ -185,7 +185,7 @@ export async function loadEncounter(encounterId: string): Promise<StoredEncounte
  */
 export async function saveEncounterState(
   encounterId: string,
-  updates: Partial<Omit<StoredEncounter, "id" | "createdAt" | "sessionId" | "characterId">>,
+  updates: Partial<Omit<StoredEncounter, "id" | "createdAt" | "sessionId" | "characterIds">>,
 ): Promise<void> {
   await adminDb.collection("encounters").doc(encounterId).update({
     ...updates,

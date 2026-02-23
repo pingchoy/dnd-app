@@ -10,8 +10,27 @@ interface Props {
   compact?: boolean;
 }
 
+/** Hover tooltip showing the damage dice formula and individual rolls. */
+function DamageTooltip({ result }: { result: AOEResultData }) {
+  const rolls = result.damageRolls;
+  if (!rolls || rolls.length === 0) return null;
+  return (
+    <span className="pointer-events-none absolute bottom-full right-0 mb-1.5 hidden group-hover/dmg:block z-50 whitespace-nowrap bg-dungeon border border-red-900/60 rounded px-2.5 py-1.5 shadow-lg">
+      <span className="flex items-center gap-2 font-crimson text-xs text-parchment/70 leading-relaxed">
+        <span className="text-parchment/50">{result.damageRoll}</span>
+        <span className="text-parchment/30">→</span>
+        <span className="text-parchment/40">({rolls.join("+")})</span>
+        <span className="font-bold text-parchment/80">= {result.totalRolled}</span>
+        <span className="text-parchment/40 italic">{result.damageType}</span>
+      </span>
+    </span>
+  );
+}
+
 /** AOE result card showing spell name, total damage, and per-target breakdown. */
 function AOEResultCard({ result, isHistorical, compact = false }: Props) {
+  const isDamaging = result.totalRolled > 0;
+
   if (compact) {
     // Compact dark variant for CompactChatPanel (combat view)
     return (
@@ -20,13 +39,16 @@ function AOEResultCard({ result, isHistorical, compact = false }: Props) {
           <span className="font-cinzel text-[11px] tracking-widest text-red-400 uppercase">
             {result.checkType}
           </span>
-          <span className="font-cinzel text-sm text-parchment/90">
-            {result.totalRolled} {result.damageType}
-          </span>
+          {isDamaging && (
+            <span className="relative group/dmg cursor-default font-cinzel text-sm text-parchment/90">
+              {result.totalRolled} {result.damageType}
+              <DamageTooltip result={result} />
+            </span>
+          )}
         </div>
         <div className="px-3 py-1.5 space-y-0.5">
           <div className="font-cinzel text-[10px] text-parchment/40 tracking-wider uppercase mb-1">
-            DC {result.spellDC} &middot; {result.damageRoll} damage
+            DC {result.spellDC}{isDamaging ? ` \u00B7 ${result.damageRoll} damage` : ""}
           </div>
           {result.targets.map((t) => (
             <div key={t.npcId} className="flex items-center justify-between text-sm font-crimson">
@@ -49,20 +71,23 @@ function AOEResultCard({ result, isHistorical, compact = false }: Props) {
   // Chat-card variant — matches DiceRoll dark styling
   return (
     <div className="my-3 mx-auto max-w-xs animate-fade-in">
-      <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-md overflow-hidden">
+      <div className="bg-dungeon-mid/80 border border-red-900/40 rounded-md">
         {/* Header: spell name + total damage */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-red-900/30">
           <span className="font-cinzel text-[11px] tracking-widest text-red-400 uppercase">
             {result.checkType}
           </span>
-          <span className="font-cinzel text-[11px] text-white bg-red-800/80 border border-red-600/40 rounded px-1.5 py-0.5">
-            {result.totalRolled} {result.damageType}
-          </span>
+          {isDamaging && (
+            <span className="relative group/dmg cursor-default font-cinzel text-[11px] text-white bg-red-800/80 border border-red-600/40 rounded px-1.5 py-0.5">
+              {result.totalRolled} {result.damageType}
+              <DamageTooltip result={result} />
+            </span>
+          )}
         </div>
         {/* DC + damage formula */}
         <div className="px-3 pt-2 pb-1">
           <div className="font-cinzel text-[10px] text-parchment/40 tracking-wider uppercase">
-            DC {result.spellDC} &middot; {result.damageRoll} damage
+            DC {result.spellDC}{isDamaging ? ` \u00B7 ${result.damageRoll} damage` : ""}
           </div>
         </div>
         {/* Per-target breakdown */}

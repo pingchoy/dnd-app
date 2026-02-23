@@ -69,7 +69,7 @@ export default function LastActionToast({ messages, chatOpen, onOpenChat }: Prop
     <div
       key={animKey}
       onClick={onOpenChat}
-      className="absolute bottom-10 left-4 z-20 max-w-xs cursor-pointer
+      className="absolute bottom-28 left-4 z-20 max-w-xs cursor-pointer
                  pointer-events-auto animate-toast-dissipate"
     >
       <div className={`rounded-lg border px-3 py-2 backdrop-blur-sm shadow-lg ${

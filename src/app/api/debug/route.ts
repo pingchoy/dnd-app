@@ -20,7 +20,7 @@ import {
   setEncounter,
   xpForLevel,
 } from "../../lib/gameState";
-import { saveCharacterState, querySRD } from "../../lib/characterStore";
+import { saveCharacterState, querySRD, loadSession } from "../../lib/characterStore";
 import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
 import { getNPCStats } from "../../agents/npcAgent";
 import { addMessage } from "../../lib/messageStore";
@@ -66,9 +66,11 @@ export async function POST(req: NextRequest) {
         // Create an encounter before creating NPCs so createNPC() can add them
         if (!getEncounter()) {
           const sessionId = getSessionId();
+          const session = await loadSession(sessionId);
+          const allCharacterIds = session?.characterIds ?? [characterId];
           const enc = await createEncounter(
             sessionId,
-            characterId,
+            allCharacterIds,
             [],
             gameState.story.currentLocation,
             gameState.story.currentScene,

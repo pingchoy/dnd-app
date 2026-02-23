@@ -13,6 +13,7 @@ import {
 interface Props {
   player: PlayerState;
   onOpenFullSheet: () => void;
+  onClose?: () => void;
 }
 
 interface StatBlockProps {
@@ -39,7 +40,7 @@ function StatBlock({ label, value }: StatBlockProps) {
   );
 }
 
-function CharacterSidebar({ player, onOpenFullSheet }: Props) {
+function CharacterSidebar({ player, onOpenFullSheet, onClose }: Props) {
   const prof = getProficiencyBonus(player.level);
   const hpPct = player.maxHP > 0 ? (player.currentHP / player.maxHP) * 100 : 0;
   const hpColor = hpPct > 50 ? "#5a9a5a" : hpPct > 25 ? "#d4a017" : "#dc4a4a";
@@ -47,10 +48,23 @@ function CharacterSidebar({ player, onOpenFullSheet }: Props) {
   return (
     <div className="h-full flex flex-col card-parchment">
       {/* Header */}
-      <div className="flex-shrink-0 bg-dungeon-light border-b border-gold-dark/40 px-4 py-3">
-        <h2 className="font-cinzel text-gold tracking-widest uppercase text-base text-center">
-          ✦ Character ✦
-        </h2>
+      <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1.5 flex items-center justify-between">
+        <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
+          &#x2726; Character &#x2726;
+        </span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center w-7 h-7 -mr-1 text-parchment/50 hover:text-gold transition-colors"
+            title="Minimize"
+          >
+            <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 1L13 6L9 11" />
+              <path d="M5 1L9 6L5 11" />
+              <path d="M1 1L5 6L1 11" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Scrollable body */}

@@ -37,7 +37,7 @@ import {
 } from "../../lib/gameState";
 import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
 import { loadMap } from "../../lib/mapStore";
-import { querySRD } from "../../lib/characterStore";
+import { querySRD, loadSession } from "../../lib/characterStore";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 import { addMessage } from "../../lib/messageStore";
 import { enqueueAction, claimNextAction, completeAction, failAction } from "../../lib/actionQueue";
@@ -151,10 +151,11 @@ async function processChatAction(
 
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
-
+      const session = await loadSession(sessionId);
+      const allCharacterIds = session?.characterIds ?? [characterId];
       const enc = await createEncounter(
         sessionId,
-        characterId,
+        allCharacterIds,
         [],
         gameState.story.currentLocation,
         gameState.story.currentScene,

@@ -104,7 +104,13 @@ export async function narrateAOETurn(
 
   prompt += `PLAYER CASTS AOE SPELL: ${aoeResult.checkType}\n`;
   prompt += `Spell Save DC: ${aoeResult.spellDC}\n`;
-  prompt += `Damage Roll: ${aoeResult.damageRoll} = ${aoeResult.totalRolled} ${aoeResult.damageType} damage\n\n`;
+
+  const isDamaging = aoeResult.totalRolled > 0;
+  if (isDamaging) {
+    prompt += `Damage Roll: ${aoeResult.damageRoll} = ${aoeResult.totalRolled} ${aoeResult.damageType} damage\n\n`;
+  } else {
+    prompt += `This is a condition-only spell (no damage). Narrate the magical effect and which targets are affected.\n\n`;
+  }
 
   if (aoeResult.targets.length === 0) {
     prompt += `No targets were caught in the area of effect.`;
@@ -112,13 +118,18 @@ export async function narrateAOETurn(
     prompt += `TARGETS HIT (${aoeResult.targets.length}):\n`;
     for (const t of aoeResult.targets) {
       const saveStatus = t.saved ? "SAVED" : "FAILED";
-      prompt += `- ${t.npcName}: DEX save ${t.saveRoll}+${t.saveTotal - t.saveRoll}=${t.saveTotal} vs DC ${aoeResult.spellDC} → ${saveStatus}, takes ${t.damageTaken} ${aoeResult.damageType} damage\n`;
+      if (isDamaging) {
+        prompt += `- ${t.npcName}: save ${t.saveRoll}+${t.saveTotal - t.saveRoll}=${t.saveTotal} vs DC ${aoeResult.spellDC} → ${saveStatus}, takes ${t.damageTaken} ${aoeResult.damageType} damage\n`;
+      } else {
+        prompt += `- ${t.npcName}: save ${t.saveRoll}+${t.saveTotal - t.saveRoll}=${t.saveTotal} vs DC ${aoeResult.spellDC} → ${saveStatus}${t.saved ? " (resists the effect)" : " (affected by the spell)"}\n`;
+      }
     }
 
-    // Check for kills
-    const killed = aoeResult.targets.filter(t => t.damageTaken > 0);
-    if (killed.length > 0) {
-      prompt += `\nNarrate the destruction dramatically — fire, explosions, and chaos!`;
+    if (isDamaging) {
+      const killed = aoeResult.targets.filter(t => t.damageTaken > 0);
+      if (killed.length > 0) {
+        prompt += `\nNarrate the destruction dramatically — fire, explosions, and chaos!`;
+      }
     }
   }
 

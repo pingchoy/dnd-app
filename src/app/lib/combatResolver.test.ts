@@ -369,14 +369,14 @@ describe("resolveAOEAction", () => {
     expect(result.damageType).toBe("magical");
   });
 
-  it("defaults damage to '1d6' when ability.damageRoll undefined", () => {
+  it("returns empty damageRoll when ability.damageRoll undefined", () => {
     vi.spyOn(Math, "random").mockReturnValue(0.5);
 
     const player = makePlayer();
     const ability = makeFireballAbility({ damageRoll: undefined });
     const result = resolveAOEAction(player, ability, [], []);
 
-    expect(result.damageRoll).toBe("1d6");
+    expect(result.damageRoll).toBe("");
   });
 
   it("uses saveDCAbility over spellcastingAbility when set", () => {

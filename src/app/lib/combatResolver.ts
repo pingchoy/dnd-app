@@ -446,6 +446,7 @@ export interface AOEResult {
   checkType: string;           // "Fireball (DEX save)"
   spellDC: number;
   damageRoll: string;          // "8d6"
+  damageRolls: number[];       // individual die results, e.g. [3, 5, 2, 6, 1, 4, 3, 4]
   totalRolled: number;         // 28 (rolled once, shared across all targets)
   damageType: string;
   targets: AOETargetResult[];
@@ -482,6 +483,7 @@ export function buildAOEShape(
 /**
  * Resolve an AOE spell: roll damage once, then each target NPC saves individually.
  * Failed save = full damage, successful save = half damage (rounded down).
+ * Non-damaging AOE spells (Color Spray, Entangle, etc.) still roll saves but deal 0 damage.
  */
 export function resolveAOEAction(
   player: PlayerState,
@@ -493,20 +495,22 @@ export function resolveAOEAction(
   const abilityMod = getModifier(player.stats[spellAbility as keyof CharacterStats] as number);
   const profBonus = getProficiencyBonus(player.level);
   const spellDC = 8 + abilityMod + profBonus;
-
-  // Roll damage once for the entire AOE
-  const damageExpr = ability.damageRoll ?? "1d6";
-  const damageResult = rollDice(damageExpr);
-  const totalRolled = damageResult.total;
-  const halfDamage = Math.floor(totalRolled / 2);
   const saveAbility = ability.saveAbility ?? "dexterity";
+
+  // Non-damaging AOE spells (Color Spray, Entangle, etc.) have no damageRoll
+  const hasDamage = !!ability.damageRoll;
+  const damageExpr = ability.damageRoll ?? "";
+  const damageResult = hasDamage ? rollDice(damageExpr) : null;
+  const totalRolled = damageResult?.total ?? 0;
+  const damageRolls = damageResult?.rolls ?? [];
+  const halfDamage = Math.floor(totalRolled / 2);
 
   // Each target rolls an individual save
   const targets: AOETargetResult[] = targetNPCs.map(npc => {
     const saveRoll = rollD20();
     const saveTotal = saveRoll + npc.savingThrowBonus;
     const saved = saveTotal >= spellDC;
-    const damageTaken = saved ? halfDamage : totalRolled;
+    const damageTaken = hasDamage ? (saved ? halfDamage : totalRolled) : 0;
 
     return {
       npcId: npc.id,
@@ -522,6 +526,7 @@ export function resolveAOEAction(
     checkType: `${ability.name} (${saveAbility} save)`,
     spellDC,
     damageRoll: damageExpr,
+    damageRolls,
     totalRolled,
     damageType: ability.damageType ?? "magical",
     targets,

@@ -158,10 +158,11 @@ export function useCombat({
       setGameState(data.gameState);
       setEncounter(data.encounter ?? null);
 
-      // Show floating labels -- AOE: one per target, single-target: one label
-      if (data.aoeResult?.targets?.length) {
-        for (let i = 0; i < data.aoeResult.targets.length; i++) {
-          const t = data.aoeResult.targets[i];
+      // Show floating labels -- AOE: one per target (skip non-damaging AOEs), single-target: one label
+      const damagingTargets = data.aoeResult?.targets?.filter((t: { damageTaken: number }) => t.damageTaken > 0) ?? [];
+      if (damagingTargets.length > 0) {
+        for (let i = 0; i < damagingTargets.length; i++) {
+          const t = damagingTargets[i];
           setTimeout(() => {
             combatLabelRef.current?.(t.npcId, true, t.damageTaken);
           }, i * 200);

@@ -2,8 +2,6 @@
 
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Input from "../components/Input";
-import ChatCard from "../components/ChatCard";
 import CharacterSheet from "../components/CharacterSheet";
 import CharacterSidebar from "../components/CharacterSidebar";
 import DemigodMenu from "../components/DemigodMenu";
@@ -18,34 +16,13 @@ import { OrnateFrame } from "../components/OrnateFrame";
 import { useChat } from "../hooks/useChat";
 import { useCombat } from "../hooks/useCombat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
-import type { GameState, Ability, StoredEncounter, AOEData, GridPosition } from "../lib/gameTypes";
+import { useResizablePanel } from "../hooks/useResizablePanel";
+import type { GameState, Ability, StoredEncounter, GridPosition } from "../lib/gameTypes";
 import { feetDistance, validateAttackRange } from "../lib/combatEnforcement";
-
-interface LoadingIndicatorProps {
-  label: string;
-}
 
 /** Regex for attack-like actions in player input. */
 const ATTACK_PATTERN =
   /\b(attack|strike|hit|stab|slash|shoot|fire|throw|cast)\b/i;
-
-function LoadingIndicator({ label }: LoadingIndicatorProps) {
-  return (
-    <div className="flex items-center gap-3 px-6 py-4 mt-2 animate-fade-in">
-      <div className="w-8 h-8 rounded-full bg-dungeon-mid border border-gold/40 flex items-center justify-center">
-        <span className="text-gold text-xs">&#x2726;</span>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-parchment/50 font-crimson italic text-sm mr-1">
-          {label}
-        </span>
-        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-1" />
-        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-2" />
-        <span className="w-1.5 h-1.5 rounded-full bg-gold dot-3" />
-      </div>
-    </div>
-  );
-}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -95,32 +72,21 @@ export default function Dashboard() {
   });
   encounterBridgeRef.current = setEncounter;
 
+  const { width: chatWidth, isDragging: isChatResizing, isCollapsed: isChatCollapsed, onMouseDown: onChatResizeMouseDown, restore: restoreChat, collapse: collapseChat } =
+    useResizablePanel({ defaultWidth: 320, minWidth: 200, maxWidth: 600, side: "right" });
+  const { width: sidebarWidth, isDragging: isSidebarResizing, isCollapsed: isSidebarCollapsed, onMouseDown: onSidebarResizeMouseDown, restore: restoreSidebar, collapse: collapseSidebar } =
+    useResizablePanel({ defaultWidth: 288, minWidth: 200, maxWidth: 500, side: "left" });
+
   const [userInput, setUserInput] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
-  const [combatChatOpen, setCombatChatOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [showChatTab, setShowChatTab] = useState(false);
+  const [showSidebarTab, setShowSidebarTab] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
   const [selectedAbility, setSelectedAbility] = useState<Ability | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<CombatGridHandle>(null);
   const prevMsgCountRef = useRef(0);
-
-  // Re-scroll while a dice roll is animating so the expanding card stays in view
-  const lastMsg = messages[messages.length - 1];
-  const hasAnimatingRoll = lastMsg?.isNewRoll === true;
-  useEffect(() => {
-    if (!hasAnimatingRoll) return;
-    const id = setInterval(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 400);
-    // Animation completes in ~3s (d20 tumble + damage tumble)
-    const timeout = setTimeout(() => clearInterval(id), 3500);
-    return () => {
-      clearInterval(id);
-      clearTimeout(timeout);
-    };
-  }, [hasAnimatingRoll]);
 
   // Escape key clears targeting mode
   useEffect(() => {
@@ -145,19 +111,36 @@ export default function Dashboard() {
 
   // Track unread messages when combat chat panel is closed
   useEffect(() => {
-    if (messages.length > prevMsgCountRef.current && !combatChatOpen) {
+    if (messages.length > prevMsgCountRef.current && isChatCollapsed) {
       const newest = messages[messages.length - 1];
       if (newest?.role === "assistant") {
         setHasUnread(true);
       }
     }
     prevMsgCountRef.current = messages.length;
-  }, [messages, combatChatOpen]);
+  }, [messages, isChatCollapsed]);
 
   // Clear unread when panel opens
   useEffect(() => {
-    if (combatChatOpen) setHasUnread(false);
-  }, [combatChatOpen]);
+    if (!isChatCollapsed) setHasUnread(false);
+  }, [isChatCollapsed]);
+
+  // Delay showing restore tabs until after the collapse transition (300ms)
+  useEffect(() => {
+    if (isChatCollapsed) {
+      const t = setTimeout(() => setShowChatTab(true), 300);
+      return () => clearTimeout(t);
+    }
+    setShowChatTab(false);
+  }, [isChatCollapsed]);
+
+  useEffect(() => {
+    if (isSidebarCollapsed) {
+      const t = setTimeout(() => setShowSidebarTab(true), 300);
+      return () => clearTimeout(t);
+    }
+    setShowSidebarTab(false);
+  }, [isSidebarCollapsed]);
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
@@ -176,11 +159,6 @@ export default function Dashboard() {
     sessionId,
     explorationPositions,
   );
-
-  // Auto-scroll chat to bottom on new messages or when leaving combat view
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isNarrating, isCombatProcessing, inCombat]);
 
   const isBusy = isNarrating || isCombatProcessing;
 
@@ -296,9 +274,12 @@ export default function Dashboard() {
 
   const handleOpenFullSheet = useCallback(() => setFullSheetOpen(true), []);
 
-  const handleOpenChatPanel = useCallback(() => setCombatChatOpen(true), []);
-  const handleCloseChatPanel = useCallback(() => setCombatChatOpen(false), []);
-  const handleToggleChat = useCallback(() => setCombatChatOpen((o) => !o), []);
+  const handleOpenChatPanel = useCallback(() => restoreChat(), [restoreChat]);
+  const handleCloseChatPanel = useCallback(() => collapseChat(), [collapseChat]);
+  const handleToggleChat = useCallback(() => {
+    if (isChatCollapsed) restoreChat();
+    else collapseChat();
+  }, [isChatCollapsed, restoreChat, collapseChat]);
 
   // Memoize filtered messages to avoid creating a new array on every keystroke
   const filteredMessages = useMemo(
@@ -457,24 +438,59 @@ export default function Dashboard() {
 
       {/* ── Body: always-visible grid + chat sidebar ── */}
       <div className="flex-1 overflow-hidden flex">
+        {/* Left panel restore tab — sits flush against page edge */}
+        {showChatTab && (
+          <div className="flex flex-col items-center justify-start flex-shrink-0 py-4 mr-2">
+            <button
+              onClick={handleOpenChatPanel}
+              className="w-6 h-16 flex items-center justify-center rounded-r
+                         border border-l-0 border-gold/30 bg-dungeon-mid/80
+                         text-gold/50 hover:text-gold hover:border-gold/50
+                         transition-colors cursor-pointer relative"
+              title="Show chat"
+            >
+              <svg width="8" height="14" viewBox="0 0 8 14" fill="none">
+                <path d="M2 2L6 7L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {hasUnread && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gold animate-pulse" />
+              )}
+            </button>
+          </div>
+        )}
+
         {/* ── Left: grid + hotbar (always visible) ── */}
         <div className="flex-1 overflow-hidden flex flex-col py-4 min-w-0">
           {/* Map area with optional left chat panel (combat) */}
           <div className="flex-1 overflow-hidden flex min-h-0 px-3 sm:px-4">
-            {/* Left chat panel — only in combat mode */}
-            {inCombat && (
+            {/* Left chat panel (always rendered for smooth transitions) */}
+            <div
+              className="flex-shrink-0 overflow-hidden relative"
+              style={{
+                width: isChatCollapsed ? 0 : chatWidth,
+                paddingRight: isChatCollapsed ? 0 : 12,
+                transition: isChatResizing ? "none" : "width 300ms ease-in-out, padding-right 300ms ease-in-out",
+              }}
+            >
+              {/* Resize handle — straddles the content's right edge */}
+              {!isChatCollapsed && (
+                <div
+                  className="resize-handle"
+                  style={{ right: 8 }}
+                  onMouseDown={onChatResizeMouseDown}
+                />
+              )}
               <CombatChatPanel
-                messages={messages}
+                messages={filteredMessages}
                 playerName={player.name}
                 isNarrating={isNarrating}
-                open={combatChatOpen}
                 onClose={handleCloseChatPanel}
                 userInput={userInput}
                 setUserInput={setUserInput}
                 handleSubmit={handleSubmit}
                 inputDisabled={isBusy}
               />
-            )}
+            </div>
 
             {/* Game grid — always visible, switches mode */}
             <OrnateFrame className="flex-1 overflow-hidden min-w-0">
@@ -501,114 +517,71 @@ export default function Dashboard() {
                       />
                     ) : undefined
                   }
+                  footerExtra={
+                    inCombat ? (
+                      <CombatHotbar
+                        abilities={player.abilities ?? []}
+                        selectedAbility={selectedAbility}
+                        onSelectAbility={handleSelectAbility}
+                        abilityBarDisabled={isBusy}
+                        isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
+                        rangeWarning={rangeWarning}
+                      />
+                    ) : undefined
+                  }
                 />
 
-                {/* Last action toast — floating on the map canvas (combat only) */}
-                {inCombat && (
-                  <LastActionToast
-                    messages={messages}
-                    chatOpen={combatChatOpen}
-                    onOpenChat={handleOpenChatPanel}
-                  />
-                )}
+                {/* Last action toast — floating on the map canvas when chat is closed */}
+                <LastActionToast
+                  messages={messages}
+                  chatOpen={!isChatCollapsed}
+                  onOpenChat={handleOpenChatPanel}
+                />
               </div>
             </OrnateFrame>
           </div>
 
-          {/* Bottom hotbar — only during combat */}
-          {inCombat && (
-            <div className="flex-shrink-0 px-3 sm:px-4 pt-3">
-              <OrnateFrame className="overflow-hidden">
-                <CombatHotbar
-                  abilities={player.abilities ?? []}
-                  selectedAbility={selectedAbility}
-                  onSelectAbility={handleSelectAbility}
-                  abilityBarDisabled={isBusy}
-                  chatOpen={combatChatOpen}
-                  onToggleChat={handleToggleChat}
-                  hasUnread={hasUnread}
-                  isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
-                  rangeWarning={rangeWarning}
-                />
-              </OrnateFrame>
-            </div>
-          )}
         </div>
 
-        {/* ── Right: chat + character sidebar ── */}
-        <div className="hidden lg:flex flex-col w-96 flex-shrink-0 overflow-hidden py-4 pr-3 gap-3">
-          {/* Chat panel — always visible alongside grid */}
-          <OrnateFrame className="flex-1 overflow-hidden">
-            <div className="tome-container flex-1 overflow-hidden flex flex-col">
-              <div className="scroll-pane flex-1 overflow-y-auto px-4 py-4">
-                {filteredMessages.map((message) => (
-                  <ChatCard
-                    key={message.id}
-                    message={message}
-                    playerName={player.name}
-                  />
-                ))}
+        {/* Right sidebar restore tab — shown when collapsed */}
+        {showSidebarTab && (
+          <div className="hidden lg:flex flex-col items-center justify-start py-4 ml-2 flex-shrink-0">
+            <button
+              onClick={restoreSidebar}
+              className="w-6 h-16 flex items-center justify-center rounded-l
+                         border border-r-0 border-gold/30 bg-dungeon-mid/80
+                         text-gold/50 hover:text-gold hover:border-gold/50
+                         transition-colors cursor-pointer"
+              title="Show character sidebar"
+            >
+              <svg width="8" height="14" viewBox="0 0 8 14" fill="none">
+                <path d="M6 2L2 7L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
 
-                {isNarrating && (
-                  <LoadingIndicator label="The Dungeon Master weaves the tale" />
-                )}
-
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Session stats footer */}
-              <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 py-2 flex items-center justify-end">
-                <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
-                  <span>{totalTokens.toLocaleString()} tokens</span>
-                  <span className="text-parchment/20">|</span>
-                  <span className="text-gold/50">
-                    est. ${estimatedCostUsd.toFixed(4)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <Input
-              userInput={userInput}
-              setUserInput={setUserInput}
-              handleSubmit={handleSubmit}
-              disabled={isBusy}
+        {/* ── Right: character sidebar (always rendered for smooth transitions) ── */}
+        <div
+          className="hidden lg:flex flex-col flex-shrink-0 overflow-hidden py-4 relative"
+          style={{
+            width: isSidebarCollapsed ? 0 : sidebarWidth,
+            paddingRight: isSidebarCollapsed ? 0 : 12,
+            transition: isSidebarResizing ? "none" : "width 300ms ease-in-out, padding-right 300ms ease-in-out",
+          }}
+        >
+          {/* Resize handle on left edge */}
+          {!isSidebarCollapsed && (
+            <div
+              className="resize-handle resize-handle-left"
+              onMouseDown={onSidebarResizeMouseDown}
             />
-          </OrnateFrame>
-
-          {/* Character sidebar — below the chat */}
-          <OrnateFrame className="flex-shrink-0 h-64 overflow-hidden">
+          )}
+          <OrnateFrame className="flex-1 overflow-hidden">
             <CharacterSidebar
               player={player}
               onOpenFullSheet={handleOpenFullSheet}
-            />
-          </OrnateFrame>
-        </div>
-
-        {/* ── Mobile: chat only (no grid) ── */}
-        <div className="flex-1 overflow-hidden flex flex-col py-4 px-3 sm:px-4 lg:hidden">
-          <OrnateFrame className="flex-1 overflow-hidden">
-            <div className="tome-container flex-1 overflow-hidden flex flex-col">
-              <div className="scroll-pane flex-1 overflow-y-auto px-4 py-4">
-                {filteredMessages.map((message) => (
-                  <ChatCard
-                    key={message.id}
-                    message={message}
-                    playerName={player.name}
-                  />
-                ))}
-
-                {isNarrating && (
-                  <LoadingIndicator label="The Dungeon Master weaves the tale" />
-                )}
-              </div>
-            </div>
-
-            <Input
-              userInput={userInput}
-              setUserInput={setUserInput}
-              handleSubmit={handleSubmit}
-              disabled={isBusy}
+              onClose={collapseSidebar}
             />
           </OrnateFrame>
         </div>

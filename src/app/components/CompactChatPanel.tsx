@@ -54,10 +54,9 @@ function CompactChatPanel({ messages, playerName, isNarrating }: Props) {
     };
   }, [hasAnimatingRoll]);
 
-  const recentMessages = messages.slice(-10);
   return (
     <div className="flex-1 min-h-0 px-3 py-2 overflow-hidden">
-      {recentMessages.map((msg, idx) => {
+      {messages.map((msg, idx) => {
         // AOE result cards
         if (msg.aoeResult) {
           return (

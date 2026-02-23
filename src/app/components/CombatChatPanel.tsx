@@ -10,8 +10,6 @@ interface Props {
   messages: ChatMessage[];
   playerName: string;
   isNarrating: boolean;
-  /** Whether the panel is open. */
-  open: boolean;
   /** Called to close the panel. */
   onClose: () => void;
   /** Text input state. */
@@ -22,18 +20,15 @@ interface Props {
 }
 
 /**
- * Left-side slide panel showing the combat log with text input at the bottom.
+ * Left-side slide panel showing the chat log with text input at the bottom.
  *
- * - Wraps CompactChatPanel in an OrnateFrame
- * - Map resizes horizontally (no overlap) via CSS transition
- * - Gap between panel and map via right margin
- * - Text input at bottom for player actions
+ * Always available (exploration and combat). Wraps CompactChatPanel in an
+ * OrnateFrame. Map resizes horizontally (no overlap) via CSS transition.
  */
 const CombatChatPanel = memo(function CombatChatPanel({
   messages,
   playerName,
   isNarrating,
-  open,
   onClose,
   userInput,
   setUserInput,
@@ -43,25 +38,24 @@ const CombatChatPanel = memo(function CombatChatPanel({
   const hints = useMemo(() => detectRollHints(userInput), [userInput]);
 
   return (
-    <div
-      className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${
-        open ? "w-80 md:w-80 max-md:w-64 mr-3" : "w-0 mr-0"
-      }`}
-    >
-      <div className="w-80 max-md:w-64 h-full">
-        <OrnateFrame className="h-full overflow-hidden">
-          <div className="h-full flex flex-col bg-dungeon/95 backdrop-blur-sm">
+    <OrnateFrame className="h-full overflow-hidden">
+      <div className="h-full flex flex-col bg-dungeon/95 backdrop-blur-sm">
             {/* Header */}
             <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-3 py-1.5 flex items-center justify-between">
-              <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
-                Combat Log
-              </span>
               <button
                 onClick={onClose}
-                className="font-cinzel text-[10px] tracking-widest text-parchment/50 uppercase hover:text-gold transition-colors"
+                className="flex items-center justify-center w-7 h-7 -ml-1 text-parchment/50 hover:text-gold transition-colors"
+                title="Minimize"
               >
-                &#x2715;
+                <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 1L1 6L5 11" />
+                  <path d="M9 1L5 6L9 11" />
+                  <path d="M13 1L9 6L13 11" />
+                </svg>
               </button>
+              <span className="font-cinzel text-gold text-[10px] tracking-widest uppercase">
+                &#x2726; Chat &#x2726;
+              </span>
             </div>
 
             {/* Chat content */}
@@ -126,10 +120,8 @@ const CombatChatPanel = memo(function CombatChatPanel({
                 </button>
               </div>
             </div>
-          </div>
-        </OrnateFrame>
       </div>
-    </div>
+    </OrnateFrame>
   );
 });
 

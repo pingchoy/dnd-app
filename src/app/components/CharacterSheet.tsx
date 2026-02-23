@@ -266,6 +266,7 @@ function RightColumnTabs({ player, allSkills, prof }: RightColumnTabsProps) {
             <ClassFeatures
               features={player.features.filter(
                 (f) => f.source?.toLowerCase() !== player.race.toLowerCase() && f.level !== 0
+                  && f.name.toLowerCase() !== "ability score improvement"
               )}
             />
           </TabPanel>

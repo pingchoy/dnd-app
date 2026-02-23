@@ -126,17 +126,19 @@ export async function POST(req: NextRequest) {
 
       aoeResult = resolveAOEAction(player, ability, targetNPCs, affectedCells);
 
-      // Apply damage to each target
+      // Apply damage to each target (skip for non-damaging AOEs like Color Spray)
       for (const targetRes of aoeResult.targets) {
-        const npcResult = updateNPC({
-          id: targetRes.npcId,
-          hp_delta: -targetRes.damageTaken,
-        });
-        stats.damageDealt += targetRes.damageTaken;
-        if (npcResult.died) {
-          stats.killCount += 1;
-          const npcName = targetRes.npcName;
-          stats.npcsDefeated.push(npcName);
+        if (targetRes.damageTaken > 0) {
+          const npcResult = updateNPC({
+            id: targetRes.npcId,
+            hp_delta: -targetRes.damageTaken,
+          });
+          stats.damageDealt += targetRes.damageTaken;
+          if (npcResult.died) {
+            stats.killCount += 1;
+            const npcName = targetRes.npcName;
+            stats.npcsDefeated.push(npcName);
+          }
         }
       }
 

@@ -9,11 +9,6 @@ interface Props {
   selectedAbility: Ability | null;
   onSelectAbility: (ability: Ability) => void;
   abilityBarDisabled: boolean;
-  /** Whether the left chat panel is currently open. */
-  chatOpen: boolean;
-  onToggleChat: () => void;
-  /** Whether there are unread messages (shows dot indicator on chat toggle). */
-  hasUnread: boolean;
   /** When a targeted ability is selected, show targeting placeholder instead of normal input. */
   isTargeting: boolean;
   /** Range warning message to display above the hotbar. */
@@ -48,9 +43,6 @@ export default function CombatHotbar({
   selectedAbility,
   onSelectAbility,
   abilityBarDisabled,
-  chatOpen,
-  onToggleChat,
-  hasUnread,
   isTargeting,
   rangeWarning,
 }: Props) {
@@ -88,23 +80,6 @@ export default function CombatHotbar({
 
       {/* Main hotbar strip */}
       <div className="combat-hotbar">
-        {/* Chat toggle — left side */}
-        <button
-          onClick={onToggleChat}
-          className={`combat-hotbar-chat-toggle ${chatOpen ? "combat-hotbar-chat-toggle-active" : ""}`}
-          title={chatOpen ? "Hide combat log" : "Show combat log"}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {hasUnread && !chatOpen && (
-            <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          )}
-        </button>
-
-        {/* Separator */}
-        <div className="w-px h-8 bg-gold/20 flex-shrink-0" />
-
         {/* Ability buttons — horizontal row, scrollable */}
         <div className="combat-hotbar-abilities">
           {directAbilities.map((ability) => {

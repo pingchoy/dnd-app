@@ -56,6 +56,8 @@ interface Props {
   onAOEConfirm?: (origin: GridPosition, direction?: GridPosition) => void;
   /** Optional element rendered below the combat map header (e.g. TurnOrderBar). */
   headerExtra?: React.ReactNode;
+  /** Optional element rendered below the legend bar (e.g. CombatHotbar). */
+  footerExtra?: React.ReactNode;
 }
 
 export interface CombatGridHandle {
@@ -71,7 +73,7 @@ interface FloatingCombatLabel {
 
 /* ── Constants ───────────────────────────────────────────── */
 
-const MIN_SCALE = 0.5;
+const MIN_SCALE = 0.2;
 const MAX_SCALE = 4;
 const ZOOM_STEP = 0.1;
 const GAP = 1;
@@ -357,6 +359,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     aoePreview,
     onAOEConfirm,
     headerExtra,
+    footerExtra,
   },
   ref,
 ) {
@@ -1460,6 +1463,8 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
           );
         })}
       </div>
+
+      {footerExtra}
     </div>
   );
 });
