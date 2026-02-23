@@ -8,17 +8,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMap, loadSessionMaps, updateMap, listCampaignMaps, listCampaignSlugs, updateCampaignMap } from "../../lib/mapStore";
 import { analyzeMapImage } from "../../agents/mapAnalysisAgent";
-import type { CampaignMap, CombatMapDocument, MapRegion } from "../../lib/gameTypes";
+import type { CampaignMap, CombatMapDocument, ExplorationMapDocument, MapRegion, PointOfInterest } from "../../lib/gameTypes";
 
 // ─── POST: create map or analyze image ───────────────────────────────────────
 
 interface CreateMapBody {
   sessionId: string;
   name: string;
-  feetPerSquare: number;
+  mapType?: "exploration" | "combat"; // defaults to "combat" for backward compat
+  // Combat map fields
+  feetPerSquare?: number;
   backgroundImageUrl?: string;
   tileData?: number[];
   regions?: MapRegion[];
+  // Exploration map fields
+  pointsOfInterest?: PointOfInterest[];
 }
 
 interface AnalyzeMapBody {
@@ -77,11 +81,23 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new map
-    const { sessionId, name, feetPerSquare, backgroundImageUrl, tileData, regions } = body as CreateMapBody;
+    const { sessionId, name, mapType, feetPerSquare, backgroundImageUrl, tileData, regions, pointsOfInterest } = body as CreateMapBody;
     if (!sessionId || !name) {
       return NextResponse.json({ error: "sessionId and name required" }, { status: 400 });
     }
 
+    // Exploration map creation
+    if (mapType === "exploration") {
+      const map = await createMap(sessionId, {
+        mapType: "exploration",
+        name,
+        backgroundImageUrl: backgroundImageUrl ?? "",
+        pointsOfInterest: pointsOfInterest ?? [],
+      } satisfies Omit<ExplorationMapDocument, "id" | "createdAt" | "updatedAt">);
+      return NextResponse.json({ map });
+    }
+
+    // Combat map creation (default)
     const map = await createMap(sessionId, {
       mapType: "combat",
       name,
@@ -124,7 +140,14 @@ export async function GET(req: NextRequest) {
     if (!sessionId) {
       return NextResponse.json({ error: "sessionId or campaign query param required" }, { status: 400 });
     }
-    const maps = await loadSessionMaps(sessionId);
+    let maps = await loadSessionMaps(sessionId);
+
+    // Optional type filter: ?type=exploration or ?type=combat
+    const type = req.nextUrl.searchParams.get("type");
+    if (type) {
+      maps = maps.filter(m => m.mapType === type);
+    }
+
     return NextResponse.json({ maps });
   } catch (err) {
     console.error("[Maps API GET]", err);
