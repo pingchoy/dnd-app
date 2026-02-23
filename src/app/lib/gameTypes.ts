@@ -61,18 +61,49 @@ export function normalizeRegions(regions: unknown[]): MapRegion[] {
   return regions.map((r) => normalizeRegion(r as Record<string, unknown>));
 }
 
-/** Full map document — stored in Firestore `sessions/{sessionId}/maps/{id}`. */
-export interface MapDocument {
+/** A numbered point of interest on an exploration map — links to a combat map. */
+export interface PointOfInterest {
+  id: string;                    // "poi_docks"
+  number: number;                // display number on the map (1-indexed)
+  name: string;                  // "valdris docks"
+  description: string;           // "a busy waterfront district"
+  position: { x: number; y: number }; // percentage coordinates on the exploration image (0-100)
+  combatMapId: string;           // Firestore ID of the linked CombatMapDocument
+  isHidden: boolean;             // hidden POIs are revealed by DM during play
+  actNumbers: number[];          // which acts this POI is relevant in
+  locationTags: string[];        // patterns for DM agent location matching
+  defaultNPCSlugs?: string[];   // NPCs placed here by default
+}
+
+/** Shared fields for all map documents — not exported directly. */
+interface BaseMapDocument {
   id?: string;
-  name: string;                  // "The Rusty Flagon"
-  backgroundImageUrl?: string;   // user-uploaded image (Firebase Storage)
-  gridSize: number;              // always 20
-  feetPerSquare: number;         // 5 for detailed, 50-100 for zone
-  regions: MapRegion[];
-  tileData?: number[];           // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door. Omitted for zone maps.
+  name: string;
+  backgroundImageUrl?: string;   // user-uploaded or AI-generated image
   createdAt?: number;
   updatedAt?: number;
 }
+
+/** Exploration map — a background image with numbered points of interest. */
+export interface ExplorationMapDocument extends BaseMapDocument {
+  mapType: "exploration";
+  backgroundImageUrl: string;    // required for exploration maps (overrides optional base)
+  pointsOfInterest: PointOfInterest[];
+}
+
+/** Combat (tactical battle grid) map — stored in Firestore `sessions/{sessionId}/maps/{id}`. */
+export interface CombatMapDocument extends BaseMapDocument {
+  mapType: "combat";
+  gridSize: number;              // always 20
+  feetPerSquare: number;         // 5 for detailed, 50-100 for zone
+  regions: MapRegion[];
+  tileData?: number[];           // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door
+  parentMapId?: string;          // Firestore ID of the parent ExplorationMapDocument
+  poiId?: string;                // PointOfInterest.id this combat map is linked from
+}
+
+/** Discriminated union — narrow on `mapType` to access type-specific fields. */
+export type MapDocument = ExplorationMapDocument | CombatMapDocument;
 
 // ─── Grid & Combat Types ─────────────────────────────────────────────────────
 
@@ -416,18 +447,33 @@ export interface CampaignMapRegionSpec {
   shopInventory?: string[];
 }
 
-/** Connection from one campaign map to another. */
-export interface CampaignMapConnection {
-  targetMapSpecId: string;
-  direction: string;               // "north", "underground", "through the tunnel"
-  description: string;             // "a heavy iron door leads down into the undercity"
+/** Point-of-interest blueprint for a campaign exploration map. */
+export interface CampaignPOISpec {
+  id: string;                      // "poi_docks"
+  number: number;                  // display number (1-indexed)
+  name: string;                    // "valdris docks"
+  description: string;
+  combatMapSpecId: string;         // References CampaignCombatMapSpec.id
+  isHidden: boolean;
+  actNumbers: number[];
+  locationTags: string[];
+  defaultNPCSlugs?: string[];
+}
+
+/** Blueprint for an exploration map — a background image with numbered POIs. */
+export interface CampaignExplorationMapSpec {
+  id: string;                      // "valdris-city"
+  name: string;                    // "The Free City of Valdris"
+  imageDescription: string;        // Prose description for image generation
+  atmosphereNotes?: string;
+  pointsOfInterest: CampaignPOISpec[];
 }
 
 /**
- * Blueprint for a map that a campaign needs.
- * Contains enough detail for a future generator to produce a MapDocument.
+ * Blueprint for a combat (tactical battle grid) map.
+ * Contains enough detail for a future generator to produce a CombatMapDocument.
  */
-export interface CampaignMapSpec {
+export interface CampaignCombatMapSpec {
   id: string;                      // "valdris-docks" — unique within the campaign
   name: string;                    // "Valdris Docks, Pier 7"
   layoutDescription: string;       // Prose description of physical layout for the generator
@@ -436,20 +482,24 @@ export interface CampaignMapSpec {
   lighting: "bright" | "dim" | "dark" | "mixed";
   atmosphereNotes?: string;        // Visual/mood hints for image generation
   regions: CampaignMapRegionSpec[];
-  connections?: CampaignMapConnection[];
-  actNumbers: number[];            // Which acts this map appears in
-  locationTags: string[];          // Patterns for DM agent location matching
 }
+
+/** @deprecated Use CampaignCombatMapSpec instead. Kept for backwards compatibility. */
+export type CampaignMapSpec = CampaignCombatMapSpec;
 
 /** Pre-generated map template for a campaign location. */
 export interface CampaignMap {
   campaignSlug: string;
-  mapSpecId: string;               // References CampaignMapSpec.id
+  mapSpecId: string;               // References CampaignCombatMapSpec.id or CampaignExplorationMapSpec.id
+  mapType: "exploration" | "combat";
   name: string;
-  gridSize: number;                // 20
-  feetPerSquare: number;
-  tileData: number[];              // 400-element flat array
-  regions: MapRegion[];
+  // Combat map fields
+  gridSize?: number;               // 20 (combat maps only)
+  feetPerSquare?: number;
+  tileData?: number[];             // 400-element flat array (combat maps only)
+  regions?: MapRegion[];           // combat maps only
+  // Exploration map fields
+  pointsOfInterest?: PointOfInterest[]; // exploration maps only
   backgroundImageUrl?: string;
   generatedAt: number;
 }
@@ -500,7 +550,10 @@ export interface Campaign {
   actSlugs: string[];                  // ["the-crimson-accord_act-1", ...]
   npcs: CampaignNPC[];
   dmSummary: string;                   // Spoiler-free theme/tone/setting for DM injection (~50 tokens)
-  mapSpecs?: CampaignMapSpec[];        // Blueprints for maps this campaign needs
+  /** @deprecated Use explorationMapSpecs + combatMapSpecs instead. */
+  mapSpecs?: CampaignMapSpec[];        // Legacy: flat list of combat map blueprints
+  explorationMapSpecs?: CampaignExplorationMapSpec[];
+  combatMapSpecs?: CampaignCombatMapSpec[];
 }
 
 export interface CampaignEnemy {
@@ -540,6 +593,8 @@ export interface CampaignAct {
   relevantNPCIds: string[];
   transitionToNextAct?: string;
   dmBriefing: string;                  // Compact DM briefing for injection (~500 tokens)
+  /** Exploration map spec to activate when this act begins. */
+  explorationMapSpecId?: string;
 }
 
 export interface ConversationTurn {
@@ -653,9 +708,13 @@ export interface StoredSession {
   /** Campaign this session is running (e.g. "the-crimson-accord"). */
   campaignSlug?: string;
   characterIds: string[];
-  /** Which map is currently displayed in the grid. */
+  /** Firestore ID of the currently active exploration map. */
+  currentExplorationMapId?: string;
+  /** Currently active PointOfInterest.id within the exploration map. */
+  currentPOIId?: string;
+  /** @deprecated Use currentExplorationMapId / currentPOIId instead. Which combat map is currently displayed. */
   activeMapId?: string;
-  /** Exploration-mode token positions keyed by "player" or characterId. */
+  /** @deprecated Exploration-mode token positions keyed by "player" or characterId. */
   explorationPositions?: Record<string, GridPosition>;
   createdAt?: number;
   updatedAt?: number;
