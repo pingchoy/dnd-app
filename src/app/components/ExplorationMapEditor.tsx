@@ -9,7 +9,7 @@
  * they remain correct regardless of display size.
  */
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useMemo } from "react";
 import type { CampaignPOISpec } from "../lib/gameTypes";
 
 interface Props {
@@ -22,17 +22,21 @@ function ExplorationMapEditor({ imageUrl, pointsOfInterest, onPOIsChange }: Prop
   const [selectedPOI, setSelectedPOI] = useState<string | null>(null);
   const [editingPOI, setEditingPOI] = useState<CampaignPOISpec | null>(null);
   const imageRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const poiCounter = useRef(pointsOfInterest.length);
 
   /** Place a new POI at the click position (percentage-based). */
   const handleImageClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isDragging.current) return;
     if (!imageRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
+    poiCounter.current += 1;
     const nextNumber = pointsOfInterest.length + 1;
     const newPOI: CampaignPOISpec = {
-      id: `poi_${nextNumber}`,
+      id: `poi_${poiCounter.current}`,
       number: nextNumber,
       name: "",
       description: "",
@@ -53,6 +57,7 @@ function ExplorationMapEditor({ imageUrl, pointsOfInterest, onPOIsChange }: Prop
     e.stopPropagation();
     if (!imageRef.current) return;
 
+    isDragging.current = true;
     const rect = imageRef.current.getBoundingClientRect();
 
     const handleMove = (me: MouseEvent) => {
@@ -72,6 +77,7 @@ function ExplorationMapEditor({ imageUrl, pointsOfInterest, onPOIsChange }: Prop
     const handleUp = () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
+      requestAnimationFrame(() => { isDragging.current = false; });
     };
 
     document.addEventListener("mousemove", handleMove);
