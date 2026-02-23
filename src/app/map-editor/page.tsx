@@ -7,7 +7,7 @@
  * Workflow: Upload image → AI analysis (optional) → Review/correct → Save.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapEditor from "../components/MapEditor";
 import { normalizeRegions } from "../lib/gameTypes";
@@ -16,6 +16,14 @@ import type { CampaignMap, MapRegion } from "../lib/gameTypes";
 const GRID_SIZE = 20;
 
 export default function MapEditorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-dungeon" />}>
+      <MapEditorContent />
+    </Suspense>
+  );
+}
+
+function MapEditorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId") ?? "";
