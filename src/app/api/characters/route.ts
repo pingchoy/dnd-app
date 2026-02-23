@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, deleteCharacter } from "../../lib/characterStore";
+import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, deleteCharacter, getCampaign, saveSessionState } from "../../lib/characterStore";
 import type { PlayerState, StoryState } from "../../lib/gameTypes";
+import { DEFAULT_CAMPAIGN_SLUG } from "../../lib/gameTypes";
+import { instantiateCampaignMaps } from "../../lib/mapStore";
+import { adminDb } from "../../lib/firebaseAdmin";
 
 /** GET /api/characters — list all characters, or filter by ?ids=abc,def. */
 export async function GET(request: NextRequest) {
@@ -56,7 +59,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const id = await createCharacter(player, story);
+    // Fetch the default campaign and override story fields
+    const campaign = await getCampaign(DEFAULT_CAMPAIGN_SLUG);
+    if (campaign) {
+      story.campaignTitle = campaign.title;
+      story.campaignBackground = campaign.playerTeaser;
+    }
+
+    const id = await createCharacter(player, story, DEFAULT_CAMPAIGN_SLUG);
+
+    // Instantiate campaign maps into the new session
+    if (campaign) {
+      const charSnap = await adminDb.collection("characters").doc(id).get();
+      const sessionId = charSnap.data()?.sessionId as string;
+      if (sessionId) {
+        const maps = await instantiateCampaignMaps(DEFAULT_CAMPAIGN_SLUG, sessionId);
+        if (maps.length > 0) {
+          await saveSessionState(sessionId, { activeMapId: maps[0].id });
+        }
+      }
+    }
+
     return NextResponse.json({ id });
   } catch (err) {
     console.error("[/api/characters] error:", err);

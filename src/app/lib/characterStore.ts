@@ -21,6 +21,7 @@ import { adminDb } from "./firebaseAdmin";
 import type {
   Ability,
   AOEData,
+  Campaign,
   GameplayEffects,
   PlayerState,
   StoryState,
@@ -137,6 +138,15 @@ export interface StoredCharacter {
   story: StoryState;
   createdAt?: number;
   updatedAt?: number;
+}
+
+// ─── Campaign Lookup ──────────────────────────────────────────────────────────
+
+/** Fetch a campaign document by slug. Returns null if not found. */
+export async function getCampaign(slug: string): Promise<Campaign | null> {
+  const snap = await adminDb.collection("campaigns").doc(slug).get();
+  if (!snap.exists) return null;
+  return snap.data() as Campaign;
 }
 
 // ─── Session CRUD ─────────────────────────────────────────────────────────────
