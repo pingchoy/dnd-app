@@ -15,23 +15,19 @@
  * "The Crimson Accord" that would grant her immortality and domination over the city.
  */
 
-import type { CampaignMapSpec } from "../../src/app/lib/gameTypes";
+import type {
+  CampaignCombatMapSpec,
+  CampaignExplorationMapSpec,
+} from "../../src/app/lib/gameTypes";
 import type { CampaignData } from "./index";
 
 const SLUG = "the-crimson-accord";
 
-// ─── Legacy Map Specifications ──────────────────────────────────────────────
-// These specs include connections, actNumbers, and locationTags which have
-// moved to the POI level in CampaignExplorationMapSpec. Task 3 will
-// restructure this data properly. For now, use `as CampaignMapSpec[]`.
+// ─── Combat Map Specifications ──────────────────────────────────────────────
+// Each combat map defines the physical layout for a single encounter location.
+// Connection, act, and location-tag data lives on the exploration map POIs.
 
-interface LegacyCampaignMapSpec extends CampaignMapSpec {
-  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
-  actNumbers: number[];
-  locationTags: string[];
-}
-
-const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
+const CRIMSON_ACCORD_COMBAT_MAP_SPECS: CampaignCombatMapSpec[] = [
   // 1. Valdris Docks, Pier 7
   {
     id: "valdris-docks",
@@ -48,11 +44,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_cargo_area", name: "cargo staging area", type: "street", approximateSize: "medium", position: "center", dmNote: "Stacked crates and barrels provide half cover. The smuggler manifest is hidden in a crate here." },
       { id: "region_harbormaster", name: "harbormaster's shack", type: "safe", approximateSize: "small", position: "northwest", dmNote: "Small office with a desk and logbooks. Currently unoccupied at night." },
     ],
-    connections: [
-      { targetMapSpecId: "undercity-tunnels", direction: "north", description: "A sewer grate behind the warehouses leads down into the undercity tunnels." },
-    ],
-    actNumbers: [1],
-    locationTags: ["valdris docks", "pier 7", "docks", "harbor", "waterfront"],
   },
 
   // 2. Valdris Council Hall
@@ -72,8 +63,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_private_offices", name: "private offices", type: "residential", approximateSize: "medium", position: "west", dmNote: "Council members' private offices. Lysara's office has a locked desk (DC 15)." },
       { id: "region_servants_passage", name: "servants' passage", type: "street", approximateSize: "small", position: "north", dmNote: "Narrow corridor used by staff. Good for eavesdropping." },
     ],
-    actNumbers: [1, 3],
-    locationTags: ["council hall", "council chambers", "council reception", "valdris council"],
   },
 
   // 3. Valdris Undercity Tunnels
@@ -92,12 +81,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_tunnel_junction", name: "tunnel junction", type: "safe", approximateSize: "small", position: "northwest", dmNote: "Where three tunnels meet. Zephyr marks this as a safe rest point." },
       { id: "region_rat_nests", name: "rat nest alcoves", type: "danger", approximateSize: "small", position: "east", dmNote: "Dead-end alcoves filled with debris and giant rat nests." },
     ],
-    connections: [
-      { targetMapSpecId: "valdris-docks", direction: "south", description: "A sewer grate opening up behind the dock warehouses." },
-      { targetMapSpecId: "smuggler-warehouse", direction: "north", description: "The tunnel widens into the smuggler warehouse entrance." },
-    ],
-    actNumbers: [1],
-    locationTags: ["undercity", "tunnels", "sewers", "underground", "beneath the lower quarters"],
   },
 
   // 4. Undercity Warehouse
@@ -116,12 +99,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_office", name: "smuggler's office", type: "residential", approximateSize: "small", position: "north", dmNote: "The bandit captain's office. Documents here connect deliveries to 'Brother C.' at the hospital." },
       { id: "region_prisoner_cages", name: "prisoner cages", type: "danger", approximateSize: "medium", position: "west", dmNote: "Empty iron cages with scratches on the walls and personal effects left behind." },
     ],
-    connections: [
-      { targetMapSpecId: "undercity-tunnels", direction: "south", description: "The main tunnel back into the undercity sewer network." },
-      { targetMapSpecId: "ancient-temple", direction: "northeast", description: "A locked iron door leads to a deeper tunnel toward the temple district." },
-    ],
-    actNumbers: [1],
-    locationTags: ["warehouse", "smuggler warehouse", "undercity warehouse", "market district"],
   },
 
   // 5. Brother Caelum's Hospital
@@ -141,8 +118,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_supply_closet", name: "supply closet", type: "custom", approximateSize: "small", position: "southwest", dmNote: "Concealed door behind shelves (DC 14 Investigation). Leads to basement stairs." },
       { id: "region_basement_lab", name: "basement laboratory", type: "danger", approximateSize: "medium", position: "north", dmNote: "Arcane circles, alchemical equipment, restraint chairs. Evidence of the kidnapping operation." },
     ],
-    actNumbers: [2],
-    locationTags: ["hospital", "caelum's hospital", "brother caelum", "charitable hospital"],
   },
 
   // 6. Blackwood Estate
@@ -162,8 +137,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_private_study", name: "blackwood's private study", type: "residential", approximateSize: "small", position: "west", dmNote: "Locked (DC 15). Contains private ledger with hospital funding discrepancies." },
       { id: "region_garden_terrace", name: "garden terrace", type: "wilderness", approximateSize: "medium", position: "north", dmNote: "Hedgerows provide concealment. Good for clandestine meetings during the ball." },
     ],
-    actNumbers: [2],
-    locationTags: ["blackwood estate", "blackwood's estate", "masquerade ball", "grand ballroom"],
   },
 
   // 7. The Narrows
@@ -183,8 +156,6 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_north_exit", name: "north alley exit", type: "street", approximateSize: "small", position: "north", dmNote: "Exit toward the middle quarter. Thugs block this side too." },
       { id: "region_dead_end", name: "dead-end side alley", type: "danger", approximateSize: "small", position: "west", dmNote: "The spy assassin lurks here, waiting to strike from the shadows." },
     ],
-    actNumbers: [2],
-    locationTags: ["the narrows", "narrow alley", "alley", "between upper and middle quarters"],
   },
 
   // 8. Ancient Temple Complex
@@ -204,11 +175,102 @@ const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
       { id: "region_preparation_chamber", name: "preparation chamber", type: "danger", approximateSize: "large", position: "east", dmNote: "Kidnapped victims held in 6 arcane circles. Specters haunt this area. Zephyr's sibling Sera is here." },
       { id: "region_ritual_chamber", name: "grand ritual chamber", type: "dungeon", approximateSize: "large", position: "west", dmNote: "The climactic battle arena. 30 ft ritual circle at center, altar, tiered galleries. Lysara makes her stand here." },
     ],
-    connections: [
-      { targetMapSpecId: "smuggler-warehouse", direction: "north", description: "The tunnel passage leading back toward the undercity warehouse." },
+  },
+];
+
+// ─── Exploration Map Specification ──────────────────────────────────────────
+// The city-level exploration map with numbered POIs linking to combat maps.
+// Hidden POIs are revealed through play; all POI names are lowercase per
+// project convention (lowercase strings persisted to Firestore).
+
+const CRIMSON_ACCORD_EXPLORATION_MAP_SPECS: CampaignExplorationMapSpec[] = [
+  {
+    id: "valdris-city",
+    name: "The Free City of Valdris",
+    imageDescription:
+      "A sprawling top-down view of a medieval port city. The southern edge borders a harbor with wooden docks and moored cargo ships. The city rises northward through narrow streets lined with stone buildings, from crowded lower quarters to an elegant upper district with marble government buildings and noble estates. A river or canal cuts through the middle. Temple spires and market squares dot the landscape. The overall tone is dim and atmospheric — a city of intrigue beneath torchlit streets.",
+    pointsOfInterest: [
+      {
+        id: "poi_docks",
+        number: 1,
+        name: "valdris docks",
+        description: "A nighttime waterfront pier district. Rain-slicked wooden planks, moored cargo ships, warehouses with narrow alleys, and crates providing cover. The harbormaster's shack sits in the northwest corner.",
+        combatMapSpecId: "valdris-docks",
+        isHidden: false,
+        actNumbers: [1],
+        locationTags: ["valdris docks", "pier 7", "docks", "harbor", "waterfront"],
+      },
+      {
+        id: "poi_council",
+        number: 2,
+        name: "council hall",
+        description: "An imposing marble government building with a grand foyer, circular council chamber, reception room, private offices, and servants' passages.",
+        combatMapSpecId: "council-hall",
+        isHidden: false,
+        actNumbers: [1, 3],
+        locationTags: ["council hall", "council chambers", "council reception", "valdris council"],
+      },
+      {
+        id: "poi_undercity",
+        number: 3,
+        name: "undercity tunnels",
+        description: "A network of old sewer tunnels beneath the lower quarters. Arched brick ceilings, flooded sections, rat nests, and a junction where tunnels meet.",
+        combatMapSpecId: "undercity-tunnels",
+        isHidden: true,
+        actNumbers: [1],
+        locationTags: ["undercity", "tunnels", "sewers", "underground", "beneath the lower quarters"],
+      },
+      {
+        id: "poi_warehouse",
+        number: 4,
+        name: "smuggler warehouse",
+        description: "A converted basement used as a smuggler staging area. Crates in rows, a raised crossbow platform, a walled-off office, and iron cages along the western wall.",
+        combatMapSpecId: "smuggler-warehouse",
+        isHidden: true,
+        actNumbers: [1],
+        locationTags: ["warehouse", "smuggler warehouse", "undercity warehouse", "market district"],
+      },
+      {
+        id: "poi_hospital",
+        number: 5,
+        name: "brother caelum's hospital",
+        description: "A modest two-story charitable hospital. Main ward with cots, reception area, Caelum's private quarters, and a concealed basement with arcane circles and alchemical equipment.",
+        combatMapSpecId: "caelum-hospital",
+        isHidden: false,
+        actNumbers: [2],
+        locationTags: ["hospital", "caelum's hospital", "brother caelum", "charitable hospital"],
+      },
+      {
+        id: "poi_estate",
+        number: 6,
+        name: "blackwood estate",
+        description: "A lavish noble estate with grand ballroom, formal dining, private study, and garden terrace. Site of the masquerade ball.",
+        combatMapSpecId: "blackwood-estate",
+        isHidden: false,
+        actNumbers: [2],
+        locationTags: ["blackwood estate", "blackwood's estate", "masquerade ball", "grand ballroom"],
+      },
+      {
+        id: "poi_narrows",
+        number: 7,
+        name: "the narrows",
+        description: "A twisting narrow alley between upper and middle quarters. Only 5-10 ft wide, with overhanging balconies and a dry well courtyard in the center.",
+        combatMapSpecId: "the-narrows",
+        isHidden: true,
+        actNumbers: [2],
+        locationTags: ["the narrows", "narrow alley", "alley", "between upper and middle quarters"],
+      },
+      {
+        id: "poi_temple",
+        number: 8,
+        name: "ancient temple",
+        description: "A vast underground temple predating the city. Crumbling pillars, trapped corridors, a chasm bridge, preparation chamber with captives, and a grand ritual chamber.",
+        combatMapSpecId: "ancient-temple",
+        isHidden: true,
+        actNumbers: [3],
+        locationTags: ["ancient temple", "temple complex", "ritual chamber", "underground temple", "temple beneath"],
+      },
     ],
-    actNumbers: [3],
-    locationTags: ["ancient temple", "temple complex", "ritual chamber", "underground temple", "temple beneath"],
   },
 ];
 
@@ -538,7 +600,8 @@ export const theCrimsonAccord: CampaignData = {
           "Booming voice, speaks with dramatic hand gestures. Laughs from the belly. Uses 'by the gods' as an exclamation. When serious, drops the volume to a near-whisper and leans in conspiratorially — these moments should feel genuinely threatening and intimate.",
       },
     ],
-    mapSpecs: CRIMSON_ACCORD_MAP_SPECS,
+    explorationMapSpecs: CRIMSON_ACCORD_EXPLORATION_MAP_SPECS,
+    combatMapSpecs: CRIMSON_ACCORD_COMBAT_MAP_SPECS,
     dmSummary:
       "Political intrigue in the free city of Valdris. Dark fantasy tone with themes of trust, power, and corruption beneath gilded surfaces. A trade hub governed by a council of merchant lords where people are vanishing from the lower quarters. The campaign rewards careful investigation, relationship-building, and paying attention to NPC motivations over brute force.",
   },
@@ -551,6 +614,7 @@ export const theCrimsonAccord: CampaignData = {
       campaignSlug: SLUG,
       actNumber: 1,
       title: "Shadows in the Market",
+      explorationMapSpecId: "valdris-city",
       summary:
         "Strange disappearances plague the lower quarters of Valdris. A powerful councilor hires the party to investigate, leading them into the city's criminal underbelly where smugglers, street urchins, and corrupt officials all have pieces of a larger puzzle.",
       suggestedLevel: { min: 1, max: 2 },
@@ -660,6 +724,7 @@ export const theCrimsonAccord: CampaignData = {
       campaignSlug: SLUG,
       actNumber: 2,
       title: "The Gilded Cage",
+      explorationMapSpecId: "valdris-city",
       summary:
         "The investigation leads to a charitable hospital hiding dark secrets, a masquerade ball where alliances shift, and a devastating betrayal. As the party peels back layers of conspiracy, they discover the disappearances are connected to an ancient and terrible ritual.",
       suggestedLevel: { min: 2, max: 3 },
@@ -769,6 +834,7 @@ export const theCrimsonAccord: CampaignData = {
       campaignSlug: SLUG,
       actNumber: 3,
       title: "The Accord Unveiled",
+      explorationMapSpecId: "valdris-city",
       summary:
         "The truth stands revealed: Councilor Lysara Thorne has orchestrated everything — the kidnappings, the experiments, the political machinations. As she races to complete the ancient Crimson Accord ritual in a temple beneath the city, the party must rally their allies, gather final evidence, and confront her before Valdris falls under her eternal dominion.",
       suggestedLevel: { min: 4, max: 5 },
