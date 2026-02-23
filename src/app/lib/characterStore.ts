@@ -196,13 +196,13 @@ export async function saveSessionState(
  * 1. Creates the character doc (with a temporary empty sessionId)
  * 2. Creates the session doc linked to the character
  * 3. Updates the character doc with the sessionId
- * Returns the character document ID.
+ * Returns the character document ID and session ID.
  */
 export async function createCharacter(
   player: PlayerState,
   story: StoryState,
   campaignSlug?: string,
-): Promise<string> {
+): Promise<{ characterId: string; sessionId: string }> {
   const charRef = adminDb.collection("characters").doc();
   const now = Date.now();
 
@@ -220,7 +220,7 @@ export async function createCharacter(
   // Link the character to its session
   await charRef.update({ sessionId });
 
-  return charRef.id;
+  return { characterId: charRef.id, sessionId };
 }
 
 /**

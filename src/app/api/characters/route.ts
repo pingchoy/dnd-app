@@ -3,7 +3,6 @@ import { createCharacter, loadCharacterSummaries, listAllCharacterSummaries, del
 import type { PlayerState, StoryState } from "../../lib/gameTypes";
 import { DEFAULT_CAMPAIGN_SLUG } from "../../lib/gameTypes";
 import { instantiateCampaignMaps } from "../../lib/mapStore";
-import { adminDb } from "../../lib/firebaseAdmin";
 
 /** GET /api/characters — list all characters, or filter by ?ids=abc,def. */
 export async function GET(request: NextRequest) {
@@ -64,23 +63,29 @@ export async function POST(request: NextRequest) {
     if (campaign) {
       story.campaignTitle = campaign.title;
       story.campaignBackground = campaign.playerTeaser;
+    } else {
+      console.warn(`[/api/characters] Campaign "${DEFAULT_CAMPAIGN_SLUG}" not found in Firestore — session will have no campaign data`);
     }
 
-    const id = await createCharacter(player, story, DEFAULT_CAMPAIGN_SLUG);
+    // Set a fallback currentLocation if the client sent it empty
+    if (!story.currentLocation) {
+      story.currentLocation = "the starting location";
+    }
 
-    // Instantiate campaign maps into the new session
-    if (campaign) {
-      const charSnap = await adminDb.collection("characters").doc(id).get();
-      const sessionId = charSnap.data()?.sessionId as string;
-      if (sessionId) {
-        const maps = await instantiateCampaignMaps(DEFAULT_CAMPAIGN_SLUG, sessionId);
-        if (maps.length > 0) {
-          await saveSessionState(sessionId, { activeMapId: maps[0].id });
-        }
+    const { characterId, sessionId } = await createCharacter(player, story, DEFAULT_CAMPAIGN_SLUG);
+
+    // Instantiate campaign maps into the new session.
+    // Note: map instantiation is not transactional — if it fails, the character
+    // and session still exist but without maps. This is recoverable (maps can be
+    // instantiated later) and preferable to rolling back the entire character.
+    if (campaign && sessionId) {
+      const maps = await instantiateCampaignMaps(DEFAULT_CAMPAIGN_SLUG, sessionId);
+      if (maps.length > 0) {
+        await saveSessionState(sessionId, { activeMapId: maps[0].id });
       }
     }
 
-    return NextResponse.json({ id });
+    return NextResponse.json({ id: characterId });
   } catch (err) {
     console.error("[/api/characters] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
