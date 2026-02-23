@@ -72,7 +72,7 @@ describe("DiceRoll (historical)", () => {
     const result = makeResult({
       damage: {
         breakdown: [
-          { label: "Longsword", rolls: [6], flatBonus: 3, subtotal: 9, damageType: "slashing" },
+          { label: "Longsword", dice: "1d8", rolls: [6], flatBonus: 3, subtotal: 9, damageType: "slashing" },
         ],
         totalDamage: 9,
         isCrit: false,
@@ -91,9 +91,8 @@ describe("DiceRoll (historical)", () => {
   });
 
   it("does not render Continue button in historical mode", () => {
-    const onContinue = vi.fn();
     render(
-      <DiceRoll result={makeResult()} isHistorical onContinue={onContinue} />,
+      <DiceRoll result={makeResult()} isHistorical />,
     );
 
     expect(screen.queryByText(/Continue/)).not.toBeInTheDocument();

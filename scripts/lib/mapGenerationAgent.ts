@@ -14,6 +14,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { CampaignMapSpec, MapRegion, RegionType } from "../../src/app/lib/gameTypes";
 
+// Legacy spec shape — includes fields that moved to POI level in Task 1
+interface LegacyMapSpec extends CampaignMapSpec {
+  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
+}
+
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 4096;
 
@@ -140,7 +145,7 @@ export interface MapGenerationResult {
  * Returns validated tileData, regions, and estimated cost.
  */
 export async function generateMapFromSpec(
-  spec: CampaignMapSpec,
+  spec: CampaignMapSpec | LegacyMapSpec,
   options?: { apiKey?: string; maxRetries?: number },
 ): Promise<MapGenerationResult> {
   const maxRetries = options?.maxRetries ?? 2;
@@ -159,9 +164,10 @@ export async function generateMapFromSpec(
     })
     .join("\n");
 
-  const connectionDescriptions = spec.connections?.length
+  const legacySpec = spec as LegacyMapSpec;
+  const connectionDescriptions = legacySpec.connections?.length
     ? "\nConnections to other maps:\n" +
-      spec.connections.map((c) => `  - ${c.direction}: ${c.description}`).join("\n")
+      legacySpec.connections.map((c) => `  - ${c.direction}: ${c.description}`).join("\n")
     : "";
 
   const userPrompt = `Generate a 20×20 map grid for: "${spec.name}"

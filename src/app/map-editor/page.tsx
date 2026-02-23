@@ -147,9 +147,9 @@ function MapEditorContent() {
     if (!map) return;
 
     setMapName(map.name);
-    setFeetPerSquare(map.feetPerSquare);
-    setTileData(map.tileData);
-    setRegions(normalizeRegions(map.regions));
+    setFeetPerSquare(map.feetPerSquare ?? 5);
+    setTileData(map.tileData ?? new Array(GRID_SIZE * GRID_SIZE).fill(0));
+    setRegions(normalizeRegions(map.regions ?? []));
     setBackgroundImageUrl(map.backgroundImageUrl);
     setEditingCampaignMap({ campaignSlug: map.campaignSlug, mapSpecId: map.mapSpecId });
     setAnalysisConfidence(null);

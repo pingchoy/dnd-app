@@ -504,10 +504,10 @@ export default function Dashboard() {
                   onMoveToken={moveToken}
                   gridSize={gridSize}
                   mode={inCombat ? "combat" : "exploration"}
-                  tileData={activeMap?.tileData}
-                  regions={activeMap?.regions}
+                  tileData={activeMap?.mapType === "combat" ? activeMap.tileData : undefined}
+                  regions={activeMap?.mapType === "combat" ? activeMap.regions : undefined}
                   mapBackgroundUrl={activeMap?.backgroundImageUrl}
-                  feetPerSquare={activeMap?.feetPerSquare}
+                  feetPerSquare={activeMap?.mapType === "combat" ? activeMap.feetPerSquare : undefined}
                   targetingAbility={inCombat ? selectedAbility : null}
                   onTargetSelected={inCombat ? handleTargetSelected : undefined}
                   onCancel={inCombat ? () => setSelectedAbility(null) : undefined}

@@ -190,6 +190,8 @@ async function processChatAction(
     // Load active map (if any) for region-aware NPC placement
     const activeMapId = getActiveMapId();
     const activeMap = needsEncounter && activeMapId ? await loadMap(sessionId, activeMapId) : null;
+    // Extract combat regions (only combat maps have regions)
+    const combatRegions = activeMap?.mapType === "combat" ? activeMap.regions : undefined;
 
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
@@ -203,7 +205,7 @@ async function processChatAction(
         gameState.story.currentScene,
         {
           mapId: activeMapId,
-          regions: activeMap?.regions,
+          regions: combatRegions,
           explorationPositions: getExplorationPositions(),
         },
       );
@@ -246,7 +248,7 @@ async function processChatAction(
     if (needsEncounter && enc) {
       enc.positions = computeInitialPositions(
         enc.activeNPCs,
-        activeMap?.regions,
+        combatRegions,
         getExplorationPositions(),
       );
       enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMap, loadSessionMaps, updateMap, listCampaignMaps, listCampaignSlugs, updateCampaignMap } from "../../lib/mapStore";
 import { analyzeMapImage } from "../../agents/mapAnalysisAgent";
-import type { CampaignMap, MapDocument } from "../../lib/gameTypes";
+import type { CampaignMap, CombatMapDocument, MapRegion } from "../../lib/gameTypes";
 
 // ─── POST: create map or analyze image ───────────────────────────────────────
 
@@ -18,7 +18,7 @@ interface CreateMapBody {
   feetPerSquare: number;
   backgroundImageUrl?: string;
   tileData?: number[];
-  regions?: MapDocument["regions"];
+  regions?: MapRegion[];
 }
 
 interface AnalyzeMapBody {
@@ -32,7 +32,7 @@ interface UpdateMapBody {
   action: "update";
   sessionId: string;
   mapId: string;
-  changes: Partial<Omit<MapDocument, "id" | "createdAt">>;
+  changes: Partial<Record<string, unknown>>;
 }
 
 interface UpdateCampaignMapBody {
@@ -83,13 +83,14 @@ export async function POST(req: NextRequest) {
     }
 
     const map = await createMap(sessionId, {
+      mapType: "combat",
       name,
       gridSize: 20,
       feetPerSquare: feetPerSquare || 5,
       regions: regions || [],
       ...(backgroundImageUrl ? { backgroundImageUrl } : {}),
       ...(tileData ? { tileData } : {}),
-    });
+    } satisfies Omit<CombatMapDocument, "id" | "createdAt" | "updatedAt">);
 
     return NextResponse.json(map);
   } catch (err) {

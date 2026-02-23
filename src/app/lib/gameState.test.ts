@@ -54,7 +54,7 @@ import {
   applyStateChangesAndPersist,
   applyLevelUp,
 } from "./gameState";
-import type { PlayerState, StoredEncounter, NPC, PendingLevelUp } from "./gameTypes";
+import type { PlayerState, StoredEncounter, NPC, PendingLevelUp, StoryState } from "./gameTypes";
 
 // ─── Test fixtures ──────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ function makeStoredCharacter() {
       activeQuests: [],
       metNPCs: [],
       recentEvents: [],
-    },
+    } as StoryState,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

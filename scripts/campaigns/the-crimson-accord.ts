@@ -20,9 +20,18 @@ import type { CampaignData } from "./index";
 
 const SLUG = "the-crimson-accord";
 
-// ─── Map Specifications ──────────────────────────────────────────────────────
+// ─── Legacy Map Specifications ──────────────────────────────────────────────
+// These specs include connections, actNumbers, and locationTags which have
+// moved to the POI level in CampaignExplorationMapSpec. Task 3 will
+// restructure this data properly. For now, use `as CampaignMapSpec[]`.
 
-const CRIMSON_ACCORD_MAP_SPECS: CampaignMapSpec[] = [
+interface LegacyCampaignMapSpec extends CampaignMapSpec {
+  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
+  actNumbers: number[];
+  locationTags: string[];
+}
+
+const CRIMSON_ACCORD_MAP_SPECS: LegacyCampaignMapSpec[] = [
   // 1. Valdris Docks, Pier 7
   {
     id: "valdris-docks",

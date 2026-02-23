@@ -38,7 +38,13 @@ import { ALL_CAMPAIGNS } from "./campaigns";
 import { generateMapFromSpec, analyzeMapImageFromBuffer } from "./lib/mapGenerationAgent";
 import { generateMapImage } from "./lib/stabilityImageAgent";
 import { uploadMapImage } from "./lib/firebaseStorageUpload";
-import type { CampaignMapSpec, CampaignMap } from "../src/app/lib/gameTypes";
+import type { CampaignMapSpec, CampaignMap, MapRegion } from "../src/app/lib/gameTypes";
+
+// Legacy spec shape — includes fields that moved to POI level in Task 1
+interface LegacyMapSpec extends CampaignMapSpec {
+  actNumbers?: number[];
+  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
+}
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
@@ -142,7 +148,8 @@ async function main(): Promise<void> {
   }
 
   // Filter by --map if provided
-  let specsToGenerate: CampaignMapSpec[];
+  // Cast to LegacyMapSpec for backwards compat (actNumbers/connections on specs)
+  let specsToGenerate: LegacyMapSpec[];
   if (args.map) {
     const found = mapSpecs.find((s) => s.id === args.map);
     if (!found) {
@@ -152,9 +159,9 @@ async function main(): Promise<void> {
       }
       process.exit(1);
     }
-    specsToGenerate = [found];
+    specsToGenerate = [found as LegacyMapSpec];
   } else {
-    specsToGenerate = mapSpecs;
+    specsToGenerate = mapSpecs as LegacyMapSpec[];
   }
 
   console.log(`\n── Campaign Map Generation ──`);
@@ -170,9 +177,11 @@ async function main(): Promise<void> {
     console.log(`    Name: ${spec.name}`);
     console.log(`    Terrain: ${spec.terrain}, Lighting: ${spec.lighting}, Scale: ${spec.feetPerSquare}ft/sq`);
     console.log(`    Regions: ${spec.regions.length} (${spec.regions.map((r) => r.name).join(", ")})`);
-    console.log(`    Acts: ${spec.actNumbers.join(", ")}`);
+    if (spec.actNumbers?.length) {
+      console.log(`    Acts: ${spec.actNumbers.join(", ")}`);
+    }
     if (spec.connections?.length) {
-      console.log(`    Connections: ${spec.connections.map((c) => `${c.direction} → ${c.targetMapSpecId}`).join(", ")}`);
+      console.log(`    Connections: ${spec.connections.map((c: { direction: string; targetMapSpecId: string }) => `${c.direction} → ${c.targetMapSpecId}`).join(", ")}`);
     }
     console.log();
   }
@@ -196,7 +205,7 @@ async function main(): Promise<void> {
 
     try {
       let tileData: number[];
-      let regions: CampaignMap["regions"];
+      let regions: MapRegion[];
       let confidence: string;
       let claudeCost = 0;
       let imageCost = 0;
@@ -212,7 +221,7 @@ async function main(): Promise<void> {
         backgroundImageUrl = existing.backgroundImageUrl;
         console.log(`  ✓ Existing image found — skipping Stability AI generation`);
 
-        if (existing.tileData?.length === 400 && existing.regions?.length > 0) {
+        if (existing.tileData?.length === 400 && existing.regions && existing.regions.length > 0) {
           // Full data exists — nothing to regenerate
           tileData = existing.tileData;
           regions = existing.regions;
@@ -306,6 +315,7 @@ async function main(): Promise<void> {
       const campaignMap: CampaignMap = {
         campaignSlug: campaign.slug,
         mapSpecId: spec.id,
+        mapType: "combat",
         name: spec.name,
         gridSize: 20,
         feetPerSquare: spec.feetPerSquare,

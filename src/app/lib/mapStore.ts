@@ -9,7 +9,23 @@
  */
 
 import { adminDb } from "./firebaseAdmin";
-import type { Campaign, CampaignMap, MapDocument } from "./gameTypes";
+import type {
+  Campaign,
+  CampaignMap,
+  CombatMapDocument,
+  ExplorationMapDocument,
+  MapDocument,
+} from "./gameTypes";
+
+// ─── Helper types ──────────────────────────────────────────────────────────
+
+/**
+ * Distributes Omit over the MapDocument discriminated union so callers
+ * can pass either variant without losing type narrowing.
+ */
+type CreateMapData =
+  | Omit<ExplorationMapDocument, "id" | "createdAt" | "updatedAt">
+  | Omit<CombatMapDocument, "id" | "createdAt" | "updatedAt">;
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -19,10 +35,10 @@ import type { Campaign, CampaignMap, MapDocument } from "./gameTypes";
  */
 export async function createMap(
   sessionId: string,
-  data: Omit<MapDocument, "id" | "createdAt" | "updatedAt">,
+  data: CreateMapData,
 ): Promise<MapDocument> {
   const now = Date.now();
-  const doc: Omit<MapDocument, "id"> = {
+  const doc = {
     ...data,
     createdAt: now,
     updatedAt: now,
@@ -31,14 +47,14 @@ export async function createMap(
   const ref = adminDb.collection("sessions").doc(sessionId).collection("maps").doc();
   await ref.set(doc);
 
-  return { id: ref.id, ...doc };
+  return { id: ref.id, ...doc } as MapDocument;
 }
 
 /** Load a map document by ID. Returns null if not found. */
 export async function loadMap(sessionId: string, mapId: string): Promise<MapDocument | null> {
   const snap = await adminDb.collection("sessions").doc(sessionId).collection("maps").doc(mapId).get();
   if (!snap.exists) return null;
-  return { id: snap.id, ...(snap.data() as Omit<MapDocument, "id">) };
+  return { id: snap.id, ...snap.data() } as MapDocument;
 }
 
 /**
@@ -48,7 +64,7 @@ export async function loadMap(sessionId: string, mapId: string): Promise<MapDocu
 export async function updateMap(
   sessionId: string,
   mapId: string,
-  changes: Partial<Omit<MapDocument, "id" | "createdAt">>,
+  changes: Partial<Record<string, unknown>>,
 ): Promise<void> {
   await adminDb.collection("sessions").doc(sessionId).collection("maps").doc(mapId).update({
     ...changes,
@@ -65,8 +81,8 @@ export async function loadSessionMaps(sessionId: string): Promise<MapDocument[]>
 
   return snap.docs.map((doc) => ({
     id: doc.id,
-    ...(doc.data() as Omit<MapDocument, "id">),
-  }));
+    ...doc.data(),
+  })) as MapDocument[];
 }
 
 // ─── Campaign Map Templates ─────────────────────────────────────────────────
@@ -145,31 +161,51 @@ export async function instantiateCampaignMaps(
   for (const doc of snap.docs) {
     const template = doc.data() as CampaignMap;
 
-    const mapDoc: Omit<MapDocument, "id"> = {
+    // Build the appropriate map document based on the template's mapType
+    const base = {
       name: template.name,
-      gridSize: template.gridSize,
-      feetPerSquare: template.feetPerSquare,
-      tileData: template.tileData,
-      regions: template.regions,
       ...(template.backgroundImageUrl ? { backgroundImageUrl: template.backgroundImageUrl } : {}),
       createdAt: now,
       updatedAt: now,
     };
 
+    let mapDoc: Record<string, unknown>;
+    if (template.mapType === "exploration") {
+      mapDoc = {
+        ...base,
+        mapType: "exploration" as const,
+        backgroundImageUrl: template.backgroundImageUrl ?? "",
+        pointsOfInterest: template.pointsOfInterest ?? [],
+      };
+    } else {
+      // Default to combat map (backwards compat for templates without mapType)
+      mapDoc = {
+        ...base,
+        mapType: "combat" as const,
+        gridSize: template.gridSize ?? 20,
+        feetPerSquare: template.feetPerSquare ?? 5,
+        tileData: template.tileData,
+        regions: template.regions ?? [],
+      };
+    }
+
     const ref = adminDb.collection("sessions").doc(sessionId).collection("maps").doc();
     await ref.set(mapDoc);
 
-    maps.push({ id: ref.id, ...mapDoc });
+    maps.push({ id: ref.id, ...mapDoc } as MapDocument);
     specIds.push(template.mapSpecId);
   }
 
   // Sort so Act 1 maps come first, in campaign mapSpec order
+  // Legacy path: uses mapSpecs (flat list with actNumbers). Task 3 will update.
   if (campaign?.mapSpecs?.length) {
     const specOrder = new Map<string, number>();
     const act1Specs = new Set<string>();
     campaign.mapSpecs.forEach((spec, i) => {
       specOrder.set(spec.id, i);
-      if (spec.actNumbers.includes(1)) act1Specs.add(spec.id);
+      // actNumbers no longer on CampaignCombatMapSpec — use legacy cast
+      const legacySpec = spec as unknown as { actNumbers?: number[] };
+      if (legacySpec.actNumbers?.includes(1)) act1Specs.add(spec.id);
     });
 
     // Build index pairs, sort, then reorder both arrays

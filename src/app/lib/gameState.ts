@@ -46,6 +46,8 @@ export type {
   MapRegion,
   RegionType,
   MapDocument,
+  ExplorationMapDocument,
+  CombatMapDocument,
 } from "./gameTypes";
 
 export {
@@ -81,6 +83,8 @@ import {
   SpellAttackType,
   GridPosition,
   MapDocument,
+  ExplorationMapDocument,
+  CombatMapDocument,
   MapRegion,
   Campaign,
   CampaignAct,
@@ -253,6 +257,8 @@ export function serializeRegionContext(
   map: MapDocument | null,
 ): string {
   if (!map || playerPositions.size === 0) return "";
+  // Region context only applies to combat maps (exploration maps have POIs instead)
+  if (map.mapType !== "combat") return "";
 
   const lines: string[] = ["CURRENT POSITION (authoritative — overrides any prior location references):"];
 
@@ -260,7 +266,7 @@ export function serializeRegionContext(
     // Find which region(s) the player is standing in
     const cellIndex = pos.row * 20 + pos.col;
     const matchingRegions = map.regions.filter(
-      (r) => (r.cells ?? []).includes(cellIndex),
+      (r: MapRegion) => (r.cells ?? []).includes(cellIndex),
     );
 
     if (matchingRegions.length > 0) {
@@ -275,6 +281,33 @@ export function serializeRegionContext(
       }
     } else {
       lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → open area (no named region)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Serialize exploration map context for the DM agent.
+ * Lists all POIs with the current one highlighted.
+ */
+export function serializeExplorationContext(
+  explorationMap: ExplorationMapDocument | null,
+  currentPoiId: string | undefined,
+): string {
+  if (!explorationMap) return "";
+
+  const lines: string[] = ["CURRENT EXPLORATION MAP: " + explorationMap.name];
+  lines.push("Points of Interest:");
+
+  for (const poi of explorationMap.pointsOfInterest) {
+    const isCurrent = poi.id === currentPoiId;
+    const hiddenTag = poi.isHidden ? " [HIDDEN from players]" : "";
+    const currentTag = isCurrent ? " ← PARTY IS HERE" : "";
+    lines.push(`  ${poi.number}. ${poi.name}${hiddenTag}${currentTag}`);
+    lines.push(`     ${poi.description}`);
+    if (poi.defaultNPCSlugs?.length) {
+      lines.push(`     NPCs: ${poi.defaultNPCSlugs.join(", ")}`);
     }
   }
 
@@ -442,8 +475,10 @@ let state: GameState = {
 
 /** SessionId for the current character — set by loadGameState(). */
 let currentSessionId = "";
-/** Active map ID from the session — set by loadGameState(). */
-let currentActiveMapId: string | undefined;
+/** Exploration map ID from the session — set by loadGameState(). */
+let currentExplorationMapId: string | undefined;
+/** Current POI within the exploration map — set by loadGameState(). */
+let currentPOIId: string | undefined;
 /** Exploration positions from the session — set by loadGameState(). */
 let currentExplorationPositions: Record<string, GridPosition> | undefined;
 /** Campaign slug from the session — set by loadGameState(). */
@@ -468,8 +503,17 @@ export function getSessionId(): string {
   return currentSessionId;
 }
 
+export function getExplorationMapId(): string | undefined {
+  return currentExplorationMapId;
+}
+
+/** @deprecated Use getExplorationMapId instead. */
 export function getActiveMapId(): string | undefined {
-  return currentActiveMapId;
+  return currentExplorationMapId;
+}
+
+export function getCurrentPOIId(): string | undefined {
+  return currentPOIId;
 }
 
 export function getExplorationPositions(): Record<string, GridPosition> | undefined {
@@ -995,9 +1039,10 @@ export async function loadGameState(characterId: string): Promise<GameState> {
     story: stored.story,
   };
 
-  // Load session-level spatial data (activeMapId, explorationPositions)
+  // Load session-level spatial data (exploration map, POI, positions)
   const session = await loadSession(stored.sessionId);
-  currentActiveMapId = session?.activeMapId;
+  currentExplorationMapId = session?.currentExplorationMapId ?? session?.activeMapId;
+  currentPOIId = session?.currentPOIId;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
 

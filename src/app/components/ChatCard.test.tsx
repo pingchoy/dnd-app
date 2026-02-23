@@ -26,6 +26,7 @@ describe("ChatCard", () => {
       id: "1",
       role: "assistant",
       content: "You enter a dimly lit tavern.",
+      timestamp: Date.now(),
     };
 
     render(<ChatCard message={msg} />);
@@ -39,6 +40,7 @@ describe("ChatCard", () => {
       id: "2",
       role: "user",
       content: "I look around the room.",
+      timestamp: Date.now(),
     };
 
     render(<ChatCard message={msg} />);
@@ -52,6 +54,7 @@ describe("ChatCard", () => {
       id: "3",
       role: "user",
       content: "I draw my sword.",
+      timestamp: Date.now(),
     };
 
     render(<ChatCard message={msg} playerName="Aragorn" />);
@@ -64,6 +67,7 @@ describe("ChatCard", () => {
       id: "4",
       role: "user",
       content: "",
+      timestamp: Date.now(),
       rollResult: {
         checkType: "Athletics Check",
         components: "STR +3",
@@ -86,7 +90,7 @@ describe("ChatCard", () => {
   });
 
   it("renders DM avatar for assistant messages", () => {
-    const msg: ChatMessage = { id: "5", role: "assistant", content: "Hello." };
+    const msg: ChatMessage = { id: "5", role: "assistant", content: "Hello.", timestamp: Date.now() };
     render(<ChatCard message={msg} />);
 
     const img = screen.getByAltText("Dungeon Master");
@@ -94,7 +98,7 @@ describe("ChatCard", () => {
   });
 
   it("renders Player avatar for user messages", () => {
-    const msg: ChatMessage = { id: "6", role: "user", content: "Hi." };
+    const msg: ChatMessage = { id: "6", role: "user", content: "Hi.", timestamp: Date.now() };
     render(<ChatCard message={msg} />);
 
     const img = screen.getByAltText("Player");
