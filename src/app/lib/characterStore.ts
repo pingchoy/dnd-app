@@ -148,11 +148,13 @@ export interface StoredCharacter {
 export async function createSession(
   story: StoryState,
   characterId: string,
+  campaignSlug?: string,
 ): Promise<string> {
   const ref = adminDb.collection("sessions").doc();
   await ref.set({
     story,
     characterIds: [characterId],
+    ...(campaignSlug ? { campaignSlug } : {}),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   });
@@ -189,6 +191,7 @@ export async function saveSessionState(
 export async function createCharacter(
   player: PlayerState,
   story: StoryState,
+  campaignSlug?: string,
 ): Promise<string> {
   const charRef = adminDb.collection("characters").doc();
   const now = Date.now();
@@ -202,7 +205,7 @@ export async function createCharacter(
   });
 
   // Create session doc linked to this character
-  const sessionId = await createSession(story, charRef.id);
+  const sessionId = await createSession(story, charRef.id, campaignSlug);
 
   // Link the character to its session
   await charRef.update({ sessionId });
