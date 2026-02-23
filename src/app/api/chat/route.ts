@@ -31,6 +31,7 @@ import {
   getSessionId,
   getActiveMapId,
   getExplorationPositions,
+  getCurrentPOIId,
   getCampaignSlug,
   loadGameState,
   NPCToCreate,
@@ -407,6 +408,7 @@ export async function GET(req: NextRequest) {
       explorationPositions: getExplorationPositions() ?? null,
       activeMapId: activeMapId ?? null,
       activeMap,
+      currentPOIId: getCurrentPOIId() ?? null,
     });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);

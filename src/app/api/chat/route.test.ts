@@ -52,6 +52,7 @@ vi.mock("../../lib/gameState", () => ({
   getActiveNPCs: () => mockGetActiveNPCs(),
   getActiveMapId: vi.fn().mockReturnValue(undefined),
   getExplorationPositions: vi.fn().mockReturnValue(undefined),
+  getCurrentPOIId: vi.fn().mockReturnValue(undefined),
   setEncounter: vi.fn(),
   createNPC: vi.fn(),
 }));

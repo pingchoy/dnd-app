@@ -8,6 +8,7 @@ import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
 import VictoryScreen from "../components/VictoryScreen";
 import CombatGrid, { CombatGridHandle } from "../components/CombatGrid";
+import ExplorationMap from "../components/ExplorationMap";
 import CombatHotbar from "../components/CombatHotbar";
 import CombatChatPanel from "../components/CombatChatPanel";
 import LastActionToast from "../components/LastActionToast";
@@ -51,6 +52,8 @@ export default function Dashboard() {
     addCost,
     explorationPositions,
     activeMap,
+    currentPOIId,
+    setCurrentPOIId,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
   const {
@@ -282,6 +285,21 @@ export default function Dashboard() {
     else collapseChat();
   }, [isChatCollapsed, restoreChat, collapseChat]);
 
+  /** Handle POI click on the exploration map: set current POI and tell the DM. */
+  const handlePOIClick = useCallback(
+    (poiId: string) => {
+      if (isBusy) return;
+      const poi =
+        activeMap?.mapType === "exploration"
+          ? activeMap.pointsOfInterest.find((p) => p.id === poiId)
+          : undefined;
+      setCurrentPOIId(poiId);
+      const label = poi ? `area ${poi.number} (${poi.name})` : `area ${poiId}`;
+      sendMessage(`I want to go to ${label}`);
+    },
+    [isBusy, activeMap, setCurrentPOIId, sendMessage],
+  );
+
   // Memoize filtered messages to avoid creating a new array on every keystroke
   const filteredMessages = useMemo(
     () =>
@@ -493,48 +511,59 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* Game grid — always visible, switches mode */}
+            {/* Game grid / exploration map — always visible, switches mode */}
             <OrnateFrame className="flex-1 overflow-hidden min-w-0">
               <div className="relative h-full">
-                <CombatGrid
-                  ref={gridRef}
-                  player={player}
-                  activeNPCs={activeNPCs}
-                  positions={positions}
-                  onMoveToken={moveToken}
-                  gridSize={gridSize}
-                  mode={inCombat ? "combat" : "exploration"}
-                  tileData={activeMap?.mapType === "combat" ? activeMap.tileData : undefined}
-                  regions={activeMap?.mapType === "combat" ? activeMap.regions : undefined}
-                  mapBackgroundUrl={activeMap?.backgroundImageUrl}
-                  feetPerSquare={activeMap?.mapType === "combat" ? activeMap.feetPerSquare : undefined}
-                  targetingAbility={inCombat ? selectedAbility : null}
-                  onTargetSelected={inCombat ? handleTargetSelected : undefined}
-                  onCancel={inCombat ? () => setSelectedAbility(null) : undefined}
-                  aoePreview={inCombat ? aoePreview : undefined}
-                  onAOEConfirm={inCombat ? handleAOEConfirm : undefined}
-                  headerExtra={
-                    inCombat && encounter?.turnOrder ? (
-                      <TurnOrderBar
-                        turnOrder={encounter.turnOrder}
-                        currentTurnIndex={encounter.currentTurnIndex ?? 0}
-                        activeNPCs={activeNPCs}
-                      />
-                    ) : undefined
-                  }
-                  footerExtra={
-                    inCombat ? (
-                      <CombatHotbar
-                        abilities={player.abilities ?? []}
-                        selectedAbility={selectedAbility}
-                        onSelectAbility={handleSelectAbility}
-                        abilityBarDisabled={isBusy}
-                        isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
-                        rangeWarning={rangeWarning}
-                      />
-                    ) : undefined
-                  }
-                />
+                {!inCombat && activeMap?.mapType === "exploration" ? (
+                  /* Exploration overview — background image with POI markers */
+                  <ExplorationMap
+                    backgroundImageUrl={activeMap.backgroundImageUrl}
+                    pointsOfInterest={activeMap.pointsOfInterest}
+                    currentPOIId={currentPOIId}
+                    onPOIClick={handlePOIClick}
+                  />
+                ) : (
+                  /* Tactical grid — combat or grid-based exploration */
+                  <CombatGrid
+                    ref={gridRef}
+                    player={player}
+                    activeNPCs={activeNPCs}
+                    positions={positions}
+                    onMoveToken={moveToken}
+                    gridSize={gridSize}
+                    mode={inCombat ? "combat" : "exploration"}
+                    tileData={activeMap?.mapType === "combat" ? activeMap.tileData : undefined}
+                    regions={activeMap?.mapType === "combat" ? activeMap.regions : undefined}
+                    mapBackgroundUrl={activeMap?.backgroundImageUrl}
+                    feetPerSquare={activeMap?.mapType === "combat" ? activeMap.feetPerSquare : undefined}
+                    targetingAbility={inCombat ? selectedAbility : null}
+                    onTargetSelected={inCombat ? handleTargetSelected : undefined}
+                    onCancel={inCombat ? () => setSelectedAbility(null) : undefined}
+                    aoePreview={inCombat ? aoePreview : undefined}
+                    onAOEConfirm={inCombat ? handleAOEConfirm : undefined}
+                    headerExtra={
+                      inCombat && encounter?.turnOrder ? (
+                        <TurnOrderBar
+                          turnOrder={encounter.turnOrder}
+                          currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                          activeNPCs={activeNPCs}
+                        />
+                      ) : undefined
+                    }
+                    footerExtra={
+                      inCombat ? (
+                        <CombatHotbar
+                          abilities={player.abilities ?? []}
+                          selectedAbility={selectedAbility}
+                          onSelectAbility={handleSelectAbility}
+                          abilityBarDisabled={isBusy}
+                          isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
+                          rangeWarning={rangeWarning}
+                        />
+                      ) : undefined
+                    }
+                  />
+                )}
 
                 {/* Last action toast — floating on the map canvas when chat is closed */}
                 <LastActionToast

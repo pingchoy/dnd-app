@@ -66,6 +66,10 @@ export interface UseChatReturn {
   activeMapId: string | null;
   /** Active map document (tileData, regions, backgroundImageUrl). */
   activeMap: MapDocument | null;
+  /** Current point-of-interest ID within the exploration map (null until loaded). */
+  currentPOIId: string | null;
+  /** Update the current POI ID (e.g. when the player clicks a POI on the exploration map). */
+  setCurrentPOIId: (id: string | null) => void;
 }
 
 interface UseChatParams {
@@ -85,6 +89,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   const [explorationPositions, setExplorationPositions] = useState<Record<string, GridPosition> | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [activeMap, setActiveMap] = useState<MapDocument | null>(null);
+  const [currentPOIId, setCurrentPOIId] = useState<string | null>(null);
 
   // Ref to hold the latest onEncounterData callback (avoids stale closures in async handlers)
   const onEncounterDataRef = useRef(onEncounterData);
@@ -128,6 +133,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
         setExplorationPositions(data.explorationPositions ?? null);
         setActiveMapId(data.activeMapId ?? null);
         setActiveMap(data.activeMap ?? null);
+        setCurrentPOIId(data.currentPOIId ?? null);
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
@@ -311,5 +317,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     explorationPositions,
     activeMapId,
     activeMap,
+    currentPOIId,
+    setCurrentPOIId,
   };
 }
