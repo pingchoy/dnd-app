@@ -64,6 +64,7 @@ export default function Dashboard() {
     totalTokens,
     estimatedCostUsd,
     characterId,
+    sessionId,
     sendMessage,
     applyDebugResult,
     appendError,
@@ -71,6 +72,7 @@ export default function Dashboard() {
     setIsNarrating,
     addTokens,
     addCost,
+    explorationPositions,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
   const {
@@ -171,6 +173,8 @@ export default function Dashboard() {
     activeNPCs,
     inCombat,
     encounter,
+    sessionId,
+    explorationPositions,
   );
 
   // Auto-scroll chat to bottom on new messages or when leaving combat view
@@ -451,134 +455,163 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* ── Body: chat + sidebar ── */}
+      {/* ── Body: always-visible grid + chat sidebar ── */}
       <div className="flex-1 overflow-hidden flex">
-        {/* ── Left: chat area (swaps to combat grid when in combat) ── */}
-        <div
-          className={`flex-1 overflow-hidden flex flex-col py-4 min-w-0 ${inCombat ? "" : "px-3 sm:px-4"}`}
-        >
-          {inCombat ? (
-            /* ── Combat layout: left chat panel + map + hotbar at bottom ── */
-            <div className="flex-1 overflow-hidden flex flex-col">
-              {/* Map area with optional left chat panel */}
-              <div className="flex-1 overflow-hidden flex min-h-0 px-3 sm:px-4">
-                {/* Left chat panel — map shrinks to accommodate */}
-                <CombatChatPanel
-                  messages={messages}
-                  playerName={player.name}
-                  isNarrating={isNarrating}
-                  open={combatChatOpen}
-                  onClose={handleCloseChatPanel}
-                  userInput={userInput}
-                  setUserInput={setUserInput}
-                  handleSubmit={handleSubmit}
-                  inputDisabled={isBusy}
-                />
-
-                {/* Combat map canvas — fills remaining space */}
-                <OrnateFrame className="flex-1 overflow-hidden min-w-0">
-                  <div className="relative h-full">
-                    <CombatGrid
-                      ref={gridRef}
-                      player={player}
-                      activeNPCs={activeNPCs}
-                      positions={positions}
-                      onMoveToken={moveToken}
-                      gridSize={gridSize}
-                      targetingAbility={selectedAbility}
-                      onTargetSelected={handleTargetSelected}
-                      onCancel={() => setSelectedAbility(null)}
-                      aoePreview={aoePreview}
-                      onAOEConfirm={handleAOEConfirm}
-                      headerExtra={
-                        encounter?.turnOrder ? (
-                          <TurnOrderBar
-                            turnOrder={encounter.turnOrder}
-                            currentTurnIndex={encounter.currentTurnIndex ?? 0}
-                            activeNPCs={activeNPCs}
-                          />
-                        ) : undefined
-                      }
-                    />
-
-                    {/* Last action toast — floating on the map canvas */}
-                    <LastActionToast
-                      messages={messages}
-                      chatOpen={combatChatOpen}
-                      onOpenChat={handleOpenChatPanel}
-                    />
-                  </div>
-                </OrnateFrame>
-              </div>
-
-              {/* Bottom hotbar — always visible during combat */}
-              <div className="flex-shrink-0 px-3 sm:px-4 pt-3">
-                <OrnateFrame className="overflow-hidden">
-                  <CombatHotbar
-                    abilities={player.abilities ?? []}
-                    selectedAbility={selectedAbility}
-                    onSelectAbility={handleSelectAbility}
-                    abilityBarDisabled={isBusy}
-                    chatOpen={combatChatOpen}
-                    onToggleChat={handleToggleChat}
-                    hasUnread={hasUnread}
-                    isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
-                    rangeWarning={rangeWarning}
-                  />
-                </OrnateFrame>
-              </div>
-            </div>
-          ) : (
-            /* ── Normal chat layout ── */
-            <OrnateFrame className="flex-1 overflow-hidden">
-              <div className="tome-container flex-1 overflow-hidden flex flex-col">
-                <div className="scroll-pane flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-                  {filteredMessages.map((message) => (
-                    <ChatCard
-                      key={message.id}
-                      message={message}
-                      playerName={player.name}
-                    />
-                  ))}
-
-                  {isNarrating && (
-                    <LoadingIndicator label="The Dungeon Master weaves the tale" />
-                  )}
-
-                  <div ref={bottomRef} />
-                </div>
-
-                {/* Session stats footer */}
-                <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 sm:px-6 py-2 flex items-center justify-end">
-                  <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
-                    <span>{totalTokens.toLocaleString()} tokens</span>
-                    <span className="text-parchment/20">|</span>
-                    <span className="text-gold/50">
-                      est. ${estimatedCostUsd.toFixed(4)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <Input
+        {/* ── Left: grid + hotbar (always visible) ── */}
+        <div className="flex-1 overflow-hidden flex flex-col py-4 min-w-0">
+          {/* Map area with optional left chat panel (combat) */}
+          <div className="flex-1 overflow-hidden flex min-h-0 px-3 sm:px-4">
+            {/* Left chat panel — only in combat mode */}
+            {inCombat && (
+              <CombatChatPanel
+                messages={messages}
+                playerName={player.name}
+                isNarrating={isNarrating}
+                open={combatChatOpen}
+                onClose={handleCloseChatPanel}
                 userInput={userInput}
                 setUserInput={setUserInput}
                 handleSubmit={handleSubmit}
-                disabled={isBusy}
+                inputDisabled={isBusy}
               />
+            )}
+
+            {/* Game grid — always visible, switches mode */}
+            <OrnateFrame className="flex-1 overflow-hidden min-w-0">
+              <div className="relative h-full">
+                <CombatGrid
+                  ref={gridRef}
+                  player={player}
+                  activeNPCs={activeNPCs}
+                  positions={positions}
+                  onMoveToken={moveToken}
+                  gridSize={gridSize}
+                  mode={inCombat ? "combat" : "exploration"}
+                  targetingAbility={inCombat ? selectedAbility : null}
+                  onTargetSelected={inCombat ? handleTargetSelected : undefined}
+                  onCancel={inCombat ? () => setSelectedAbility(null) : undefined}
+                  aoePreview={inCombat ? aoePreview : undefined}
+                  onAOEConfirm={inCombat ? handleAOEConfirm : undefined}
+                  headerExtra={
+                    inCombat && encounter?.turnOrder ? (
+                      <TurnOrderBar
+                        turnOrder={encounter.turnOrder}
+                        currentTurnIndex={encounter.currentTurnIndex ?? 0}
+                        activeNPCs={activeNPCs}
+                      />
+                    ) : undefined
+                  }
+                />
+
+                {/* Last action toast — floating on the map canvas (combat only) */}
+                {inCombat && (
+                  <LastActionToast
+                    messages={messages}
+                    chatOpen={combatChatOpen}
+                    onOpenChat={handleOpenChatPanel}
+                  />
+                )}
+              </div>
             </OrnateFrame>
+          </div>
+
+          {/* Bottom hotbar — only during combat */}
+          {inCombat && (
+            <div className="flex-shrink-0 px-3 sm:px-4 pt-3">
+              <OrnateFrame className="overflow-hidden">
+                <CombatHotbar
+                  abilities={player.abilities ?? []}
+                  selectedAbility={selectedAbility}
+                  onSelectAbility={handleSelectAbility}
+                  abilityBarDisabled={isBusy}
+                  chatOpen={combatChatOpen}
+                  onToggleChat={handleToggleChat}
+                  hasUnread={hasUnread}
+                  isTargeting={selectedAbility?.requiresTarget === true || !!selectedAbility?.aoe}
+                  rangeWarning={rangeWarning}
+                />
+              </OrnateFrame>
+            </div>
           )}
         </div>
 
-        {/* ── Right: character sidebar (desktop only) ── */}
-        <aside className="hidden lg:flex w-80 flex-shrink-0 overflow-hidden py-4 pr-3">
+        {/* ── Right: chat + character sidebar ── */}
+        <div className="hidden lg:flex flex-col w-96 flex-shrink-0 overflow-hidden py-4 pr-3 gap-3">
+          {/* Chat panel — always visible alongside grid */}
           <OrnateFrame className="flex-1 overflow-hidden">
+            <div className="tome-container flex-1 overflow-hidden flex flex-col">
+              <div className="scroll-pane flex-1 overflow-y-auto px-4 py-4">
+                {filteredMessages.map((message) => (
+                  <ChatCard
+                    key={message.id}
+                    message={message}
+                    playerName={player.name}
+                  />
+                ))}
+
+                {isNarrating && (
+                  <LoadingIndicator label="The Dungeon Master weaves the tale" />
+                )}
+
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Session stats footer */}
+              <div className="flex-shrink-0 border-t border-[#3a2a1a] px-4 py-2 flex items-center justify-end">
+                <div className="flex gap-4 text-[11px] font-cinzel text-parchment/30 tracking-wide whitespace-nowrap">
+                  <span>{totalTokens.toLocaleString()} tokens</span>
+                  <span className="text-parchment/20">|</span>
+                  <span className="text-gold/50">
+                    est. ${estimatedCostUsd.toFixed(4)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Input
+              userInput={userInput}
+              setUserInput={setUserInput}
+              handleSubmit={handleSubmit}
+              disabled={isBusy}
+            />
+          </OrnateFrame>
+
+          {/* Character sidebar — below the chat */}
+          <OrnateFrame className="flex-shrink-0 h-64 overflow-hidden">
             <CharacterSidebar
               player={player}
               onOpenFullSheet={handleOpenFullSheet}
             />
           </OrnateFrame>
-        </aside>
+        </div>
+
+        {/* ── Mobile: chat only (no grid) ── */}
+        <div className="flex-1 overflow-hidden flex flex-col py-4 px-3 sm:px-4 lg:hidden">
+          <OrnateFrame className="flex-1 overflow-hidden">
+            <div className="tome-container flex-1 overflow-hidden flex flex-col">
+              <div className="scroll-pane flex-1 overflow-y-auto px-4 py-4">
+                {filteredMessages.map((message) => (
+                  <ChatCard
+                    key={message.id}
+                    message={message}
+                    playerName={player.name}
+                  />
+                ))}
+
+                {isNarrating && (
+                  <LoadingIndicator label="The Dungeon Master weaves the tale" />
+                )}
+              </div>
+            </div>
+
+            <Input
+              userInput={userInput}
+              setUserInput={setUserInput}
+              handleSubmit={handleSubmit}
+              disabled={isBusy}
+            />
+          </OrnateFrame>
+        </div>
       </div>
 
       {/* ── Victory screen modal ── */}

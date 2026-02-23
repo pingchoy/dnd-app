@@ -14,6 +14,7 @@ vi.mock("./firebaseAdmin", () => ({
 }));
 
 const mockLoadCharacter = vi.fn();
+const mockLoadSession = vi.fn().mockResolvedValue(null);
 const mockSaveCharacterState = vi.fn();
 const mockGetSRDClass = vi.fn();
 const mockGetSRDClassLevel = vi.fn();
@@ -22,6 +23,7 @@ const mockQuerySRD = vi.fn();
 
 vi.mock("./characterStore", () => ({
   loadCharacter: (...args: unknown[]) => mockLoadCharacter(...args),
+  loadSession: (...args: unknown[]) => mockLoadSession(...args),
   saveCharacterState: (...args: unknown[]) => mockSaveCharacterState(...args),
   getSRDClass: (...args: unknown[]) => mockGetSRDClass(...args),
   getSRDClassLevel: (...args: unknown[]) => mockGetSRDClassLevel(...args),

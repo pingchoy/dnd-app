@@ -13,7 +13,7 @@ import {
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
 import { StoredMessage, OPENING_NARRATIVE } from "../lib/gameTypes";
-import type { GameState, StoredEncounter, AOEResultData } from "../lib/gameTypes";
+import type { GameState, StoredEncounter, AOEResultData, GridPosition } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
 export const CHARACTER_IDS_KEY = "dnd_character_ids";
@@ -45,6 +45,8 @@ export interface UseChatReturn {
   estimatedCostUsd: number;
   /** The Firestore character ID (null until loaded from localStorage). */
   characterId: string | null;
+  /** The Firestore session ID (null until loaded). */
+  sessionId: string | null;
   sendMessage: (input: string) => Promise<void>;
   /** Apply a debug action result: update game state and append a system message. */
   applyDebugResult: (gameState: GameState, message: string) => void;
@@ -58,6 +60,10 @@ export interface UseChatReturn {
   addTokens: (n: number) => void;
   /** Exposed for useCombat wiring — adds to cumulative cost estimate. */
   addCost: (n: number) => void;
+  /** Exploration positions loaded from the session (null until loaded). */
+  explorationPositions: Record<string, GridPosition> | null;
+  /** Active map ID from the session (null until loaded). */
+  activeMapId: string | null;
 }
 
 interface UseChatParams {
@@ -74,6 +80,8 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   const [isNarrating, setIsNarrating] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
+  const [explorationPositions, setExplorationPositions] = useState<Record<string, GridPosition> | null>(null);
+  const [activeMapId, setActiveMapId] = useState<string | null>(null);
 
   // Ref to hold the latest onEncounterData callback (avoids stale closures in async handlers)
   const onEncounterDataRef = useRef(onEncounterData);
@@ -114,6 +122,8 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
         setGameState(gs);
         onEncounterDataRef.current?.(data.encounter ?? null);
         setSessionId(data.sessionId ?? null);
+        setExplorationPositions(data.explorationPositions ?? null);
+        setActiveMapId(data.activeMapId ?? null);
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
@@ -286,6 +296,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     totalTokens,
     estimatedCostUsd,
     characterId,
+    sessionId,
     sendMessage,
     applyDebugResult,
     appendError,
@@ -293,5 +304,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     setIsNarrating,
     addTokens,
     addCost,
+    explorationPositions,
+    activeMapId,
   };
 }

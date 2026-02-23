@@ -29,11 +29,14 @@ import {
   getEncounter,
   getGameState,
   getSessionId,
+  getActiveMapId,
+  getExplorationPositions,
   loadGameState,
   NPCToCreate,
   setEncounter,
 } from "../../lib/gameState";
 import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
+import { loadMap } from "../../lib/mapStore";
 import { querySRD } from "../../lib/characterStore";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 import { addMessage } from "../../lib/messageStore";
@@ -142,14 +145,24 @@ async function processChatAction(
     const hasHostile = npcRequests.some((r) => r.disposition === "hostile");
     const needsEncounter = hasHostile && !getEncounter();
 
+    // Load active map (if any) for region-aware NPC placement
+    const activeMapId = getActiveMapId();
+    const activeMap = needsEncounter && activeMapId ? await loadMap(activeMapId) : null;
+
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
+
       const enc = await createEncounter(
         sessionId,
         characterId,
         [],
         gameState.story.currentLocation,
         gameState.story.currentScene,
+        {
+          mapId: activeMapId,
+          regions: activeMap?.regions,
+          explorationPositions: getExplorationPositions(),
+        },
       );
       setEncounter(enc);
       gameState.story.activeEncounterId = enc.id;
@@ -188,7 +201,11 @@ async function processChatAction(
 
     const enc = getEncounter();
     if (needsEncounter && enc) {
-      enc.positions = computeInitialPositions(enc.activeNPCs);
+      enc.positions = computeInitialPositions(
+        enc.activeNPCs,
+        activeMap?.regions,
+        getExplorationPositions(),
+      );
       enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];
       enc.currentTurnIndex = 0;
       console.log(`[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`);
@@ -340,6 +357,8 @@ export async function GET(req: NextRequest) {
       gameState,
       encounter: getEncounter(),
       sessionId,
+      explorationPositions: getExplorationPositions() ?? null,
+      activeMapId: getActiveMapId() ?? null,
     });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);

@@ -7,6 +7,51 @@
  * Server-only logic (Firestore persistence, singleton state) lives in gameState.ts.
  */
 
+// ─── Map & Region Types ──────────────────────────────────────────────────────
+
+export type RegionType =
+  | "tavern"
+  | "shop"
+  | "temple"
+  | "dungeon"
+  | "wilderness"
+  | "residential"
+  | "street"
+  | "guard_post"
+  | "danger"    // traps, hazards — DM generates tension
+  | "safe"      // players can long rest here
+  | "custom";   // freeform — use dmNote for description
+
+/** Semantic region painted on a map — tells the DM what's at each location. */
+export interface MapRegion {
+  id: string;                    // "region_tavern_main"
+  name: string;                  // "The Rusty Flagon — Common Room"
+  type: RegionType;
+  bounds: {                      // Bounding box (inclusive cell range)
+    minRow: number;
+    maxRow: number;
+    minCol: number;
+    maxCol: number;
+  };
+  dmNote?: string;               // "Barkeep Mira behind counter. Patrons are tense."
+  defaultNPCSlugs?: string[];    // ["guard", "commoner"] — NPCs placed here by default
+  shopInventory?: string[];      // for type="shop" — items the DM can reference
+}
+
+/** Full map document — stored in Firestore `maps/{id}`. */
+export interface MapDocument {
+  id?: string;
+  sessionId: string;
+  name: string;                  // "The Rusty Flagon"
+  backgroundImageUrl?: string;   // user-uploaded image (Firebase Storage)
+  gridSize: number;              // always 20
+  feetPerSquare: number;         // 5 for detailed, 50-100 for zone
+  regions: MapRegion[];
+  tileData?: number[];           // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door. Omitted for zone maps.
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 // ─── Grid & Combat Types ─────────────────────────────────────────────────────
 
 export interface GridPosition {
@@ -295,6 +340,8 @@ export interface PendingLevelData {
 export interface NPC {
   id: string;
   name: string;
+  /** SRD monster slug (e.g. "guard", "goblin") — used for region-aware placement. */
+  slug?: string;
   ac: number;
   currentHp: number;
   maxHp: number;
@@ -400,6 +447,8 @@ export interface StoredEncounter {
   id?: string;
   sessionId: string;
   characterId: string;
+  /** Map this encounter takes place on (inherits from session's activeMapId). */
+  mapId?: string;
   status: "active" | "completed";
   activeNPCs: NPC[];
   /** Token positions keyed by "player" or NPC id. */
@@ -431,6 +480,10 @@ export interface StoredSession {
   id?: string;
   story: StoryState;
   characterIds: string[];
+  /** Which map is currently displayed in the grid. */
+  activeMapId?: string;
+  /** Exploration-mode token positions keyed by "player" or characterId. */
+  explorationPositions?: Record<string, GridPosition>;
   createdAt?: number;
   updatedAt?: number;
 }

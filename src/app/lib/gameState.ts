@@ -15,6 +15,7 @@ import {
   getSRDClassLevel,
   getSRDSubclassLevel,
   loadCharacter,
+  loadSession,
   saveCharacterState,
   querySRD,
 } from "./characterStore";
@@ -42,6 +43,9 @@ export type {
   CombatStats,
   VictoryLootItem,
   VictoryData,
+  MapRegion,
+  RegionType,
+  MapDocument,
 } from "./gameTypes";
 
 export {
@@ -73,6 +77,9 @@ import {
   Ability,
   AbilityRange,
   SpellAttackType,
+  GridPosition,
+  MapDocument,
+  MapRegion,
   FEATURE_CHOICE_OPTIONS,
   FIGHTING_STYLE_EFFECTS,
   emptyCombatStats,
@@ -230,6 +237,49 @@ export function serializeCombatPlayerState(p: PlayerState): string {
   return buildStatLines(p, true).join("\n");
 }
 
+/**
+ * Serialize spatial context for the DM agent. Only includes regions where
+ * players currently stand. Cost: ~30-60 tokens per player.
+ *
+ * @param playerPositions Map of characterId/name → grid position
+ * @param map The active map document (null if no map loaded)
+ */
+export function serializeRegionContext(
+  playerPositions: Map<string, GridPosition>,
+  map: MapDocument | null,
+): string {
+  if (!map || playerPositions.size === 0) return "";
+
+  const lines: string[] = ["Spatial context:"];
+
+  for (const [playerName, pos] of Array.from(playerPositions.entries())) {
+    // Find which region(s) the player is standing in
+    const matchingRegions = map.regions.filter(
+      (r) =>
+        pos.row >= r.bounds.minRow &&
+        pos.row <= r.bounds.maxRow &&
+        pos.col >= r.bounds.minCol &&
+        pos.col <= r.bounds.maxCol,
+    );
+
+    if (matchingRegions.length > 0) {
+      for (const region of matchingRegions) {
+        lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → ${region.name} (${region.type})`);
+        if (region.dmNote) {
+          lines.push(`    Note: ${region.dmNote}`);
+        }
+        if (region.shopInventory?.length) {
+          lines.push(`    Shop items: ${region.shopInventory.join(", ")}`);
+        }
+      }
+    } else {
+      lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → open area (no named region)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 /** Max conversation entries persisted (20 user + 20 assistant turns). */
 
 
@@ -295,6 +345,10 @@ let state: GameState = {
 
 /** SessionId for the current character — set by loadGameState(). */
 let currentSessionId = "";
+/** Active map ID from the session — set by loadGameState(). */
+let currentActiveMapId: string | undefined;
+/** Exploration positions from the session — set by loadGameState(). */
+let currentExplorationPositions: Record<string, GridPosition> | undefined;
 
 // ─── Encounter singleton ─────────────────────────────────────────────────────
 
@@ -313,6 +367,14 @@ export function getGameState(): GameState {
 
 export function getSessionId(): string {
   return currentSessionId;
+}
+
+export function getActiveMapId(): string | undefined {
+  return currentActiveMapId;
+}
+
+export function getExplorationPositions(): Record<string, GridPosition> | undefined {
+  return currentExplorationPositions;
 }
 
 export function getEncounter(): StoredEncounter | null {
@@ -519,6 +581,8 @@ export function applyStateChanges(changes: StateChanges): void {
 
 export interface CreateNPCInput {
   name: string;
+  /** SRD monster slug (e.g. "guard", "goblin") — persisted for region-aware placement. */
+  slug?: string;
   ac: number;
   max_hp: number;
   attack_bonus: number;
@@ -534,6 +598,7 @@ export function createNPC(input: CreateNPCInput): NPC {
   const npc: NPC = {
     id: `${input.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`,
     name: input.name,
+    ...(input.slug ? { slug: input.slug } : {}),
     ac: input.ac,
     currentHp: input.max_hp,
     maxHp: input.max_hp,
@@ -806,6 +871,11 @@ export async function loadGameState(characterId: string): Promise<GameState> {
     player: stored.player,
     story: stored.story,
   };
+
+  // Load session-level spatial data (activeMapId, explorationPositions)
+  const session = await loadSession(stored.sessionId);
+  currentActiveMapId = session?.activeMapId;
+  currentExplorationPositions = session?.explorationPositions;
 
   // Hydrate encounter if one is active
   encounter = null;

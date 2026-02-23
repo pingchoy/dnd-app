@@ -50,6 +50,8 @@ vi.mock("../../lib/gameState", () => ({
   applyStateChangesAndPersist: (...args: unknown[]) => mockApplyStateChangesAndPersist(...args),
   getEncounter: () => mockGetEncounter(),
   getActiveNPCs: () => mockGetActiveNPCs(),
+  getActiveMapId: vi.fn().mockReturnValue(undefined),
+  getExplorationPositions: vi.fn().mockReturnValue(undefined),
   setEncounter: vi.fn(),
   createNPC: vi.fn(),
 }));
@@ -57,6 +59,10 @@ vi.mock("../../lib/gameState", () => ({
 vi.mock("../../lib/encounterStore", () => ({
   createEncounter: vi.fn(),
   computeInitialPositions: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("../../lib/mapStore", () => ({
+  loadMap: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../../lib/characterStore", () => ({

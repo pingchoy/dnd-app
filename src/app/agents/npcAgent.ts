@@ -86,6 +86,7 @@ export async function getNPCStats(
   const xpFromCR = srdCR != null ? crToXP(srdCR) : 0;
   npcs = npcs.map((npc: CreateNPCInput) => ({
     name: (npc.name as string) || request.name,
+    slug: request.slug || undefined,
     ac: (npc.ac as number) || 10,
     max_hp: (npc.max_hp as number) || 1,
     attack_bonus: (npc.attack_bonus as number) ?? 0,
@@ -113,6 +114,7 @@ function buildFallbackNPCs(
   const base: CreateNPCInput = srdData
     ? {
         name: request.name,
+        slug: request.slug || undefined,
         ac: (srdData.armorClass as number) ?? 10,
         max_hp: (srdData.hitPoints as number) ?? 1,
         attack_bonus: extractAttackBonus(srdData),
@@ -125,6 +127,7 @@ function buildFallbackNPCs(
       }
     : {
         name: request.name,
+        slug: request.slug || undefined,
         ac: 10,
         max_hp: 4,
         attack_bonus: 2,

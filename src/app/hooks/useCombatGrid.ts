@@ -8,24 +8,31 @@ export type { GridPosition };
 export const GRID_SIZE = 20;
 
 /**
- * Manages token positions on a 20x20 tactical grid.
+ * Manages token positions on a 20x20 tactical grid for both combat
+ * and exploration modes.
  *
- * When an encounter is provided, positions are loaded from it (persisted in
- * Firestore). Moves are persisted via POST /api/encounter/move for durability.
- * Local state is updated optimistically for instant UI feedback.
+ * Combat mode: Positions are loaded from the encounter (Firestore).
+ * Moves persist via POST /api/encounter/move.
  *
- * Falls back to client-side placement if no encounter data is available.
+ * Exploration mode: Player token is always shown. Positions are loaded
+ * from session's explorationPositions. Moves persist via POST /api/maps/move.
+ * When combat starts, exploration positions carry over as initial combat positions.
  */
 export function useCombatGrid(
   activeNPCs: NPC[],
   inCombat: boolean,
   encounter?: StoredEncounter | null,
+  /** Session ID for exploration position persistence. */
+  sessionId?: string | null,
+  /** Persisted exploration positions from the session document. */
+  explorationPositions?: Record<string, GridPosition> | null,
 ) {
   const [positions, setPositions] = useState<Map<string, GridPosition>>(
     new Map(),
   );
   const prevCombatRef = useRef(false);
   const prevEncounterIdRef = useRef<string | undefined>(undefined);
+  const initializedExplorationRef = useRef(false);
 
   // When a new encounter arrives or combat starts, load positions from encounter
   useEffect(() => {
@@ -42,15 +49,44 @@ export function useCombatGrid(
           loaded.set(id, pos);
         }
         setPositions(loaded);
-      } else {
-        // No persisted positions — reset for fresh placement
-        setPositions(new Map());
+      } else if (inCombat) {
+        // No persisted positions — start from exploration positions or reset
+        // This enables the seamless transition: exploration → combat
+        setPositions((prev) => {
+          if (prev.size > 0) return prev; // keep exploration positions
+          return new Map([["player", { row: 10, col: 10 }]]);
+        });
       }
     }
 
     prevCombatRef.current = inCombat;
     prevEncounterIdRef.current = encounterId;
   }, [inCombat, encounter]);
+
+  // Exploration mode: initialize from session's persisted positions
+  useEffect(() => {
+    if (inCombat || initializedExplorationRef.current) return;
+
+    if (explorationPositions && Object.keys(explorationPositions).length > 0) {
+      const loaded = new Map<string, GridPosition>();
+      for (const [id, pos] of Object.entries(explorationPositions)) {
+        loaded.set(id, pos);
+      }
+      // Ensure player is always present
+      if (!loaded.has("player")) {
+        loaded.set("player", { row: 10, col: 10 });
+      }
+      setPositions(loaded);
+      initializedExplorationRef.current = true;
+    } else {
+      // No saved positions — place player at center
+      setPositions((prev) => {
+        if (prev.has("player")) return prev;
+        return new Map([["player", { row: 10, col: 10 }]]);
+      });
+      initializedExplorationRef.current = true;
+    }
+  }, [inCombat, explorationPositions]);
 
   // Place new NPCs that don't have positions yet (reinforcements mid-combat)
   useEffect(() => {
@@ -91,6 +127,7 @@ export function useCombatGrid(
   /**
    * Move a token to a new position.
    * Updates local state optimistically, then persists to Firestore via API.
+   * In combat: persists to encounter. In exploration: persists to session.
    */
   const moveToken = useCallback(
     (id: string, pos: GridPosition) => {
@@ -101,8 +138,8 @@ export function useCombatGrid(
         return next;
       });
 
-      // Persist to Firestore if we have an active encounter
-      if (encounter?.id) {
+      if (inCombat && encounter?.id) {
+        // Combat mode: persist to encounter document
         fetch("/api/encounter/move", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -112,11 +149,24 @@ export function useCombatGrid(
             position: pos,
           }),
         }).catch((err) => {
-          console.error("[useCombatGrid] Failed to persist position:", err);
+          console.error("[useCombatGrid] Failed to persist combat position:", err);
+        });
+      } else if (sessionId) {
+        // Exploration mode: persist to session document
+        fetch("/api/maps/move", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            tokenId: id,
+            position: pos,
+          }),
+        }).catch((err) => {
+          console.error("[useCombatGrid] Failed to persist exploration position:", err);
         });
       }
     },
-    [encounter?.id],
+    [inCombat, encounter?.id, sessionId],
   );
 
   return { positions, moveToken, gridSize: GRID_SIZE };

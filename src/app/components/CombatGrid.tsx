@@ -8,7 +8,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import type { NPC, PlayerState, GridPosition, Ability, AOEData } from "../lib/gameTypes";
+import type { NPC, PlayerState, GridPosition, Ability, AOEData, MapRegion, RegionType } from "../lib/gameTypes";
 import {
   cellsInRange,
   validateMovement,
@@ -16,7 +16,6 @@ import {
   feetDistance,
   getAOECells,
   DEFAULT_MELEE_REACH,
-  FEET_PER_SQUARE as ENFORCEMENT_FPS,
 } from "../lib/combatEnforcement";
 import type { AOEShape } from "../lib/combatEnforcement";
 import {
@@ -31,6 +30,16 @@ interface Props {
   positions: Map<string, GridPosition>;
   onMoveToken: (id: string, pos: GridPosition) => void;
   gridSize: number;
+  /** Grid mode: "combat" for turn-based combat, "exploration" for free movement. Default "combat". */
+  mode?: "combat" | "exploration";
+  /** Tile collision data — flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door. */
+  tileData?: number[];
+  /** Semantic regions to render as colored overlays. */
+  regions?: MapRegion[];
+  /** Custom map background image URL (overrides default battle-map.png). */
+  mapBackgroundUrl?: string;
+  /** Feet per grid square — 5 for detailed maps, 50-100 for zone maps. Default 5. */
+  feetPerSquare?: number;
   /** When set, grid enters targeting mode: shows range overlay, highlights valid targets. */
   targetingAbility?: Ability | null;
   /** Called when a valid target is clicked during targeting mode. */
@@ -66,8 +75,22 @@ const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
 const ZOOM_STEP = 0.1;
 const GAP = 1;
-const FEET_PER_SQUARE = 5;
 const DEFAULT_SPEED = 30;
+
+/** Region type → RGBA overlay color for canvas rendering. */
+const REGION_OVERLAY_COLORS: Record<RegionType, string> = {
+  tavern: "rgba(217, 119, 6, 0.12)",
+  shop: "rgba(34, 197, 94, 0.12)",
+  temple: "rgba(147, 130, 220, 0.12)",
+  dungeon: "rgba(120, 80, 50, 0.12)",
+  wilderness: "rgba(34, 150, 34, 0.12)",
+  residential: "rgba(180, 160, 120, 0.12)",
+  street: "rgba(150, 150, 150, 0.12)",
+  guard_post: "rgba(200, 50, 50, 0.12)",
+  danger: "rgba(239, 68, 68, 0.15)",
+  safe: "rgba(59, 130, 246, 0.12)",
+  custom: "rgba(200, 200, 200, 0.10)",
+};
 
 /** Disposition → { fill, stroke, text } hex colors for canvas tokens. */
 const COLORS: Record<string, { fill: string; stroke: string; text: string }> = {
@@ -102,6 +125,10 @@ interface DrawState {
   targetingAbility: Ability | null;
   aoePreview: Props["aoePreview"] | null;
   aoeHoverCell: GridPosition | null;
+  mode: "combat" | "exploration";
+  tileData: number[] | null;
+  regions: MapRegion[] | null;
+  feetPerSquare: number;
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -319,6 +346,11 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     positions,
     onMoveToken,
     gridSize,
+    mode = "combat",
+    tileData,
+    regions,
+    mapBackgroundUrl,
+    feetPerSquare: feetPerSquareProp = 5,
     targetingAbility = null,
     onTargetSelected,
     onCancel,
@@ -406,6 +438,10 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     targetingAbility: null,
     aoePreview: null,
     aoeHoverCell: null,
+    mode: "combat",
+    tileData: null,
+    regions: null,
+    feetPerSquare: 5,
   });
 
   // Keep stateRef in sync every render
@@ -431,17 +467,22 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
       targetingAbility,
       aoePreview: aoePreview ?? null,
       aoeHoverCell,
+      mode,
+      tileData: tileData ?? null,
+      regions: regions ?? null,
+      feetPerSquare: feetPerSquareProp,
     };
   });
 
-  /* ── Load battle map background image ── */
+  /* ── Load battle map background image (custom URL or default) ── */
   useEffect(() => {
     const img = new Image();
-    img.src = "/battle-map.png";
+    img.crossOrigin = "anonymous";
+    img.src = mapBackgroundUrl || "/battle-map.png";
     img.onload = () => {
       battleMapRef.current = img;
     };
-  }, []);
+  }, [mapBackgroundUrl]);
 
   /* ── Preload token images when NPC list or player race changes ── */
   useEffect(() => {
@@ -526,6 +567,46 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
             s.cellSize,
             s.cellSize,
           );
+        }
+      }
+
+      // 1a) Tile data overlay — walls and doors rendered on top of checkerboard
+      if (s.tileData && s.tileData.length === s.gridSize * s.gridSize) {
+        for (let row = 0; row < s.gridSize; row++) {
+          for (let col = 0; col < s.gridSize; col++) {
+            const tile = s.tileData[row * s.gridSize + col];
+            if (tile === 1) {
+              // Wall — dark solid overlay
+              ctx!.fillStyle = "rgba(30, 20, 10, 0.7)";
+              ctx!.fillRect(col * s.cellStep, row * s.cellStep, s.cellSize, s.cellSize);
+            } else if (tile === 2) {
+              // Door — amber outline
+              ctx!.strokeStyle = "rgba(217, 119, 6, 0.6)";
+              ctx!.lineWidth = 2;
+              ctx!.strokeRect(col * s.cellStep + 2, row * s.cellStep + 2, s.cellSize - 4, s.cellSize - 4);
+            }
+          }
+        }
+      }
+
+      // 1a.ii) Region overlays — semi-transparent color-coded areas
+      if (s.regions && s.regions.length > 0) {
+        for (const region of s.regions) {
+          const color = REGION_OVERLAY_COLORS[region.type] ?? REGION_OVERLAY_COLORS.custom;
+          ctx!.fillStyle = color;
+          const rx = region.bounds.minCol * s.cellStep;
+          const ry = region.bounds.minRow * s.cellStep;
+          const rw = (region.bounds.maxCol - region.bounds.minCol + 1) * s.cellStep - GAP;
+          const rh = (region.bounds.maxRow - region.bounds.minRow + 1) * s.cellStep - GAP;
+          ctx!.fillRect(rx, ry, rw, rh);
+
+          // Region name label (small, top-left corner)
+          ctx!.save();
+          ctx!.font = `${Math.max(8, s.cellSize * 0.18)}px Cinzel, Georgia, serif`;
+          ctx!.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx!.textBaseline = "top";
+          ctx!.fillText(region.name, rx + 3, ry + 2);
+          ctx!.restore();
         }
       }
 
@@ -716,7 +797,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
             Math.max(
               Math.abs(pos.row - pPos.row),
               Math.abs(pos.col - pPos.col),
-            ) * FEET_PER_SQUARE;
+            ) * s.feetPerSquare;
           let inRange = false;
           const tr = s.targetingAbility.range;
           if (tr) {
@@ -794,7 +875,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
             Math.abs(destRow - s.dragOrigin.row),
             Math.abs(destCol - s.dragOrigin.col),
           );
-          const feet = gridDist * FEET_PER_SQUARE;
+          const feet = gridDist * s.feetPerSquare;
           const inRange = feet <= s.playerSpeed;
 
           // Measurement line from origin to cursor
@@ -1166,14 +1247,20 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
         const cell = pixelToCell(vx, vy);
         if (!cell) return;
 
-        // Speed check — reject if destination exceeds movement range
-        if (origin) {
+        // Speed check — combat mode only (exploration has free movement)
+        if (mode === "combat" && origin) {
           const speed = player.speed ?? DEFAULT_SPEED;
           const { allowed } = validateMovement(origin, cell, speed);
           if (!allowed) return;
         }
 
-        // Collision check — don't drop on another living token (dead corpses are walkable)
+        // Tile collision — walls block movement (both modes)
+        if (tileData && tileData.length === gridSize * gridSize) {
+          const tileValue = tileData[cell.row * gridSize + cell.col];
+          if (tileValue === 1) return; // wall — blocked
+        }
+
+        // Token collision — don't drop on another living token (dead corpses are walkable)
         for (const [id, pos] of Array.from(positions.entries())) {
           if (
             id !== currentDragId &&
@@ -1197,6 +1284,9 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
       onMoveToken,
       player,
       activeNPCs,
+      mode,
+      tileData,
+      gridSize,
     ],
   );
 
@@ -1286,10 +1376,12 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
       {/* Header */}
       <div className="flex-shrink-0 bg-dungeon-mid border-b border-gold/30 px-4 py-1.5 flex items-center justify-between">
         <span className="font-cinzel text-gold text-xs tracking-[0.2em] uppercase">
-          ✦ Combat Map ✦
+          {mode === "combat" ? "✦ Combat Map ✦" : "✦ Map ✦"}
         </span>
         <span className="font-cinzel text-parchment/40 text-[10px] tracking-widest uppercase">
-          {activeNPCs.filter((n) => n.currentHp > 0).length} hostiles
+          {mode === "combat"
+            ? `${activeNPCs.filter((n) => n.currentHp > 0).length} hostiles`
+            : "exploration"}
         </span>
       </div>
 
@@ -1373,3 +1465,6 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
 });
 
 export default CombatGrid;
+
+/** Alias for use as the always-visible game grid (exploration + combat). */
+export { CombatGrid as GameGrid };

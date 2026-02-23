@@ -110,9 +110,18 @@ export async function getDMResponse(
   gameState: GameState,
   rulesOutcome: RulesOutcome | null,
   sessionId: string,
+  /** Optional spatial context from serializeRegionContext() — injected as-is when a map is active. */
+  spatialContext?: string,
 ): Promise<DMResponse> {
   // Prepend dynamic game state so the static system prompt + tools stay fully cacheable
-  let userContent = `CAMPAIGN STATE:\n${serializeStoryState(gameState.story)}\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
+  let userContent = `CAMPAIGN STATE:\n${serializeStoryState(gameState.story)}`;
+
+  // Spatial context injection — only when a map is active and players have positions
+  if (spatialContext) {
+    userContent += `\n\n${spatialContext}`;
+  }
+
+  userContent += `\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
 
   // Append player rules check result
   if (rulesOutcome) {
