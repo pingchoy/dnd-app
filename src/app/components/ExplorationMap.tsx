@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import type { PointOfInterest } from "../lib/gameTypes";
 
 interface Props {
@@ -15,7 +15,10 @@ const MARKER_SIZE = 36;
 function ExplorationMap({ backgroundImageUrl, pointsOfInterest, currentPOIId, onPOIClick }: Props) {
   const [hoveredPOI, setHoveredPOI] = useState<string | null>(null);
 
-  const visiblePOIs = pointsOfInterest.filter((poi) => !poi.isHidden);
+  const visiblePOIs = useMemo(
+    () => pointsOfInterest.filter((poi) => !poi.isHidden),
+    [pointsOfInterest]
+  );
 
   const handleClick = useCallback((poiId: string) => {
     onPOIClick(poiId);
@@ -61,7 +64,7 @@ function ExplorationMap({ backgroundImageUrl, pointsOfInterest, currentPOIId, on
             {poi.number}
 
             {isHovered && (
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-3 py-1 text-sm text-gray-100 shadow-lg pointer-events-none">
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-3 py-1 text-base text-gray-100 shadow-lg pointer-events-none">
                 {poi.name}
               </div>
             )}
