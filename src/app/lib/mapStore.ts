@@ -15,6 +15,7 @@ import type {
   CombatMapDocument,
   ExplorationMapDocument,
   MapDocument,
+  PointOfInterest,
 } from "./gameTypes";
 
 // ─── Helper types ──────────────────────────────────────────────────────────
@@ -85,6 +86,38 @@ export async function loadSessionMaps(sessionId: string): Promise<MapDocument[]>
   })) as MapDocument[];
 }
 
+// ─── Type-narrowing helpers ──────────────────────────────────────────────────
+
+/** Load the exploration map for a session. Returns null if not found or wrong type. */
+export async function loadExplorationMap(
+  sessionId: string,
+  mapId: string,
+): Promise<ExplorationMapDocument | null> {
+  const map = await loadMap(sessionId, mapId);
+  if (!map || map.mapType !== "exploration") return null;
+  return map as ExplorationMapDocument;
+}
+
+/**
+ * Load the combat map for a specific POI on an exploration map.
+ * Resolves the POI's combatMapId and loads the corresponding CombatMapDocument.
+ */
+export async function loadCombatMapForPOI(
+  sessionId: string,
+  explorationMapId: string,
+  poiId: string,
+): Promise<CombatMapDocument | null> {
+  const explMap = await loadExplorationMap(sessionId, explorationMapId);
+  if (!explMap) return null;
+
+  const poi = explMap.pointsOfInterest.find((p) => p.id === poiId);
+  if (!poi) return null;
+
+  const map = await loadMap(sessionId, poi.combatMapId);
+  if (!map || map.mapType !== "combat") return null;
+  return map as CombatMapDocument;
+}
+
 // ─── Campaign Map Templates ─────────────────────────────────────────────────
 
 /** List all distinct campaign slugs that have campaign maps. */
@@ -137,9 +170,14 @@ export async function loadCampaignMap(
  * Copies each campaignMaps/ template into maps/ with the given sessionId.
  * Called once when a campaign session is first created.
  *
- * When a Campaign object is provided, the returned array is sorted so that
- * Act 1 maps come first (matching mapSpec order within the campaign).
- * This lets callers use maps[0] as the starting map.
+ * Two-tier flow (when campaign has explorationMapSpecs + combatMapSpecs):
+ *   1. Create exploration maps first (so combat maps can reference them).
+ *   2. Create combat maps with parentMapId + poiId references.
+ *   3. Backfill exploration map POIs with the session-level combatMapId values.
+ *
+ * Falls back to the legacy flat-list path when explorationMapSpecs is absent.
+ * The returned array is sorted: exploration maps first, then combat maps
+ * in campaign spec order. This lets callers use maps[0] as the starting map.
  */
 export async function instantiateCampaignMaps(
   campaignSlug: string,
@@ -155,13 +193,121 @@ export async function instantiateCampaignMaps(
 
   const now = Date.now();
   const maps: MapDocument[] = [];
-  // Track mapSpecId per entry for sorting (not persisted on MapDocument)
   const specIds: string[] = [];
 
-  for (const doc of snap.docs) {
-    const template = doc.data() as CampaignMap;
+  const templates = snap.docs.map((doc) => doc.data() as CampaignMap);
+  const explorationTemplates = templates.filter((t) => t.mapType === "exploration");
+  const combatTemplates = templates.filter((t) => t.mapType !== "exploration");
 
-    // Build the appropriate map document based on the template's mapType
+  // ─── New two-tier path ──────────────────────────────────────────────────────
+  // Used when the campaign defines explorationMapSpecs (new structure).
+  if (campaign?.explorationMapSpecs?.length) {
+    // Map from template mapSpecId → session-scoped Firestore map ID
+    const specIdToSessionId = new Map<string, string>();
+
+    // 1. Create exploration maps
+    for (const template of explorationTemplates) {
+      const mapDoc: Omit<ExplorationMapDocument, "id"> = {
+        mapType: "exploration",
+        name: template.name,
+        backgroundImageUrl: template.backgroundImageUrl ?? "",
+        pointsOfInterest: [], // backfilled after combat maps are created
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const ref = adminDb.collection("sessions").doc(sessionId).collection("maps").doc();
+      await ref.set(mapDoc);
+      const created: ExplorationMapDocument = { id: ref.id, ...mapDoc };
+      maps.push(created);
+      specIds.push(template.mapSpecId);
+      specIdToSessionId.set(template.mapSpecId, ref.id);
+    }
+
+    // 2. Create combat maps, linking each to its parent exploration map + POI
+    for (const template of combatTemplates) {
+      let parentMapId = "";
+      let poiId = "";
+      for (const explSpec of campaign.explorationMapSpecs) {
+        const poi = explSpec.pointsOfInterest.find(
+          (p) => p.combatMapSpecId === template.mapSpecId,
+        );
+        if (poi) {
+          parentMapId = specIdToSessionId.get(explSpec.id) ?? "";
+          poiId = poi.id;
+          break;
+        }
+      }
+
+      const mapDoc: Omit<CombatMapDocument, "id"> = {
+        mapType: "combat",
+        name: template.name,
+        gridSize: template.gridSize ?? 20,
+        feetPerSquare: template.feetPerSquare ?? 5,
+        tileData: template.tileData,
+        regions: template.regions ?? [],
+        parentMapId,
+        poiId,
+        ...(template.backgroundImageUrl ? { backgroundImageUrl: template.backgroundImageUrl } : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const ref = adminDb.collection("sessions").doc(sessionId).collection("maps").doc();
+      await ref.set(mapDoc);
+      const created: CombatMapDocument = { id: ref.id, ...mapDoc };
+      maps.push(created);
+      specIds.push(template.mapSpecId);
+      specIdToSessionId.set(template.mapSpecId, ref.id);
+    }
+
+    // 3. Backfill exploration maps with POI combatMapIds
+    for (const explMap of maps.filter(
+      (m): m is ExplorationMapDocument => m.mapType === "exploration",
+    )) {
+      const explSpecId = specIds[maps.indexOf(explMap)];
+      const explSpec = campaign.explorationMapSpecs.find((s) => s.id === explSpecId);
+      if (!explSpec) continue;
+
+      const pois: PointOfInterest[] = explSpec.pointsOfInterest.map((poiSpec) => ({
+        id: poiSpec.id,
+        number: poiSpec.number,
+        name: poiSpec.name,
+        description: poiSpec.description,
+        position: { x: 50, y: 50 }, // default center — overridden when image is generated
+        combatMapId: specIdToSessionId.get(poiSpec.combatMapSpecId) ?? "",
+        isHidden: poiSpec.isHidden,
+        actNumbers: poiSpec.actNumbers,
+        locationTags: poiSpec.locationTags,
+        ...(poiSpec.defaultNPCSlugs ? { defaultNPCSlugs: poiSpec.defaultNPCSlugs } : {}),
+      }));
+
+      await updateMap(sessionId, explMap.id!, {
+        pointsOfInterest: pois,
+      } as Partial<Record<string, unknown>>);
+      explMap.pointsOfInterest = pois;
+    }
+
+    // Sort: exploration maps first, then combat maps in campaign spec order
+    const allSpecIds = [
+      ...campaign.explorationMapSpecs.map((s) => s.id),
+      ...(campaign.combatMapSpecs ?? []).map((s) => s.id),
+    ];
+    const specOrder = new Map(allSpecIds.map((id, i) => [id, i]));
+    const indices = maps.map((_, i) => i);
+    indices.sort((a, b) => {
+      const aType = maps[a].mapType === "exploration" ? 0 : 1;
+      const bType = maps[b].mapType === "exploration" ? 0 : 1;
+      if (aType !== bType) return aType - bType;
+      return (specOrder.get(specIds[a]) ?? 999) - (specOrder.get(specIds[b]) ?? 999);
+    });
+
+    return indices.map((i) => maps[i]);
+  }
+
+  // ─── Legacy flat-list path ──────────────────────────────────────────────────
+  // Used when campaign has no explorationMapSpecs (old mapSpecs structure).
+  for (const template of templates) {
     const base = {
       name: template.name,
       ...(template.backgroundImageUrl ? { backgroundImageUrl: template.backgroundImageUrl } : {}),
@@ -178,7 +324,6 @@ export async function instantiateCampaignMaps(
         pointsOfInterest: template.pointsOfInterest ?? [],
       };
     } else {
-      // Default to combat map (backwards compat for templates without mapType)
       mapDoc = {
         ...base,
         mapType: "combat" as const,
@@ -196,19 +341,15 @@ export async function instantiateCampaignMaps(
     specIds.push(template.mapSpecId);
   }
 
-  // Sort so Act 1 maps come first, in campaign mapSpec order
-  // Legacy path: uses mapSpecs (flat list with actNumbers). Task 3 will update.
   if (campaign?.mapSpecs?.length) {
     const specOrder = new Map<string, number>();
     const act1Specs = new Set<string>();
     campaign.mapSpecs.forEach((spec, i) => {
       specOrder.set(spec.id, i);
-      // actNumbers no longer on CampaignCombatMapSpec — use legacy cast
       const legacySpec = spec as unknown as { actNumbers?: number[] };
       if (legacySpec.actNumbers?.includes(1)) act1Specs.add(spec.id);
     });
 
-    // Build index pairs, sort, then reorder both arrays
     const indices = maps.map((_, i) => i);
     indices.sort((a, b) => {
       const aIsAct1 = act1Specs.has(specIds[a]) ? 0 : 1;
