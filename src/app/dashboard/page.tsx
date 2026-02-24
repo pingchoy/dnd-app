@@ -77,7 +77,7 @@ export default function Dashboard() {
   encounterBridgeRef.current = setEncounter;
 
   const { width: chatWidth, isDragging: isChatResizing, isCollapsed: isChatCollapsed, onMouseDown: onChatResizeMouseDown, restore: restoreChat, collapse: collapseChat } =
-    useResizablePanel({ defaultWidth: 320, minWidth: 200, maxWidth: 600, side: "right" });
+    useResizablePanel({ defaultWidth: 600, minWidth: 200, maxWidth: 600, side: "right" });
   const { width: sidebarWidth, isDragging: isSidebarResizing, isCollapsed: isSidebarCollapsed, onMouseDown: onSidebarResizeMouseDown, restore: restoreSidebar, collapse: collapseSidebar } =
     useResizablePanel({ defaultWidth: 288, minWidth: 200, maxWidth: 500, side: "left" });
 
