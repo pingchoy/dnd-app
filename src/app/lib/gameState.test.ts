@@ -371,6 +371,24 @@ describe("applyStateChanges", () => {
       applyStateChanges({ npcs_met: ["Gandalf", "Gandalf"] });
       expect(getGameState().story.metNPCs).toEqual(["gandalf"]);
     });
+
+    it("important_event pushes to session importantEvents", async () => {
+      await hydrateState();
+      applyStateChanges({ important_event: "allied with the dockworkers guild" });
+      const gs = getGameState();
+      expect(gs.story.importantEvents).toContain("allied with the dockworkers guild");
+    });
+
+    it("important_event caps at 50 entries", async () => {
+      await hydrateState();
+      for (let i = 0; i < 55; i++) {
+        applyStateChanges({ important_event: `event-${i}` });
+      }
+      const events = getGameState().story.importantEvents!;
+      expect(events).toHaveLength(50);
+      expect(events[0]).toBe("event-5");
+      expect(events[49]).toBe("event-54");
+    });
   });
 });
 

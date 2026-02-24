@@ -610,6 +610,8 @@ export interface StateChanges {
   location_changed?: string;
   scene_update?: string;
   notable_event?: string;
+  /** An important event to remember permanently (e.g. "allied with the dockworkers guild"). More granular than milestones, never rolls off like recentEvents. */
+  important_event?: string;
   gold_delta?: number;
   xp_gained?: number;
   weapons_gained?: Array<{
@@ -678,6 +680,7 @@ export function mergeStateChanges(
     "location_changed",
     "scene_update",
     "notable_event",
+    "important_event",
     "milestone",
     "campaign_summary_update",
     "story_beat_completed",
@@ -781,6 +784,11 @@ export function applyStateChanges(changes: StateChanges): void {
   if (changes.notable_event) {
     s.recentEvents.push(changes.notable_event);
     if (s.recentEvents.length > 10) s.recentEvents = s.recentEvents.slice(-10);
+  }
+  if (changes.important_event) {
+    if (!s.importantEvents) s.importantEvents = [];
+    s.importantEvents.push(changes.important_event.toLowerCase());
+    if (s.importantEvents.length > 50) s.importantEvents = s.importantEvents.slice(-50);
   }
   // ─── Memory tier mutations ───
   if (changes.milestone) {
