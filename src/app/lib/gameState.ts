@@ -706,7 +706,6 @@ export function mergeStateChanges(
     "cantrips_learned",
   ] as const) {
     if (incoming[key]?.length) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       merged[key] = [
         ...((merged[key] as any[]) ?? []),
         ...(incoming[key] as any[]),
