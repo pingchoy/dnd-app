@@ -439,6 +439,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["lysara-thorne"],
           location: "valdris council chambers, lysara's private office",
           mapSpecId: "lysara-salon",
+          completionTrigger:
+            "Lysara gives the party the retainer and recommends visiting Captain Aldric Vane at the watch house",
           dmGuidance:
             "Lysara is poised, warm, and genuinely concerned — or so it seems. She provides a list of the missing and a pouch of gold as a retainer. She suggests the party start with the city watch, who have a case file. Play her as the perfect patron: attentive, respectful, and trusting. A DC 14 Insight check reveals nothing — she's that good. Transition: Lysara recommends they visit Captain Aldric Vane at the lower quarter watch house for the official case files.",
         },
@@ -452,6 +454,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "lower quarter watch house",
           mapSpecId: "watch-house",
           rewards: { xp: 50 },
+          completionTrigger:
+            "Aldric shares the case files and suggests canvassing near Coppersmith Lane",
           dmGuidance:
             "Aldric is exhausted and grateful for help, but skeptical of 'council-sponsored adventurers.' He's honest about what the watch knows: victims vanish at night, no bodies found, no ransom demands. The symbol is key — it's a circle with a crescent, drawn in chalk near two abduction sites. He marks the most recent disappearance site on the party's map. Transition: Aldric suggests canvassing the lower quarter near the most recent abduction site — a tenement block on Coppersmith Lane.",
         },
@@ -464,6 +468,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "lower quarter, coppersmith lane and surroundings",
           mapSpecId: "lower-quarter-streets",
           rewards: { xp: 50 },
+          completionTrigger:
+            "Party gathers key clues from canvassing and Zephyr approaches them",
           dmGuidance:
             "This is an open investigation beat. Let the party choose how to canvass — Persuasion, Intimidation, or Investigation checks (DC 10-12). Key information they can learn: a fishmonger saw a cart heading toward the docks late at night; a landlord noticed the chalk symbol appeared the morning after the last disappearance; a child says they saw 'men with hoods' near the piers. A DC 12 Arcana check on the chalk symbol identifies it as a warding glyph — someone is marking targets or territory. Transition: As the party wraps up their canvassing, a young tiefling (Zephyr) approaches them urgently, having heard they're investigating the disappearances.",
         },
@@ -476,6 +482,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["zephyr"],
           location: "lower quarter, a quiet alley near coppersmith lane",
           mapSpecId: "lower-quarter-streets",
+          completionTrigger:
+            "Zephyr shares their maps and the party decides to head to the docks at night",
           dmGuidance:
             "Zephyr is scared but fierce — they won't be sent away. Play them as resourceful and street-smart but clearly out of their depth. They know the undercity tunnels better than anyone (they've been living in them) and offer to guide the party if they'll help find Kael. Zephyr's maps are crude but accurate — they show a route from the docks into the tunnels. This is the emotional heart of Act 1. Make the players care about Zephyr and Kael. Transition: Zephyr's notes and the fishmonger's testimony both point to the docks. The party should head there at night to catch the smugglers in action.",
         },
@@ -487,6 +495,8 @@ export const theCrimsonAccord: CampaignData = {
           difficulty: "medium",
           location: "valdris docks, pier 7",
           mapSpecId: "valdris-docks",
+          completionTrigger:
+            "Smugglers on pier 7 spot the party and attack",
           dmGuidance:
             "Build tension here. The docks at night are atmospheric — dim lantern light, fog, the smell of brine and tar. Let the party use Stealth and Perception (DC 12) to scout. They can find: a hidden cargo manifest wedged between planks listing deliveries to an unnamed 'basement'; a discarded burlap sack that smells of alchemical sedatives; fresh boot tracks leading to pier 7. If they linger or make noise, they're spotted by the smugglers, triggering the next beat. Transition: Whether the party is stealthy or not, the smugglers on pier 7 notice intruders and attack — they mistake the party for a rival gang.",
         },
@@ -496,6 +506,7 @@ export const theCrimsonAccord: CampaignData = {
             "While investigating the docks at night, the party is ambushed by smugglers who think they're rival thieves. The fight takes place on rain-slicked wooden piers between moored cargo ships.",
           type: "combat",
           difficulty: "easy",
+          completionTrigger: "All dock smugglers defeated",
           enemies: [
             {
               srdMonsterSlug: "bandit",
@@ -530,6 +541,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "the rusted anchor tavern, dockside",
           mapSpecId: "rusted-anchor-tavern",
           rewards: { xp: 100 },
+          completionTrigger:
+            "Mira reveals the undercity route and warehouse location",
           dmGuidance:
             "Mira is sharp, cynical, and all business. She won't talk for free — she wants 50 gold or a favor (dealing with a rival who's been muscling into her territory). Play the negotiation: Persuasion DC 13 to lower her price, Intimidation DC 15 (but she'll give bad intel if threatened). What she knows: the smugglers use undercity tunnels to move victims; the operation has been running for months; there's a warehouse beneath the market district that serves as a staging area; and someone powerful is protecting the ring from the watch. She doesn't know who the buyer is. A DC 14 Insight check reveals she's holding something back — she's afraid of whoever is running the operation. Transition: Mira's intel confirms the undercity route and the warehouse. Before the party can act on it, Lysara sends an invitation to a council reception — she wants a progress report and to introduce the party to important allies.",
         },
@@ -543,6 +556,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "valdris council hall, grand reception room",
           mapSpecId: "council-hall",
           rewards: { xp: 100 },
+          completionTrigger:
+            "Party attends the reception and learns about Valdris politics; Zephyr is ready to guide them into the undercity",
           dmGuidance:
             "Use this to establish the political landscape. Lysara is warm and attentive — she praises the party's progress and asks probing questions about what they've learned. Blackwood is loud and dismissive of the kidnapping investigation ('lower quarter riffraff') but a DC 12 Insight check reveals genuine concern beneath his bluster about 'trade disruptions.' Let the party overhear gossip about Lysara's charity hospital in the temple district. If the party mentions the manifest referencing 'Brother C.' or the temple basement, Lysara's expression flickers for just a moment (DC 16 Insight to catch it) before she smoothly suggests it must be a coincidence. Transition: With political context established and their leads confirmed, the party is ready to enter the undercity. Zephyr is eager to guide them — they've been waiting anxiously and have scouted a safe entry point near the lower quarter.",
         },
@@ -553,6 +568,8 @@ export const theCrimsonAccord: CampaignData = {
           type: "exploration",
           difficulty: "medium",
           npcInvolvement: ["zephyr"],
+          completionTrigger:
+            "Party finds the smuggler warehouse entrance and hears voices inside",
           enemies: [
             {
               srdMonsterSlug: "giant-rat",
@@ -572,6 +589,8 @@ export const theCrimsonAccord: CampaignData = {
             "The party assaults the smugglers' undercity warehouse — a converted basement with iron cages, crates of supplies, and a locked tunnel leading toward the temple district. The smugglers are expecting a delivery, not an attack.",
           type: "combat",
           difficulty: "hard",
+          completionTrigger:
+            "Warehouse cleared and evidence recovered",
           enemies: [
             {
               srdMonsterSlug: "bandit",
@@ -865,6 +884,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["brother-caelum"],
           location: "brother caelum's hospital, main ward and public areas",
           mapSpecId: "caelum-hospital",
+          completionTrigger:
+            "Party leaves the hospital with enough layout knowledge to plan a night infiltration",
           dmGuidance:
             "This is a low-stakes reconnaissance beat. The party should feel welcome — Caelum is publicly beloved and the hospital does genuine good work. Let the party make Perception checks (DC 10) to notice details: a locked sub-basement door, supply deliveries at odd hours, patients who seem overly sedated. Caelum is warm and gracious but deflects questions about the basement ('just storage, terribly dull'). A DC 13 Insight check reveals micro-expressions of anxiety when pressed. The goal is to establish the hospital as a real place before the night infiltration. Transition: the party leaves with enough layout knowledge to plan a return after dark, but first Aldric has something to share.",
         },
@@ -884,6 +905,8 @@ export const theCrimsonAccord: CampaignData = {
               "sketch of crimson symbols from the original murder scene",
             ],
           },
+          completionTrigger:
+            "Party connects the cold case evidence to the current kidnappings and is motivated to infiltrate the hospital basement",
           dmGuidance:
             "This is a character-building scene for Aldric. Play him as a man carrying years of guilt over his partner's unsolved death. The case files contain: (1) a sketch of crimson symbols matching the kidnapping sites, (2) witness testimony about a 'kind healer' near the scene (matching Caelum's description), (3) a list of names — some now appear on the hospital's patient rolls. A DC 12 Investigation check connects the timelines; a DC 14 History or Arcana check identifies the symbols as related to a blood-magic tradition predating Valdris. This scene raises the stakes — the conspiracy has been running for years. Transition: armed with this evidence, the party has strong motivation to infiltrate the hospital basement that night.",
         },
@@ -904,6 +927,8 @@ export const theCrimsonAccord: CampaignData = {
               "list of 'patients' matching missing persons",
             ],
           },
+          completionTrigger:
+            "Party discovers the basement and obtains Caelum's journal referencing council funding",
           dmGuidance:
             "This is a tense infiltration, not a combat encounter. The hospital is locked after dark — the party needs to pick locks (DC 12), find an alternate entrance, or convince the night nurse. Their daytime visit should make this easier — reward players who took notes on the layout. The basement is behind a concealed door in the supply closet. If Caelum catches them, he's terrified, not hostile. He'll plead ignorance but his journal (found in his quarters) tells a different story. The basement should feel clinical and horrifying — bloodstained arcane circles, restraints, and personal effects create a visceral horror. Transition: the journal entries reference council funding and specific payments — the party needs to trace the money, leading to the next beat.",
         },
@@ -920,6 +945,8 @@ export const theCrimsonAccord: CampaignData = {
             xp: 100,
             items: ["annotated funding ledger showing suspicious payments"],
           },
+          completionTrigger:
+            "Evidence implicates senior council members but needs Blackwood's private records to be specific",
           dmGuidance:
             "This is an investigation montage — don't let it drag. Use a few focused skill checks: DC 11 Investigation to cross-reference dates, DC 12 Persuasion to get a clerk to pull restricted records, DC 13 Insight to notice which council members' names keep appearing. Zephyr can provide underworld context ('that fund is how the council pays for things they don't want on the books'). Mira may approach the party here, offering to help interpret the records — play her as genuinely helpful but subtly steering the party toward blaming Blackwood specifically. A DC 15 Insight check catches her emphasis on Blackwood over other suspects. Transition: the evidence implicates senior council members but isn't specific enough — the party needs access to Blackwood's private records, and Lysara has a way in.",
         },
@@ -936,6 +963,8 @@ export const theCrimsonAccord: CampaignData = {
             xp: 50,
             items: ["masquerade invitations", "borrowed formal attire"],
           },
+          completionTrigger:
+            "Party receives masquerade invitations and plans their approach to the ball",
           dmGuidance:
             "This is a prep scene that builds anticipation for the masquerade. Lysara is charming and seemingly transparent about her motives — she wants Blackwood exposed because he's her political rival. She provides: invitations, appropriate clothing, a guest list with notes on key attendees, and coaching on etiquette (DC 10 Performance to practice). She specifically suggests the party search Blackwood's private study during the ball and offers a rough layout of the estate. A DC 14 Insight check reveals she's more invested in Blackwood's downfall than in solving the kidnappings — her agenda is political, not justice. Play her as an ally with her own game. Transition: the ball is tomorrow night — this scene ends with the party planning their approach to the masquerade.",
         },
@@ -959,6 +988,8 @@ export const theCrimsonAccord: CampaignData = {
               "overheard conversation notes",
             ],
           },
+          completionTrigger:
+            "Party leaves the ball with damning evidence against the conspiracy",
           dmGuidance:
             "The masquerade is the act's centerpiece social encounter. Multiple objectives: (1) Eavesdrop on council members discussing the kidnappings (DC 13 Stealth/Perception), (2) Search Blackwood's private study for evidence (DC 15 Investigation), (3) Observe Lysara's interactions (DC 16 Insight — she's lobbying other council members against Blackwood), (4) Confront Blackwood privately (Persuasion/Intimidation DC 14 to get him talking). Mira is here too — a sharp-eyed party member (DC 15 Perception) might spot her passing a note to one of Lysara's guards. This plants the seed for her betrayal reveal. Transition: as the party leaves the ball with damning evidence, they take a shortcut through the Narrows — and walk into a trap.",
         },
@@ -968,6 +999,7 @@ export const theCrimsonAccord: CampaignData = {
             "After the masquerade, the party is ambushed in a narrow alley by hired thugs. The attackers wear no identifying marks and fight to kill — someone wants the investigation stopped permanently.",
           type: "combat",
           difficulty: "hard",
+          completionTrigger: "All ambushers defeated",
           enemies: [
             {
               srdMonsterSlug: "thug",
@@ -1006,6 +1038,8 @@ export const theCrimsonAccord: CampaignData = {
             "mira's lodgings or a neutral meeting place in the middle quarter",
           mapSpecId: "lower-quarter-streets",
           rewards: { xp: 150 },
+          completionTrigger:
+            "Mira's connection to Lysara is revealed and the party decides how to handle her",
           dmGuidance:
             "This is an emotionally charged confrontation. Mira genuinely believed she was helping — Lysara convinced her that sharing the party's plans would let Lysara's people provide covert protection. She didn't know about the ambush and is horrified when confronted. A DC 12 Insight check confirms her remorse is genuine. The party can: (1) forgive her and keep her as a chastened ally, (2) cut ties (she becomes a guilt-ridden neutral NPC in Act 3), or (3) use her as a double agent to feed false information to Lysara. Zephyr can corroborate Mira's story — he's seen Lysara's agents tailing the party independently. This beat reframes Lysara from helpful patron to manipulative puppeteer. Transition: before the party can act on this revelation, urgent news arrives — Captain Aldric has collapsed. He's been poisoned.",
         },
@@ -1019,6 +1053,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "valdris watch barracks, aldric's quarters",
           mapSpecId: "watch-house",
           rewards: { xp: 100 },
+          completionTrigger:
+            "Party identifies the poison as alchemical and learns it has a time-limited antidote",
           dmGuidance:
             "This is a dramatic scene, not a puzzle yet — the puzzle comes next. Play up the emotional weight: Aldric is the party's most reliable ally, and seeing him helpless should hit hard. A DC 12 Medicine check stabilizes him temporarily; a DC 14 Arcana check identifies the toxin as alchemical, not natural — someone with access to rare reagents (like a hospital) made this. Zephyr arrives with street contacts who saw a cloaked figure leaving the barracks. The watch sergeant is panicking and looks to the party for direction. Give the party a moment to process the betrayal cascade: Mira was compromised, Lysara is manipulating everyone, and now Aldric is dying. Transition: identifying the poison reveals it has an antidote, but the ingredients are rare and time is short — the party must race to save him.",
         },
@@ -1033,6 +1069,8 @@ export const theCrimsonAccord: CampaignData = {
             "various — temple gardens, alchemist quarter, aldric's quarters",
           mapSpecId: "temple-district",
           rewards: { xp: 200 },
+          completionTrigger:
+            "Antidote is brewed and administered, or Aldric dies from the poison",
           dmGuidance:
             "This is a timed skill challenge with 3 phases: (1) Identify the poison (DC 14 Medicine or Arcana — may already be done in the previous beat), (2) Gather moonpetal from the temple gardens at night (DC 12 Nature to find, DC 13 Stealth to avoid temple guards), (3) Brew the antidote (DC 14 Medicine or Alchemist's tools). Allow creative solutions. The party has about 8 in-game hours before Aldric dies. Success: Aldric recovers and provides crucial evidence for Act 3 — he recognized his poisoner's ring as bearing the crimson accord symbol. Failure: Aldric dies — this should be devastating and fuel the party's motivation for Act 3. Either way, the act ends with the party knowing the conspiracy reaches the highest levels of Valdris, setting up the final confrontation.",
         },
@@ -1356,6 +1394,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "valdris city watch headquarters and jail",
           mapSpecId: "watch-house",
           rewards: { xp: 150 },
+          completionTrigger:
+            "Party assembles evidence and obtains Caelum's confession implicating Lysara",
           dmGuidance:
             "This is a decompression beat after the intensity of Act 2. Let the party take stock. Caelum is broken — he cooperated with Lysara out of genuine belief in her charitable mission, then discovered the truth too late. A DC 10 Persuasion check gets him talking; DC 14 gets the full confession including the temple location. If Aldric survived Act 2, his partner's old case files contain a map of the tunnel network beneath the temple district. If Aldric died, the party must find this information another way (DC 15 Investigation at the watch archives). Transition: once the party has assembled their evidence, they realize they need political backing to move against a sitting council member — this leads directly to rallying allies.",
         },
@@ -1368,6 +1408,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["captain-aldric-vane", "mira-vex", "zephyr"],
           location: "various locations across valdris",
           mapSpecId: "lower-quarter-streets",
+          completionTrigger:
+            "Party secures allies and heads to the council chambers to present their case",
           dmGuidance:
             "This is a branching social beat — what's available depends entirely on earlier choices. Aldric (if alive and loyal): offers a squad of 4 city watch guards for the temple assault and will personally testify before the council. If Aldric is dead, the party can recruit his lieutenant (less effective, no personal testimony). Mira (if shown mercy and redeemed): reveals Lysara's personal guard rotation and a secret entrance to the temple. If Mira was killed or imprisoned, this intel is unavailable. Zephyr (always available): has scouted the temple district and found a collapsed tunnel entrance — Sera is down there, so Zephyr is coming regardless. Track how many allies the party secures — this affects the council confrontation DCs and the final battle difficulty. Transition: with allies rallied (or not), the party heads to the council chambers to make their case against Lysara.",
         },
@@ -1381,6 +1423,8 @@ export const theCrimsonAccord: CampaignData = {
           location: "valdris council chambers",
           mapSpecId: "council-hall",
           rewards: { xp: 250 },
+          completionTrigger:
+            "Lysara flees the council chamber toward the temple district",
           dmGuidance:
             "This encounter's outcome depends on how much evidence the party gathered in Acts 1-2 and how many allies they rallied. With strong evidence (3+ pieces: hospital records, Caelum's confession, Aldric's files, Mira's testimony, payment vouchers), the council votes to arrest Lysara (DC 12 Persuasion). With weak evidence (1-2 pieces), the DC is 18 and Lysara can counter-argue effectively. Each ally who testifies (Aldric, Mira) lowers the DC by 2. If the party succeeds, the council authorizes the arrest and the party gets city watch backup. If the party fails, they must pursue Lysara without official sanction. Either way, Lysara does not submit — she triggers the next beat. Transition: regardless of the vote's outcome, Lysara reveals she anticipated this moment. She activates a prepared smoke bomb laced with a minor enchantment (DC 13 Wisdom save or stunned for 1 round), and flees the council chamber toward the temple district.",
         },
@@ -1393,6 +1437,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["lysara-thorne", "zephyr"],
           location: "valdris streets, merchant quarter to temple district",
           mapSpecId: "valdris-streets",
+          completionTrigger:
+            "Party tracks Lysara to the temple district entrance",
           dmGuidance:
             "This is a chase/tracking beat. Lysara has a head start but is slowed by her robes and the need to activate wards along her escape route. The party can track her via: (1) DC 12 Survival to follow her footprints through the rain-slick streets, (2) DC 13 Perception to spot the faint crimson glow of her ward activations, or (3) DC 11 Investigation to ask panicked bystanders which way the running councilor went. Each failed check costs time — after 3 failures, Lysara reaches the temple and activates the outer wards, making the temple district entrance harder to breach (increases DCs in the next beat by 2). If Zephyr is with the party, they know a shortcut through the rooftops that grants advantage on one tracking check. Describe the streets in chaos — city watch mobilizing, merchants shuttering shops, rumors flying. Transition: the trail leads to the temple district, where ancient stone buildings and narrow alleys give way to the entrance of something much older.",
         },
@@ -1405,6 +1451,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["mira-vex"],
           location: "valdris temple district, surface level",
           mapSpecId: "temple-district",
+          completionTrigger:
+            "Party finds and opens the concealed trapdoor beneath the oldest chapel",
           enemies: [
             {
               srdMonsterSlug: "guard",
@@ -1428,6 +1476,8 @@ export const theCrimsonAccord: CampaignData = {
             xp: 250,
             items: ["ancient temple map fragment", "ward-breaking amulet"],
           },
+          completionTrigger:
+            "Party navigates the trapped corridors and reaches the guardians' hall",
           dmGuidance:
             "This is a dungeon crawl focused on atmosphere and traps — no combat here (that comes in the next beat). The temple is OLD — predates Valdris by centuries. Describe crumbling stonework, faded murals depicting the original Crimson Accord practitioners performing blood sacrifices, and an oppressive sense of malevolence that grows stronger as they descend. Include 2-3 traps: (1) Pressure plate triggers a falling block (DC 13 Perception to spot, DC 14 Dex save, 2d10 bludgeoning), (2) Arcane glyph ward (DC 14 Investigation to spot, DC 15 Arcana to disarm, 3d6 necrotic on trigger), (3) Collapsing bridge over a chasm (DC 12 Athletics to leap, 2d6 falling damage on failure). The ward-breaking amulet found here will be useful for disrupting the ritual circles later. The ancient temple map fragment reveals the layout of the deeper chambers. Transition: beyond the trapped corridors, the tunnels open into a vast pillared hall — and the party is not alone. Ancient guardians stir to life.",
         },
@@ -1437,6 +1487,7 @@ export const theCrimsonAccord: CampaignData = {
             "A massive pillared hall deep within the ancient temple, lined with alcoves containing suits of archaic armor and flickering spectral lights. As the party enters, the guardians awaken — animated armor steps from its alcoves and specters materialize from the walls, bound to defend this place for eternity.",
           type: "combat",
           difficulty: "hard",
+          completionTrigger: "All temple guardians defeated",
           enemies: [
             {
               srdMonsterSlug: "animated-armor",
@@ -1464,6 +1515,8 @@ export const theCrimsonAccord: CampaignData = {
           type: "puzzle",
           difficulty: "medium",
           npcInvolvement: ["zephyr"],
+          completionTrigger:
+            "Captives are freed (or as many as possible) and the path to the ritual chamber is open",
           enemies: [
             {
               srdMonsterSlug: "guard",
@@ -1487,6 +1540,8 @@ export const theCrimsonAccord: CampaignData = {
           npcInvolvement: ["lysara-thorne", "captain-aldric-vane", "mira-vex"],
           location: "ancient temple, grand ritual chamber",
           mapSpecId: "ancient-temple",
+          completionTrigger:
+            "Party refuses Lysara's offer and she begins channeling the ritual — roll initiative",
           dmGuidance:
             "This is the dramatic pause before the storm — a tense dialogue scene that gives weight to the final battle. Lysara is calm and articulate. She lays out her vision: Valdris is corrupt, the council is incompetent, and only she has the will to impose real order. She offers the party positions of power in her new regime. This is a genuine roleplay moment — let the players respond, argue, and make their case. If a player attempts Persuasion DC 25, Lysara hesitates — she won't surrender, but she'll reveal a moment of doubt that humanizes her. If any player seriously considers her offer, explore that dramatically — what would it mean to side with the villain? Allies present react: Aldric (if present) is disgusted and urges the party to fight. Mira (if present) is visibly conflicted — she understands Lysara's frustration with the system even if she rejects the method. When the party refuses (or if they accept — that's a dramatic campaign-ending twist the DM should improvise), Lysara's expression hardens and she begins channeling the ritual's power. Transition: Lysara's ultimatum ends. She raises her hands and crimson energy surges through the chamber. Roll initiative.",
         },
@@ -1497,6 +1552,8 @@ export const theCrimsonAccord: CampaignData = {
           type: "boss",
           difficulty: "deadly",
           npcInvolvement: ["lysara-thorne", "mira-vex", "captain-aldric-vane"],
+          completionTrigger:
+            "Lysara is defeated or surrenders",
           enemies: [
             {
               srdMonsterSlug: "mage",
