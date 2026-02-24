@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mock Firestore dependencies ─────────────────────────────────────────────
@@ -22,7 +23,7 @@ vi.mock("../lib/characterStore", () => ({
   querySRD: vi.fn(),
 }));
 
-import { handleCampaignQuery } from "./agentUtils";
+import { handleCampaignQuery, handleSessionMemoryQuery } from "./agentUtils";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -293,5 +294,57 @@ describe("handleCampaignQuery", () => {
       expect(result.error).toContain("Unknown");
       expect(newCount).toBe(0);
     });
+  });
+});
+
+describe("handleSessionMemoryQuery", () => {
+  it("returns important events when query_type is important_events", () => {
+    const result = handleSessionMemoryQuery(
+      { query_type: "important_events" },
+      ["allied with the dockworkers guild", "discovered the mayor's secret"],
+      [],
+    );
+    expect(result).toContain("allied with the dockworkers guild");
+    expect(result).toContain("discovered the mayor's secret");
+  });
+
+  it("returns supporting NPCs when query_type is supporting_npcs", () => {
+    const result = handleSessionMemoryQuery(
+      { query_type: "supporting_npcs" },
+      [],
+      [{
+        id: "old-marta",
+        name: "old marta",
+        role: "informant",
+        appearance: "weathered fisherwoman",
+        personality: "shrewd",
+        motivations: ["protect her grandchildren"],
+        location: "valdris docks",
+        notes: "saw suspicious activity",
+      }],
+    );
+    expect(result).toContain("old marta");
+    expect(result).toContain("informant");
+    expect(result).toContain("valdris docks");
+  });
+
+  it("returns both when query_type is all", () => {
+    const result = handleSessionMemoryQuery(
+      { query_type: "all" },
+      ["allied with the dockworkers guild"],
+      [{ id: "old-marta", name: "old marta", role: "informant", appearance: "", personality: "", motivations: [], location: "docks", notes: "" }],
+    );
+    expect(result).toContain("allied with the dockworkers guild");
+    expect(result).toContain("old marta");
+  });
+
+  it("returns empty message when no data exists", () => {
+    const result = handleSessionMemoryQuery(
+      { query_type: "all" },
+      [],
+      [],
+    );
+    expect(result).toContain("No important events");
+    expect(result).toContain("No supporting NPCs");
   });
 });

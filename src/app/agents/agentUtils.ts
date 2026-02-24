@@ -5,6 +5,7 @@
  */
 
 import { querySRD, getCampaignAct } from "../lib/characterStore";
+import type { SupportingNPC } from "../lib/gameTypes";
 
 /**
  * Handle a query_srd tool call, enforcing a per-turn query limit.
@@ -158,5 +159,43 @@ export async function handleCampaignQuery(
     resultContent: '{"error":"Unknown query type."}',
     newCount: queryCount,
   };
+}
+
+/**
+ * Format session memory (important events and/or supporting NPCs) as a string
+ * for the DM agent's tool result.
+ */
+export function handleSessionMemoryQuery(
+  input: { query_type: string },
+  importantEvents: string[],
+  supportingNPCs: SupportingNPC[],
+): string {
+  const parts: string[] = [];
+
+  if (input.query_type === "important_events" || input.query_type === "all") {
+    if (importantEvents.length > 0) {
+      parts.push("IMPORTANT EVENTS:\n" + importantEvents.map((e, i) => `${i + 1}. ${e}`).join("\n"));
+    } else {
+      parts.push("No important events recorded yet.");
+    }
+  }
+
+  if (input.query_type === "supporting_npcs" || input.query_type === "all") {
+    if (supportingNPCs.length > 0) {
+      const npcLines = supportingNPCs.map((npc) => {
+        let line = `- ${npc.name} [${npc.role}] (${npc.location})`;
+        if (npc.appearance) line += ` — ${npc.appearance}`;
+        if (npc.personality) line += ` Personality: ${npc.personality}`;
+        if (npc.motivations.length > 0) line += ` Wants: ${npc.motivations.join(", ")}`;
+        if (npc.notes) line += ` Notes: ${npc.notes}`;
+        return line;
+      });
+      parts.push("SUPPORTING NPCs:\n" + npcLines.join("\n"));
+    } else {
+      parts.push("No supporting NPCs recorded yet.");
+    }
+  }
+
+  return parts.join("\n\n");
 }
 
