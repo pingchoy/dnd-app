@@ -43,13 +43,13 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
 
 describe("CharacterSidebar", () => {
   it("renders player name", () => {
-    render(<CharacterSidebar player={makePlayer()} onOpenFullSheet={vi.fn()} />);
+    render(<CharacterSidebar player={makePlayer()} companions={[]} onOpenFullSheet={vi.fn()} />);
 
     expect(screen.getByText("Thorin")).toBeInTheDocument();
   });
 
   it("renders race, class, and level", () => {
-    render(<CharacterSidebar player={makePlayer()} onOpenFullSheet={vi.fn()} />);
+    render(<CharacterSidebar player={makePlayer()} companions={[]} onOpenFullSheet={vi.fn()} />);
 
     // toDisplayCase makes them capitalized
     expect(screen.getByText(/Dwarf/)).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe("CharacterSidebar", () => {
 
   it("renders HP values", () => {
     render(
-      <CharacterSidebar player={makePlayer({ currentHP: 25, maxHP: 40 })} onOpenFullSheet={vi.fn()} />,
+      <CharacterSidebar player={makePlayer({ currentHP: 25, maxHP: 40 })} companions={[]} onOpenFullSheet={vi.fn()} />,
     );
 
     expect(screen.getByText("25")).toBeInTheDocument();
@@ -67,13 +67,13 @@ describe("CharacterSidebar", () => {
   });
 
   it("renders AC value", () => {
-    render(<CharacterSidebar player={makePlayer({ armorClass: 18 })} onOpenFullSheet={vi.fn()} />);
+    render(<CharacterSidebar player={makePlayer({ armorClass: 18 })} companions={[]} onOpenFullSheet={vi.fn()} />);
 
     expect(screen.getByText("18")).toBeInTheDocument();
   });
 
   it("renders gold amount", () => {
-    render(<CharacterSidebar player={makePlayer({ gold: 75 })} onOpenFullSheet={vi.fn()} />);
+    render(<CharacterSidebar player={makePlayer({ gold: 75 })} companions={[]} onOpenFullSheet={vi.fn()} />);
 
     expect(screen.getByText("75gp")).toBeInTheDocument();
   });
@@ -82,6 +82,7 @@ describe("CharacterSidebar", () => {
     render(
       <CharacterSidebar
         player={makePlayer({ inventory: ["longsword", "shield", "rope"] })}
+        companions={[]}
         onOpenFullSheet={vi.fn()}
       />,
     );
@@ -93,7 +94,7 @@ describe("CharacterSidebar", () => {
 
   it("shows 'Nothing carried' when inventory is empty", () => {
     render(
-      <CharacterSidebar player={makePlayer({ inventory: [] })} onOpenFullSheet={vi.fn()} />,
+      <CharacterSidebar player={makePlayer({ inventory: [] })} companions={[]} onOpenFullSheet={vi.fn()} />,
     );
 
     expect(screen.getByText("Nothing carried.")).toBeInTheDocument();
@@ -103,6 +104,7 @@ describe("CharacterSidebar", () => {
     render(
       <CharacterSidebar
         player={makePlayer({ conditions: ["poisoned", "stunned"] })}
+        companions={[]}
         onOpenFullSheet={vi.fn()}
       />,
     );
@@ -113,7 +115,7 @@ describe("CharacterSidebar", () => {
 
   it("does not render conditions section when empty", () => {
     render(
-      <CharacterSidebar player={makePlayer({ conditions: [] })} onOpenFullSheet={vi.fn()} />,
+      <CharacterSidebar player={makePlayer({ conditions: [] })} companions={[]} onOpenFullSheet={vi.fn()} />,
     );
 
     expect(screen.queryByText("Conditions")).not.toBeInTheDocument();
@@ -123,6 +125,7 @@ describe("CharacterSidebar", () => {
     render(
       <CharacterSidebar
         player={makePlayer({ stats: { strength: 16, dexterity: 12, constitution: 14, intelligence: 8, wisdom: 10, charisma: 10 } })}
+        companions={[]}
         onOpenFullSheet={vi.fn()}
       />,
     );
@@ -136,7 +139,7 @@ describe("CharacterSidebar", () => {
 
   it("renders XP bar", () => {
     render(
-      <CharacterSidebar player={makePlayer({ xp: 6500, xpToNextLevel: 14000 })} onOpenFullSheet={vi.fn()} />,
+      <CharacterSidebar player={makePlayer({ xp: 6500, xpToNextLevel: 14000 })} companions={[]} onOpenFullSheet={vi.fn()} />,
     );
 
     expect(screen.getByText(/XP 6,500/)).toBeInTheDocument();
@@ -146,7 +149,7 @@ describe("CharacterSidebar", () => {
   it("calls onOpenFullSheet when button is clicked", async () => {
     const user = userEvent.setup();
     const handler = vi.fn();
-    render(<CharacterSidebar player={makePlayer()} onOpenFullSheet={handler} />);
+    render(<CharacterSidebar player={makePlayer()} companions={[]} onOpenFullSheet={handler} />);
 
     await user.click(screen.getByText("Full Character Sheet"));
 
@@ -157,6 +160,7 @@ describe("CharacterSidebar", () => {
     render(
       <CharacterSidebar
         player={makePlayer({ subclass: "champion" })}
+        companions={[]}
         onOpenFullSheet={vi.fn()}
       />,
     );
@@ -172,6 +176,7 @@ describe("CharacterSidebar", () => {
           spellSlots: { "1": 4, "2": 3 },
           spellSlotsUsed: { "1": 1 },
         })}
+        companions={[]}
         onOpenFullSheet={vi.fn()}
       />,
     );
