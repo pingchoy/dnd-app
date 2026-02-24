@@ -52,8 +52,7 @@ const PRESERVE_CASE_KEYS = new Set([
   "summary",
   "setting",
   "specialAbilities",
-  "layoutDescription",
-  "atmosphereNotes",
+  "imagePrompt",
 ]);
 
 function lowercaseStrings(value: unknown, key?: string): unknown {

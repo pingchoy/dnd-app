@@ -98,7 +98,7 @@ describe("Campaign exploration/combat spec types", () => {
     const spec: CampaignExplorationMapSpec = {
       id: "valdris-city",
       name: "The Free City of Valdris",
-      imageDescription: "A sprawling port city viewed from above",
+      imagePrompt: "Top-down bird's-eye view of a sprawling medieval fantasy port city.",
       pointsOfInterest: [],
     };
     expect(spec.id).toBe("valdris-city");
@@ -118,16 +118,14 @@ describe("Campaign exploration/combat spec types", () => {
     expect(poi.combatMapSpecId).toBe("valdris-docks");
   });
 
-  it("CampaignCombatMapSpec has layout and regions", () => {
+  it("CampaignCombatMapSpec has imagePrompt and feetPerSquare", () => {
     const spec: CampaignCombatMapSpec = {
       id: "valdris-docks",
       name: "Valdris Docks, Pier 7",
-      layoutDescription: "A waterfront pier district",
       feetPerSquare: 5,
-      terrain: "urban",
-      lighting: "dim",
-      regions: [],
+      imagePrompt: "Top-down fantasy D&D battle map of a waterfront pier district.",
     };
-    expect(spec.terrain).toBe("urban");
+    expect(spec.imagePrompt).toContain("pier");
+    expect(spec.feetPerSquare).toBe(5);
   });
 });

@@ -89,8 +89,7 @@ const PRESERVE_CASE_KEYS = new Set([
   "summary",
   "setting",
   "specialAbilities",
-  "layoutDescription",
-  "atmosphereNotes",
+  "imagePrompt",
 ]);
 
 function lowercaseStrings(value: unknown, key?: string): unknown {
@@ -232,26 +231,8 @@ interface CampaignEnemy {
 interface CampaignMapSpecOutput {
   id: string;                          // kebab-case, e.g. "valdris-docks"
   name: string;
-  layoutDescription: string;           // Prose description of physical layout
   feetPerSquare: number;               // 5 for indoor/dungeon
-  terrain: "urban" | "dungeon" | "wilderness" | "underground" | "interior" | "mixed";
-  lighting: "bright" | "dim" | "dark" | "mixed";
-  atmosphereNotes?: string;
-  regions: {
-    id: string;                        // "region_<snake_case>"
-    name: string;
-    type: string;                      // RegionType
-    approximateSize: "small" | "medium" | "large";
-    position?: "north" | "south" | "east" | "west" | "center" | "northeast" | "northwest" | "southeast" | "southwest";
-    dmNote?: string;
-    defaultNPCSlugs?: string[];
-    shopInventory?: string[];
-  }[];
-  connections?: {
-    targetMapSpecId: string;
-    direction: string;
-    description: string;
-  }[];
+  imagePrompt: string;                 // Detailed prompt for AI image generation
   actNumbers: number[];
   locationTags: string[];
   encounterNames: string[];            // which encounters use this map
@@ -494,15 +475,12 @@ ${encounterSummary}
 
 Generate an array of CampaignMapSpecOutput objects. Each map spec should:
 1. Cover one or more encounters that share a location
-2. Have a detailed layoutDescription (2-4 sentences) describing the physical layout
-3. Include 3-6 regions per map with appropriate types, sizes, and positions
-4. Group encounters at the same location onto the same map
-5. Set connections between maps that are narratively linked
-6. Include locationTags that would match the encounter's location strings
-7. Set actNumbers to which acts the map appears in
+2. Have a detailed imagePrompt for AI image generation that describes the map as a top-down D&D battle map
+3. Group encounters at the same location onto the same map
+4. Set connections between maps that are narratively linked
+5. Include locationTags that would match the encounter's location strings
+6. Set actNumbers to which acts the map appears in
 
-Region types: tavern, shop, temple, dungeon, wilderness, residential, street, guard_post, danger, safe, custom.
-Region positions: north, south, east, west, center, northeast, northwest, southeast, southwest.
 
 Encounters that span multiple locations or are purely narrative (like timed skill challenges) can be excluded from maps.
 Generate 5-10 maps total. Do NOT generate maps for encounters that don't need a physical location.
@@ -520,11 +498,8 @@ Output ONLY a JSON object with a single "mapSpecs" array field containing Campai
 
   // Validate map specs and build mapSpecId references for encounters
   for (const spec of rawMapSpecs) {
-    if (!spec.id || !spec.name || !spec.layoutDescription || !Array.isArray(spec.regions)) {
+    if (!spec.id || !spec.name || !spec.imagePrompt) {
       throw new Error(`Map spec missing required fields: ${JSON.stringify(spec).slice(0, 100)}`);
-    }
-    if ((spec.regions as unknown[]).length < 2) {
-      throw new Error(`Map spec "${spec.id}" must have at least 2 regions`);
     }
     // Remove encounterNames helper field before persisting
     delete spec.encounterNames;
@@ -549,7 +524,7 @@ Output ONLY a JSON object with a single "mapSpecs" array field containing Campai
 
   console.log(`  ✓ Map specs: ${rawMapSpecs.length} maps generated`);
   for (const spec of rawMapSpecs) {
-    console.log(`    - ${spec.id}: "${spec.name}" (${(spec.regions as unknown[]).length} regions, acts ${(spec.actNumbers as number[]).join(",")})`);
+    console.log(`    - ${spec.id}: "${spec.name}" (acts ${(spec.actNumbers as number[]).join(",")})`);
   }
 
   // ─── Seed to Firestore ──────────────────────────────────────────────────

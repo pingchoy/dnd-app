@@ -25,156 +25,64 @@ const SLUG = "the-crimson-accord";
 
 // ─── Combat Map Specifications ──────────────────────────────────────────────
 // Each combat map defines the physical layout for a single encounter location.
-// Connection, act, and location-tag data lives on the exploration map POIs.
+// The imagePrompt field is a copy-pasteable prompt for AI image generation.
 
 const CRIMSON_ACCORD_COMBAT_MAP_SPECS: CampaignCombatMapSpec[] = [
-  // 1. Valdris Docks, Pier 7
   {
     id: "valdris-docks",
     name: "Valdris Docks, Pier 7",
-    layoutDescription:
-      "A nighttime waterfront pier district. The southern edge is open water with wooden dock platforms extending outward. Two large cargo ships are moored along the south and southeast. Wooden pier walkways (5 ft wide) run between the ships and along the waterfront. The northern half has a row of warehouses and storage sheds with narrow alleys between them. Crates and barrels are stacked in clusters on the pier, providing cover. A main dock road runs east-west through the center connecting the pier to the city streets on the western edge. A harbormaster's shack sits in the northwest corner.",
     feetPerSquare: 5,
-    terrain: "urban",
-    lighting: "dim",
-    atmosphereNotes: "Rain-slicked wooden planks, lanterns swaying on ship masts, the smell of fish and tar. Fog rolling in from the harbor.",
-    regions: [
-      { id: "region_main_pier", name: "main pier", type: "street", approximateSize: "large", position: "south", dmNote: "Open wooden pier extending over the water. Rain-slicked and treacherous." },
-      { id: "region_warehouse_row", name: "warehouse row", type: "shop", approximateSize: "medium", position: "north", dmNote: "Locked warehouses with narrow alleys between them. One has the smuggler's stash." },
-      { id: "region_cargo_area", name: "cargo staging area", type: "street", approximateSize: "medium", position: "center", dmNote: "Stacked crates and barrels provide half cover. The smuggler manifest is hidden in a crate here." },
-      { id: "region_harbormaster", name: "harbormaster's shack", type: "safe", approximateSize: "small", position: "northwest", dmNote: "Small office with a desk and logbooks. Currently unoccupied at night." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a nighttime waterfront pier district. The southern edge is open water with wooden dock platforms extending outward. Two large cargo ships moored along the south and southeast. Wooden pier walkways (5 ft wide) run between ships and along the waterfront. Northern half has a row of warehouses and storage sheds with narrow alleys between them. Crates and barrels stacked in clusters on the pier providing cover. Main dock road runs east-west through center connecting the pier to city streets on the western edge. Harbormaster's shack in the northwest corner. Urban terrain, dim lighting. Rain-slicked wooden planks, lanterns swaying on ship masts, fog rolling in from the harbor. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 2. Valdris Council Hall
   {
     id: "council-hall",
     name: "Valdris Council Hall",
-    layoutDescription:
-      "An imposing marble government building. The main entrance on the south opens into a grand foyer with pillars. The central feature is a large circular council chamber with a raised dais and five ornate chairs arranged in a semicircle. A grand reception room occupies the eastern wing with long banquet tables and a balcony overlooking the city. The western wing has private offices and meeting rooms connected by a corridor. A servants' passage runs along the northern wall connecting the kitchen to the reception room.",
     feetPerSquare: 5,
-    terrain: "interior",
-    lighting: "bright",
-    atmosphereNotes: "Polished marble floors, crystal chandeliers, tapestries depicting Valdris history. The air smells of beeswax candles and old paper.",
-    regions: [
-      { id: "region_grand_foyer", name: "grand foyer", type: "safe", approximateSize: "medium", position: "south", dmNote: "Two guards flanking the main doors. Visitors are announced by a herald." },
-      { id: "region_council_chamber", name: "council chamber", type: "custom", approximateSize: "large", position: "center", dmNote: "The five council seats on a raised dais. Public gallery seating around the perimeter." },
-      { id: "region_reception_room", name: "grand reception room", type: "tavern", approximateSize: "large", position: "east", dmNote: "Used for formal events and council receptions. Balcony access on the east wall." },
-      { id: "region_private_offices", name: "private offices", type: "residential", approximateSize: "medium", position: "west", dmNote: "Council members' private offices. Lysara's office has a locked desk (DC 15)." },
-      { id: "region_servants_passage", name: "servants' passage", type: "street", approximateSize: "small", position: "north", dmNote: "Narrow corridor used by staff. Good for eavesdropping." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of an imposing marble government building interior. Main entrance on the south opens into a grand foyer with pillars. Central feature is a large circular council chamber with a raised dais and five ornate chairs in a semicircle. Eastern wing has a grand reception room with long banquet tables and a balcony overlooking the city. Western wing has private offices and meeting rooms connected by a corridor. Servants' passage along the northern wall connects kitchen to reception room. Interior terrain, bright lighting. Polished marble floors, crystal chandeliers, tapestries depicting city history, beeswax candles. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 3. Valdris Undercity Tunnels
   {
     id: "undercity-tunnels",
     name: "Valdris Undercity Tunnels",
-    layoutDescription:
-      "A network of old sewer tunnels and forgotten basements beneath the lower quarters. The main tunnel runs north-south through the center, roughly 10 ft wide with arched brick ceilings. Side passages branch east and west, some collapsed and impassable. A flooded section in the southeast forces a detour through a narrow crawlspace. The northwest has a slightly wider junction where three tunnels meet — this is where Zephyr's hand-drawn maps mark a rest point. Rat nests cluster in dead-end alcoves along the eastern wall. The southern exit connects to the docks; the northern passage leads toward the warehouse.",
     feetPerSquare: 5,
-    terrain: "underground",
-    lighting: "dark",
-    atmosphereNotes: "Dripping water echoing off brick walls, the scurry of rats, stale air. Occasional patches of bioluminescent fungus provide faint green light.",
-    regions: [
-      { id: "region_main_tunnel", name: "main tunnel", type: "dungeon", approximateSize: "large", position: "center", dmNote: "10 ft wide with arched ceiling. Old sewer construction, still partially functional." },
-      { id: "region_flooded_section", name: "flooded passage", type: "danger", approximateSize: "medium", position: "southeast", dmNote: "Knee-deep stagnant water. DC 12 Athletics to wade through without losing footing." },
-      { id: "region_tunnel_junction", name: "tunnel junction", type: "safe", approximateSize: "small", position: "northwest", dmNote: "Where three tunnels meet. Zephyr marks this as a safe rest point." },
-      { id: "region_rat_nests", name: "rat nest alcoves", type: "danger", approximateSize: "small", position: "east", dmNote: "Dead-end alcoves filled with debris and giant rat nests." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a network of old sewer tunnels and forgotten basements. Main tunnel runs north-south through center, roughly 10 ft wide with arched brick ceilings. Side passages branch east and west, some collapsed and impassable. Flooded section in the southeast forces a detour. Northwest has a wider junction where three tunnels meet. Rat nests cluster in dead-end alcoves along the eastern wall. Southern exit connects to docks, northern passage leads toward a warehouse. Underground terrain, dark lighting. Dripping water, brick walls, stale air, patches of bioluminescent fungus providing faint green light. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 4. Undercity Warehouse
   {
     id: "smuggler-warehouse",
     name: "Undercity Warehouse",
-    layoutDescription:
-      "A large converted basement used as a smuggler staging area. The main floor is a rectangular open space filled with crates and cargo arranged in rows. A raised wooden platform along the eastern wall holds crossbow positions overlooking the floor. The northern end has a walled-off office with a desk, lockbox, and document storage. Iron cages line the western wall — recently used to hold kidnapped victims. A tunnel entrance on the south connects to the undercity. A locked iron door in the northeast corner leads to a deeper tunnel toward the temple district.",
     feetPerSquare: 5,
-    terrain: "underground",
-    lighting: "dim",
-    atmosphereNotes: "Lantern-lit with deep shadows between crate rows. The iron cages still have personal belongings scattered inside — a child's shoe, a torn shawl.",
-    regions: [
-      { id: "region_cargo_floor", name: "cargo floor", type: "dungeon", approximateSize: "large", position: "center", dmNote: "Rows of crates provide half cover. Narrow lanes between them limit movement." },
-      { id: "region_crossbow_platform", name: "raised platform", type: "danger", approximateSize: "small", position: "east", dmNote: "Elevated 5 ft. Two bandits with crossbows have advantage on attacks against targets below." },
-      { id: "region_office", name: "smuggler's office", type: "residential", approximateSize: "small", position: "north", dmNote: "The bandit captain's office. Documents here connect deliveries to 'Brother C.' at the hospital." },
-      { id: "region_prisoner_cages", name: "prisoner cages", type: "danger", approximateSize: "medium", position: "west", dmNote: "Empty iron cages with scratches on the walls and personal effects left behind." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a large converted basement used as a smuggler staging area. Main floor is a rectangular open space filled with crates and cargo arranged in rows. Raised wooden platform along the eastern wall overlooking the floor. Northern end has a walled-off office with desk and document storage. Iron cages line the western wall. Tunnel entrance on the south connects to the undercity. Locked iron door in the northeast corner leads deeper underground. Underground terrain, dim lighting. Lantern-lit with deep shadows between crate rows, iron cages with scattered personal belongings. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 5. Brother Caelum's Hospital
   {
     id: "caelum-hospital",
     name: "Brother Caelum's Hospital",
-    layoutDescription:
-      "A modest two-story stone building converted into a charitable hospital. The ground floor has a main ward room with rows of cots along the east and west walls, a reception area near the southern entrance, and a supply closet in the southwest corner with a concealed door to the basement. The western side has Caelum's private quarters — a small bedroom and study. The basement is accessed via the concealed door and contains a corridor leading to a large ritual preparation room with arcane circles drawn on the floor, alchemical equipment on tables, and restraint chairs.",
     feetPerSquare: 5,
-    terrain: "interior",
-    lighting: "mixed",
-    atmosphereNotes: "The upper floor smells of herbs and clean linen. The basement has a coppery tang of old blood and the acrid scent of alchemical reagents. Arcane symbols glow faintly on the basement walls.",
-    regions: [
-      { id: "region_main_ward", name: "main ward", type: "temple", approximateSize: "large", position: "east", dmNote: "Rows of cots with sick and injured patients. A night nurse makes rounds." },
-      { id: "region_reception", name: "reception area", type: "safe", approximateSize: "small", position: "south", dmNote: "Simple desk and waiting benches. Locked after dark (DC 12)." },
-      { id: "region_caelum_quarters", name: "caelum's quarters", type: "residential", approximateSize: "small", position: "west", dmNote: "Sparse bedroom and study. His journal is in the desk drawer (DC 10 Investigation)." },
-      { id: "region_supply_closet", name: "supply closet", type: "custom", approximateSize: "small", position: "southwest", dmNote: "Concealed door behind shelves (DC 14 Investigation). Leads to basement stairs." },
-      { id: "region_basement_lab", name: "basement laboratory", type: "danger", approximateSize: "medium", position: "north", dmNote: "Arcane circles, alchemical equipment, restraint chairs. Evidence of the kidnapping operation." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a modest two-story stone building converted into a charitable hospital. Ground floor has a main ward room with rows of cots along east and west walls, reception area near the southern entrance, supply closet in the southwest corner with a concealed door to the basement. Western side has private quarters — a small bedroom and study. Basement accessed via concealed door contains a corridor leading to a large ritual preparation room with arcane circles on the floor, alchemical equipment on tables, and restraint chairs. Interior terrain, mixed lighting — bright herbs-and-linen upper floor, dim sinister basement with faintly glowing arcane symbols. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 6. Blackwood Estate
   {
     id: "blackwood-estate",
     name: "Blackwood Estate",
-    layoutDescription:
-      "A lavish noble estate with a grand ballroom as the centerpiece. The southern entrance leads through a pillared portico into a marble-floored foyer. The grand ballroom dominates the center — a vast room with a dance floor, crystal chandeliers, and a musicians' gallery on the upper level. The eastern wing has a formal dining room and kitchen. The western wing contains Blackwood's private study (locked, DC 15) and a library. A garden terrace extends from the northern side with hedgerows and a fountain. Servants' stairs in the northeast connect all levels.",
     feetPerSquare: 5,
-    terrain: "interior",
-    lighting: "bright",
-    atmosphereNotes: "Opulent but slightly dated decor — fur-trimmed curtains, jeweled candelabras, oil paintings of merchant ships. During the masquerade, music fills the air and masked guests mingle with champagne.",
-    regions: [
-      { id: "region_foyer", name: "entrance foyer", type: "safe", approximateSize: "small", position: "south", dmNote: "Marble floor, coat check, guards verifying guest invitations." },
-      { id: "region_grand_ballroom", name: "grand ballroom", type: "tavern", approximateSize: "large", position: "center", dmNote: "Dance floor, musicians' gallery above. The masquerade's main event space." },
-      { id: "region_dining_room", name: "formal dining room", type: "tavern", approximateSize: "medium", position: "east", dmNote: "Long banquet table. Good location for private conversations between courses." },
-      { id: "region_private_study", name: "blackwood's private study", type: "residential", approximateSize: "small", position: "west", dmNote: "Locked (DC 15). Contains private ledger with hospital funding discrepancies." },
-      { id: "region_garden_terrace", name: "garden terrace", type: "wilderness", approximateSize: "medium", position: "north", dmNote: "Hedgerows provide concealment. Good for clandestine meetings during the ball." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a lavish noble estate. Southern entrance through a pillared portico into a marble-floored foyer. Grand ballroom dominates the center — vast room with dance floor, crystal chandeliers, and musicians' gallery on upper level. Eastern wing has formal dining room and kitchen. Western wing contains a private study and library. Garden terrace extends from the northern side with hedgerows and a fountain. Servants' stairs in the northeast connect all levels. Interior terrain, bright lighting. Opulent slightly dated decor — fur-trimmed curtains, jeweled candelabras, oil paintings of merchant ships. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 7. The Narrows
   {
     id: "the-narrows",
     name: "The Narrows",
-    layoutDescription:
-      "A twisting narrow alley connecting the upper and middle quarters of Valdris. The alley is only 5-10 ft wide, hemmed in by tall three-story buildings on both sides. The main passage runs roughly north-south with a slight S-curve in the middle. Dead-end side alleys branch off to the east and west. Wooden balconies and clotheslines overhang the alley, reducing visibility. A small courtyard opens up in the center where the alley widens briefly around a dry well. The northern and southern exits connect to wider streets.",
     feetPerSquare: 5,
-    terrain: "urban",
-    lighting: "dim",
-    atmosphereNotes: "Claustrophobic and shadowy. The buildings lean inward overhead, blocking most moonlight. Puddles of questionable liquid. The distant sound of the masquerade music fading behind.",
-    regions: [
-      { id: "region_south_entrance", name: "south alley entrance", type: "street", approximateSize: "small", position: "south", dmNote: "Where the party enters from the upper quarter. Thugs block this exit." },
-      { id: "region_narrow_passage", name: "narrow passage", type: "street", approximateSize: "large", position: "center", dmNote: "The main S-curved alley. Only 5 ft wide in places — forces single file." },
-      { id: "region_courtyard", name: "dry well courtyard", type: "street", approximateSize: "small", position: "center", dmNote: "Brief widening around an old dry well. The only spot where the party can spread out." },
-      { id: "region_north_exit", name: "north alley exit", type: "street", approximateSize: "small", position: "north", dmNote: "Exit toward the middle quarter. Thugs block this side too." },
-      { id: "region_dead_end", name: "dead-end side alley", type: "danger", approximateSize: "small", position: "west", dmNote: "The spy assassin lurks here, waiting to strike from the shadows." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a twisting narrow alley connecting two city quarters. Alley is only 5-10 ft wide, hemmed in by tall three-story buildings on both sides. Main passage runs roughly north-south with a slight S-curve in the middle. Dead-end side alleys branch east and west. Wooden balconies and clotheslines overhang the alley reducing visibility. Small courtyard opens in the center where the alley widens around a dry well. Northern and southern exits connect to wider streets. Urban terrain, dim lighting. Claustrophobic and shadowy, buildings leaning inward overhead, puddles, faint moonlight. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
-
-  // 8. Ancient Temple Complex
   {
     id: "ancient-temple",
     name: "Ancient Temple Complex",
-    layoutDescription:
-      "A vast underground temple predating the city of Valdris by centuries. The entrance is a descending staircase from the north leading into a main hall with crumbling stone pillars and faded murals. The central corridor runs south through a trapped hallway with pressure plates and arcane glyphs. A collapsed bridge spans a deep chasm in the middle section — only partially passable. The eastern wing has the preparation chamber where kidnapped victims are held in arcane circles. The western wing contains the grand ritual chamber — a massive cathedral-like space with a 30 ft diameter ritual circle inscribed in the floor, an altar at the center, and tiered viewing galleries above. Ancient statues of forgotten gods flank the ritual circle.",
     feetPerSquare: 5,
-    terrain: "dungeon",
-    lighting: "dark",
-    atmosphereNotes: "Ancient stonework covered in moss and dried blood. Faded murals depict robed figures performing the original Crimson Accord. A low hum of arcane energy resonates through the walls. The air is thick and warm despite being underground.",
-    regions: [
-      { id: "region_entrance_hall", name: "entrance hall", type: "dungeon", approximateSize: "medium", position: "north", dmNote: "Crumbling pillars and faded murals. Animated armor guardians activate here." },
-      { id: "region_trapped_corridor", name: "trapped corridor", type: "danger", approximateSize: "medium", position: "center", dmNote: "Pressure plate (DC 13) and arcane glyph ward (DC 14). Forces careful navigation." },
-      { id: "region_chasm_bridge", name: "chasm bridge", type: "danger", approximateSize: "small", position: "center", dmNote: "Partially collapsed stone bridge. DC 12 Athletics to cross, 2d6 falling on failure." },
-      { id: "region_preparation_chamber", name: "preparation chamber", type: "danger", approximateSize: "large", position: "east", dmNote: "Kidnapped victims held in 6 arcane circles. Specters haunt this area. Zephyr's sibling Sera is here." },
-      { id: "region_ritual_chamber", name: "grand ritual chamber", type: "dungeon", approximateSize: "large", position: "west", dmNote: "The climactic battle arena. 30 ft ritual circle at center, altar, tiered galleries. Lysara makes her stand here." },
-    ],
+    imagePrompt:
+      "Top-down fantasy D&D battle map of a vast ancient underground temple. Entrance is a descending staircase from the north leading into a main hall with crumbling stone pillars and faded murals. Central corridor runs south through a trapped hallway. Collapsed bridge spans a deep chasm in the middle section. Eastern wing has a preparation chamber with arcane circles. Western wing contains the grand ritual chamber — a massive cathedral-like space with a 30 ft diameter ritual circle inscribed in the floor, an altar at the center, and tiered viewing galleries above. Ancient statues of forgotten gods flank the ritual circle. Dungeon terrain, dark lighting. Ancient stonework covered in moss and dried blood, faded murals of robed figures, a low hum of arcane energy, thick warm air. Detailed tabletop RPG battle map, painted illustration, no text, no labels.",
   },
 ];
 
@@ -187,8 +95,8 @@ const CRIMSON_ACCORD_EXPLORATION_MAP_SPECS: CampaignExplorationMapSpec[] = [
   {
     id: "valdris-city",
     name: "The Free City of Valdris",
-    imageDescription:
-      "A sprawling top-down view of a medieval port city. The southern edge borders a harbor with wooden docks and moored cargo ships. The city rises northward through narrow streets lined with stone buildings, from crowded lower quarters to an elegant upper district with marble government buildings and noble estates. A river or canal cuts through the middle. Temple spires and market squares dot the landscape. The overall tone is dim and atmospheric — a city of intrigue beneath torchlit streets.",
+    imagePrompt:
+      "Top-down bird's-eye view of a sprawling medieval fantasy port city. Southern edge borders a harbor with wooden docks and moored cargo ships. City rises northward through narrow streets lined with stone buildings, from crowded lower quarters to an elegant upper district with marble government buildings and noble estates. A river or canal cuts through the middle. Temple spires and market squares dot the landscape. Dim and atmospheric — a city of intrigue beneath torchlit streets. Detailed fantasy cartography, parchment-style overworld map, painted illustration, warm muted colors, atmospheric lighting, no text, no labels, no grid lines.",
     pointsOfInterest: [
       {
         id: "poi_docks",

@@ -434,19 +434,6 @@ export const DEFAULT_CAMPAIGN_SLUG = "the-crimson-accord";
 
 // ─── Campaign Map Types ──────────────────────────────────────────────────────
 
-/** Region blueprint for a campaign map — guides the map generator. */
-export interface CampaignMapRegionSpec {
-  id: string;                      // "region_main_hall"
-  name: string;                    // "main hall"
-  type: RegionType;
-  approximateSize: "small" | "medium" | "large";
-  position?: "north" | "south" | "east" | "west" | "center"
-    | "northeast" | "northwest" | "southeast" | "southwest";
-  dmNote?: string;
-  defaultNPCSlugs?: string[];
-  shopInventory?: string[];
-}
-
 /** Point-of-interest blueprint for a campaign exploration map. */
 export interface CampaignPOISpec {
   id: string;                      // "poi_docks"
@@ -465,24 +452,16 @@ export interface CampaignPOISpec {
 export interface CampaignExplorationMapSpec {
   id: string;                      // "valdris-city"
   name: string;                    // "The Free City of Valdris"
-  imageDescription: string;        // Prose description for image generation
-  atmosphereNotes?: string;
+  imagePrompt: string;             // Copy-pasteable prompt for AI image generation
   pointsOfInterest: CampaignPOISpec[];
 }
 
-/**
- * Blueprint for a combat (tactical battle grid) map.
- * Contains enough detail for a future generator to produce a CombatMapDocument.
- */
+/** Blueprint for a combat (tactical battle grid) map. */
 export interface CampaignCombatMapSpec {
   id: string;                      // "valdris-docks" — unique within the campaign
   name: string;                    // "Valdris Docks, Pier 7"
-  layoutDescription: string;       // Prose description of physical layout for the generator
   feetPerSquare: number;           // 5 for indoor/dungeon, 50-100 for zone
-  terrain: "urban" | "dungeon" | "wilderness" | "underground" | "interior" | "mixed";
-  lighting: "bright" | "dim" | "dark" | "mixed";
-  atmosphereNotes?: string;        // Visual/mood hints for image generation
-  regions: CampaignMapRegionSpec[];
+  imagePrompt: string;             // Copy-pasteable prompt for AI image generation
 }
 
 /** @deprecated Use CampaignCombatMapSpec instead. Kept for backwards compatibility. */
