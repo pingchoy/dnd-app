@@ -21,15 +21,21 @@ import {
   serializePlayerState,
   serializeStoryState,
   updateNPC,
+  getSessionImportantEvents,
+  getSessionSupportingNPCs,
+  addSupportingNPC,
 } from "../lib/gameState";
 import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
-import { handleSRDQuery, handleCampaignQuery } from "./agentUtils";
+import { handleSRDQuery, handleCampaignQuery, handleSessionMemoryQuery } from "./agentUtils";
+import { getSupportingNPCProfile } from "./supportingNpcAgent";
 import {
   UPDATE_GAME_STATE_TOOL,
   UPDATE_NPC_TOOL,
   QUERY_SRD_TOOL,
   QUERY_CAMPAIGN_TOOL,
+  CREATE_SUPPORTING_NPC_TOOL,
+  QUERY_SESSION_MEMORY_TOOL,
 } from "./tools";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -164,6 +170,8 @@ export async function getDMResponse(
   const tools: Anthropic.Messages.Tool[] = [
     UPDATE_GAME_STATE_TOOL,
     UPDATE_NPC_TOOL,
+    CREATE_SUPPORTING_NPC_TOOL,
+    QUERY_SESSION_MEMORY_TOOL,
     ...(campaignSlug ? [QUERY_CAMPAIGN_TOOL] : []),
     { ...QUERY_SRD_TOOL, cache_control: { type: "ephemeral" } },
   ];
@@ -208,7 +216,7 @@ export async function getDMResponse(
     const hasLookupCall = response.content.some(
       (b) =>
         b.type === "tool_use" &&
-        (b.name === "query_srd" || b.name === "query_campaign"),
+        (b.name === "query_srd" || b.name === "query_campaign" || b.name === "query_session_memory"),
     );
 
     for (const block of response.content) {
@@ -312,6 +320,50 @@ export async function getDMResponse(
           type: "tool_result",
           tool_use_id: block.id,
           content: resultContent,
+        });
+      } else if (block.name === "query_session_memory") {
+        hasQuerySRD = true; // needs continuation like SRD/campaign queries
+        const input = block.input as { query_type: string };
+        console.log(
+          `[DM Agent] Tool call: query_session_memory (${input.query_type})`,
+        );
+        const resultContent = handleSessionMemoryQuery(
+          input,
+          getSessionImportantEvents(),
+          getSessionSupportingNPCs(),
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: resultContent,
+        });
+      } else if (block.name === "create_supporting_npc") {
+        const input = block.input as {
+          name: string;
+          role: string;
+          context: string;
+          combat_slug?: string;
+        };
+        console.log(
+          `[DM Agent] Tool call: create_supporting_npc — ${input.name} (${input.role})`,
+        );
+        const result = await getSupportingNPCProfile({
+          name: input.name,
+          role: input.role,
+          context: input.context,
+          combatSlug: input.combat_slug,
+          currentLocation: gameState.story.currentLocation,
+        });
+        addSupportingNPC(result.npc);
+        totalInputTokens += result.inputTokens;
+        totalOutputTokens += result.outputTokens;
+        console.log(
+          `[DM Agent] Created supporting NPC: ${result.npc.id} (${result.npc.role})`,
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: JSON.stringify({ ok: true, npc_id: result.npc.id }),
         });
       }
     }
