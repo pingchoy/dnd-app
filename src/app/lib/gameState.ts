@@ -629,6 +629,8 @@ export interface StateChanges {
   cantrips_learned?: string[];
   /** NPCs the DM wants to introduce. Handled by the API route, not applied to state directly. */
   npcs_to_create?: NPCToCreate[];
+  /** NPC IDs to remove from the scene (friendly/neutral NPCs departing). */
+  npcs_to_dismiss?: string[];
   // ─── Memory tier fields ───
   /** A major plot milestone to record permanently (e.g. "defeated the shadow dragon"). */
   milestone?: string;
