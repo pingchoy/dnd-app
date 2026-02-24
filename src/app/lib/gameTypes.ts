@@ -725,8 +725,8 @@ export interface StoredSession {
   characterIds: string[];
   /** Firestore ID of the currently active exploration map. */
   currentExplorationMapId?: string;
-  /** Currently active PointOfInterest.id within the exploration map. */
-  currentPOIId?: string;
+  /** Currently active PointOfInterest.id within the exploration map. Null when on world map. */
+  currentPOIId?: string | null;
   /** @deprecated Use currentExplorationMapId / currentPOIId instead. Which combat map is currently displayed. */
   activeMapId?: string;
   /** @deprecated Exploration-mode token positions keyed by "player" or characterId. */

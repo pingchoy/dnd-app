@@ -203,7 +203,7 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       set_current_poi: {
         type: "string",
         description:
-          "Set the current POI ID where the party is located. Use when the party travels to a new point of interest.",
+          'Set the current POI ID where the party is located. Use when the party travels to a new point of interest. Set to "none" to clear the POI and return the player to the world map overview (e.g. when traveling on roads between locations).',
       },
     },
     required: [],

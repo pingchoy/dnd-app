@@ -1046,7 +1046,7 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   // Load session-level spatial data (exploration map, POI, positions)
   const session = await loadSession(stored.sessionId);
   currentExplorationMapId = session?.currentExplorationMapId ?? session?.activeMapId;
-  currentPOIId = session?.currentPOIId;
+  currentPOIId = session?.currentPOIId ?? undefined;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
 

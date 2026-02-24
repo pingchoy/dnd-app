@@ -437,11 +437,14 @@ async function processChatAction(
           }
         }
 
-        // Update the current POI — explicit set_current_poi takes priority
-        let resolvedPoiId = dmResult.stateChanges!.set_current_poi;
+        // Update the current POI — explicit set_current_poi takes priority.
+        // "none" means the DM explicitly wants to return to the world map.
+        const explicitPoi = dmResult.stateChanges!.set_current_poi;
+        const wantsWorldMap = explicitPoi === "none";
+        let resolvedPoiId: string | undefined = wantsWorldMap ? undefined : explicitPoi;
 
         // Auto-resolve POI from location_changed if set_current_poi wasn't provided
-        if (!resolvedPoiId && dmResult.stateChanges!.location_changed) {
+        if (!resolvedPoiId && !wantsWorldMap && dmResult.stateChanges!.location_changed) {
           const loc = dmResult.stateChanges!.location_changed.toLowerCase();
           const matched = explMap.pointsOfInterest.find(
             (p) =>
@@ -465,6 +468,12 @@ async function processChatAction(
             await saveSessionState(sessionId, { currentPOIId: resolvedPoiId });
             console.log(`[POI] Set current POI to "${poi.name}" (${poi.id})`);
           }
+        } else if (wantsWorldMap || dmResult.stateChanges!.location_changed) {
+          // Location doesn't match any POI, or DM explicitly set "none" — clear
+          // the current POI so the frontend reverts to the world map overview.
+          setCurrentPOIId(undefined);
+          await saveSessionState(sessionId, { currentPOIId: null });
+          console.log(`[POI] Cleared current POI — returning to world map`);
         }
 
         if (mapDirty) {
