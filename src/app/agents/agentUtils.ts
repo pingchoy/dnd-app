@@ -5,6 +5,7 @@
  */
 
 import { querySRD, getCampaignAct } from "../lib/characterStore";
+import type { SupportingNPC } from "../lib/gameTypes";
 
 /**
  * Handle a query_srd tool call, enforcing a per-turn query limit.
@@ -62,6 +63,7 @@ export async function handleCampaignQuery(
   },
   campaignSlug: string | undefined,
   currentAct: number,
+  completedStoryBeats: string[],
   queryCount: number,
   maxQueries: number,
   agentLabel: string,
@@ -103,7 +105,12 @@ export async function handleCampaignQuery(
         resultContent: `{"error":"Act ${actNum} not found."}`,
         newCount: queryCount + 1,
       };
-    return { resultContent: JSON.stringify(act), newCount: queryCount + 1 };
+    // Strip storyBeats — DM only sees beat details via the serialized context
+    const { storyBeats: _storyBeats, ...actWithoutBeats } = act;
+    return {
+      resultContent: JSON.stringify(actWithoutBeats),
+      newCount: queryCount + 1,
+    };
   }
 
   if (input.type === "story_beat") {
@@ -122,6 +129,28 @@ export async function handleCampaignQuery(
         resultContent: `{"error":"Story beat '${input.story_beat_name}' not found in act ${actNum}."}`,
         newCount: queryCount + 1,
       };
+
+    // Only allow querying the current (next uncompleted) beat or already-completed beats
+    const completedSet = new Set(
+      completedStoryBeats.map((n) => n.trim().toLowerCase()),
+    );
+    const remaining = act.storyBeats.filter(
+      (b) => !completedSet.has(b.name.trim().toLowerCase()),
+    );
+    const currentBeatName = remaining[0]?.name.trim().toLowerCase();
+    const requestedName = beat.name.trim().toLowerCase();
+
+    if (
+      requestedName !== currentBeatName &&
+      !completedSet.has(requestedName)
+    ) {
+      return {
+        resultContent:
+          '{"error":"Cannot query future story beats — focus on the current beat."}',
+        newCount: queryCount + 1,
+      };
+    }
+
     return { resultContent: JSON.stringify(beat), newCount: queryCount + 1 };
   }
 
@@ -129,5 +158,43 @@ export async function handleCampaignQuery(
     resultContent: '{"error":"Unknown query type."}',
     newCount: queryCount,
   };
+}
+
+/**
+ * Format session memory (important events and/or supporting NPCs) as a string
+ * for the DM agent's tool result.
+ */
+export function handleSessionMemoryQuery(
+  input: { query_type: string },
+  importantEvents: string[],
+  supportingNPCs: SupportingNPC[],
+): string {
+  const parts: string[] = [];
+
+  if (input.query_type === "important_events" || input.query_type === "all") {
+    if (importantEvents.length > 0) {
+      parts.push("IMPORTANT EVENTS:\n" + importantEvents.map((e, i) => `${i + 1}. ${e}`).join("\n"));
+    } else {
+      parts.push("No important events recorded yet.");
+    }
+  }
+
+  if (input.query_type === "supporting_npcs" || input.query_type === "all") {
+    if (supportingNPCs.length > 0) {
+      const npcLines = supportingNPCs.map((npc) => {
+        let line = `- ${npc.name} [${npc.role}] (${npc.location})`;
+        if (npc.appearance) line += ` — ${npc.appearance}`;
+        if (npc.personality) line += ` Personality: ${npc.personality}`;
+        if (npc.motivations.length > 0) line += ` Wants: ${npc.motivations.join(", ")}`;
+        if (npc.notes) line += ` Notes: ${npc.notes}`;
+        return line;
+      });
+      parts.push("SUPPORTING NPCs:\n" + npcLines.join("\n"));
+    } else {
+      parts.push("No supporting NPCs recorded yet.");
+    }
+  }
+
+  return parts.join("\n\n");
 }
 

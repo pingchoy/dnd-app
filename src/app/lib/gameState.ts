@@ -98,6 +98,7 @@ import {
   xpForLevel,
   XP_THRESHOLDS,
   applyEffects,
+  SupportingNPC,
 } from "./gameTypes";
 
 import { parseSpellRange } from "./combatEnforcement";
@@ -375,40 +376,45 @@ export function serializeCampaignContext(
     );
 
     if (remaining.length > 0) {
-      const next = remaining[0];
+      const current = remaining[0];
       lines.push("");
       lines.push(
-        `>>> NEXT STORY BEAT (GUIDE THE PLAYER HERE): ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`,
+        `>>> CURRENT STORY BEAT: ${current.name} (${current.type}, ${current.difficulty}) @ ${current.location}`,
       );
       lines.push(
-        `DIRECTIVE: Steer the player toward "${next.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`,
+        `DIRECTIVE: Steer the player toward "${current.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`,
       );
-      if (next.dmGuidance) lines.push(next.dmGuidance);
-      if (next.enemies?.length) {
+      lines.push(
+        `>>> BEAT COMPLETE WHEN: ${current.completionTrigger}`,
+      );
+      if (current.dmGuidance) lines.push(current.dmGuidance);
+      if (current.enemies?.length) {
         lines.push(
-          `Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`,
+          `Enemies: ${current.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`,
         );
       }
-      if (next.npcInvolvement?.length) {
-        lines.push(`NPCs involved: ${next.npcInvolvement.join(", ")}`);
+      if (current.npcInvolvement?.length) {
+        lines.push(`NPCs involved: ${current.npcInvolvement.join(", ")}`);
       }
-      if (next.rewards) {
+      if (current.rewards) {
         const parts: string[] = [];
-        if (next.rewards.xp) parts.push(`${next.rewards.xp} XP`);
-        if (next.rewards.gold) parts.push(`${next.rewards.gold} gold`);
-        if (next.rewards.items?.length)
-          parts.push(next.rewards.items.join(", "));
+        if (current.rewards.xp) parts.push(`${current.rewards.xp} XP`);
+        if (current.rewards.gold) parts.push(`${current.rewards.gold} gold`);
+        if (current.rewards.items?.length)
+          parts.push(current.rewards.items.join(", "));
         if (parts.length) lines.push(`Rewards: ${parts.join(", ")}`);
       }
 
+      // One-beat peek-ahead: name, type, and location only
       if (remaining.length > 1) {
+        const peek = remaining[1];
         lines.push("");
         lines.push(
-          "UPCOMING STORY BEATS (do not skip ahead — complete the next story beat first):",
+          `NEXT UP (preview only): ${peek.name} (${peek.type}) @ ${peek.location}`,
         );
-        for (const enc of remaining.slice(1)) {
-          lines.push(`  - ${enc.name} (${enc.type}, ${enc.difficulty})`);
-        }
+      }
+      if (remaining.length > 2) {
+        lines.push(`${remaining.length - 1} more beats remain in this act.`);
       }
     }
   }
@@ -532,6 +538,10 @@ let currentPOIId: string | undefined;
 let currentExplorationPositions: Record<string, GridPosition> | undefined;
 /** Campaign slug from the session — set by loadGameState(). */
 let currentCampaignSlug: string | undefined;
+/** Important events from the session — set by loadGameState(). */
+let sessionImportantEvents: string[] | undefined;
+/** Supporting NPCs from the session — set by loadGameState(). */
+let sessionSupportingNPCs: SupportingNPC[] | undefined;
 
 // ─── Encounter singleton ─────────────────────────────────────────────────────
 
@@ -579,6 +589,19 @@ export function getCampaignSlug(): string | undefined {
   return currentCampaignSlug;
 }
 
+export function getSessionImportantEvents(): string[] {
+  return sessionImportantEvents ?? [];
+}
+
+export function getSessionSupportingNPCs(): SupportingNPC[] {
+  return sessionSupportingNPCs ?? [];
+}
+
+export function addSupportingNPC(npc: SupportingNPC): void {
+  if (!sessionSupportingNPCs) sessionSupportingNPCs = [];
+  sessionSupportingNPCs.push(npc);
+}
+
 export function getEncounter(): StoredEncounter | null {
   return encounter;
 }
@@ -610,6 +633,8 @@ export interface StateChanges {
   location_changed?: string;
   scene_update?: string;
   notable_event?: string;
+  /** An important event to remember permanently (e.g. "allied with the dockworkers guild"). More granular than milestones, never rolls off like recentEvents. */
+  important_event?: string;
   gold_delta?: number;
   xp_gained?: number;
   weapons_gained?: Array<{
@@ -680,6 +705,7 @@ export function mergeStateChanges(
     "location_changed",
     "scene_update",
     "notable_event",
+    "important_event",
     "milestone",
     "campaign_summary_update",
     "story_beat_completed",
@@ -784,6 +810,11 @@ export function applyStateChanges(changes: StateChanges): void {
   if (changes.notable_event) {
     s.recentEvents.push(changes.notable_event);
     if (s.recentEvents.length > 10) s.recentEvents = s.recentEvents.slice(-10);
+  }
+  if (changes.important_event) {
+    if (!s.importantEvents) s.importantEvents = [];
+    s.importantEvents.push(changes.important_event.toLowerCase());
+    if (s.importantEvents.length > 50) s.importantEvents = s.importantEvents.slice(-50);
   }
   // ─── Memory tier mutations ───
   if (changes.milestone) {
@@ -1259,6 +1290,10 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   currentPOIId = session?.currentPOIId ?? undefined;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
+
+  // Load session memory (important events, supporting NPCs)
+  sessionImportantEvents = session?.importantEvents;
+  sessionSupportingNPCs = session?.supportingNPCs;
 
   // Hydrate encounter if one is active
   encounter = null;

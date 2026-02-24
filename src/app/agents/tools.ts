@@ -59,6 +59,10 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         type: "string",
         description: "Key event to record (past tense, 1 sentence).",
       },
+      important_event: {
+        type: "string",
+        description: "An important event to remember permanently — alliances formed, secrets discovered, promises made, faction shifts. More significant than notable_event (which rolls off after 10), less dramatic than milestone (major plot beats only).",
+      },
       gold_delta: {
         type: "number",
         description: "Gold change. Negative = spending, positive = receiving.",
@@ -374,6 +378,52 @@ export const QUERY_CAMPAIGN_TOOL: Anthropic.Tool = {
       },
     },
     required: ["type"],
+  },
+};
+
+export const CREATE_SUPPORTING_NPC_TOOL: Anthropic.Tool = {
+  name: "create_supporting_npc",
+  description:
+    "Create a persistent profile for a non-campaign NPC worth remembering. Call this when introducing a named NPC that isn't in the campaign script and seems important enough to recall later (e.g. a helpful shopkeeper, a suspicious stranger, a rescued prisoner). Do NOT use for campaign NPCs or generic unnamed NPCs.",
+  input_schema: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "The NPC's name (e.g. 'Old Marta', 'Bartender Gideon').",
+      },
+      role: {
+        type: "string",
+        enum: ["ally", "rival", "neutral", "informant", "merchant", "quest_giver"],
+        description: "The NPC's relationship to the party.",
+      },
+      context: {
+        type: "string",
+        description: "1-2 sentences about who they are and why they matter.",
+      },
+      combat_slug: {
+        type: "string",
+        description: "Optional SRD monster slug if this NPC might fight (e.g. 'commoner', 'guard', 'noble').",
+      },
+    },
+    required: ["name", "role", "context"],
+  },
+};
+
+export const QUERY_SESSION_MEMORY_TOOL: Anthropic.Tool = {
+  name: "query_session_memory",
+  description:
+    "Recall important events and supporting NPCs from this session's history. Call this when the player references past events, NPCs, or relationships that aren't in your immediate context. Costs no API call — just a database read.",
+  input_schema: {
+    type: "object",
+    properties: {
+      query_type: {
+        type: "string",
+        enum: ["important_events", "supporting_npcs", "all"],
+        description: "'important_events' = significant past events. 'supporting_npcs' = non-campaign NPCs met during play. 'all' = both.",
+      },
+    },
+    required: ["query_type"],
   },
 };
 

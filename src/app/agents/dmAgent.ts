@@ -21,15 +21,21 @@ import {
   serializePlayerState,
   serializeStoryState,
   updateNPC,
+  getSessionImportantEvents,
+  getSessionSupportingNPCs,
+  addSupportingNPC,
 } from "../lib/gameState";
 import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
-import { handleSRDQuery, handleCampaignQuery } from "./agentUtils";
+import { handleSRDQuery, handleCampaignQuery, handleSessionMemoryQuery } from "./agentUtils";
+import { getSupportingNPCProfile } from "./supportingNpcAgent";
 import {
   UPDATE_GAME_STATE_TOOL,
   UPDATE_NPC_TOOL,
   QUERY_SRD_TOOL,
   QUERY_CAMPAIGN_TOOL,
+  CREATE_SUPPORTING_NPC_TOOL,
+  QUERY_SESSION_MEMORY_TOOL,
 } from "./tools";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -70,11 +76,12 @@ STATE TRACKING — use update_game_state on EVERY turn to keep the game state cu
 - location_changed: Set whenever the player moves to a new named location ("Valdris Docks", "The Gilded Tankard", "Sewers beneath the market district").
 - set_current_poi: ALWAYS set this when the party travels to a different POI on the exploration map. Use the POI's id (e.g. "poi_docks"). This updates the map marker so the player sees where they are. If the player says they want to go somewhere that matches a POI name, set it immediately. Set to "none" when the party leaves a POI for a location that isn't on the map (e.g. traveling roads, wilderness, or locations without a POI) — this returns the player to the world map overview.
 - notable_event: Granular short-term events ("spoke with the barkeep", "found a hidden passage", "bought a healing potion"). Record one per turn when something noteworthy happens.
+- important_event: Significant events worth remembering for the entire campaign — alliances formed ("allied with the dockworkers guild"), secrets discovered ("learned the mayor is secretly a vampire"), promises made ("swore to protect the orphanage"), faction relationships changing ("earned the thieves guild's trust"). These persist permanently (unlike notable_event which rolls off). Use when the event shapes future interactions but isn't a major plot milestone.
 - milestone: Permanent major plot beats only ("defeated the shadow dragon", "betrayed by captain aldric", "completed the thieves guild initiation"). Use sparingly — 1-2 per session at most. These are never forgotten.
 - campaign_summary_update: Rewrite only when the story fundamentally shifts — a new act begins, a major revelation changes everything, or the core quest changes direction. Do NOT update for minor progress.
 - quests_added / quests_completed: Track quest objectives as the player accepts or resolves them. Use short descriptive names ("find the cult leader", "retrieve lyra's stolen holy symbol").
 - npcs_met: Record campaign NPCs the player has met using their [id] from the NPC list (e.g. "lysara-thorne", "captain-aldric-vane"). Only story-relevant characters, not every shopkeeper or guard.
-- story_beat_completed: CRITICAL — set this the SAME TURN the NEXT STORY BEAT wraps up. Use the exact beat name shown in NEXT STORY BEAT. A beat is complete when its core scene has played out: the social encounter concluded, the combat won, the exploration finished, or the key information was delivered. The "Transition:" line in the beat's guidance tells you what marks the end — once that transition happens, the beat is done. Do NOT wait extra turns. If you narrated the transition, include story_beat_completed in the SAME update_game_state call.
+- story_beat_completed: CRITICAL — set this the SAME TURN the CURRENT STORY BEAT wraps up. Use the exact beat name shown in CURRENT STORY BEAT. The "BEAT COMPLETE WHEN" line tells you exactly when to set this — once that condition is met, the beat is done. Do NOT wait extra turns. If you narrated the completion, include story_beat_completed in the SAME update_game_state call. Combat/boss beats are auto-completed when all hostiles die — you do NOT need to set story_beat_completed for combat or boss beats.
 
 FORMATTING:
 - Use **bold** for key names, places, and dramatic moments.
@@ -86,15 +93,26 @@ CAMPAIGN CONTEXT:
 - When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
 - Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
-- When the NEXT STORY BEAT concludes, you MUST call update_game_state with story_beat_completed (see STATE TRACKING above). Without this, the story will not advance to the next beat.
+- When the CURRENT STORY BEAT concludes (the BEAT COMPLETE WHEN condition is met), you MUST call update_game_state with story_beat_completed (see STATE TRACKING above). Without this, the story will not advance to the next beat. Combat/boss beats auto-complete — only set story_beat_completed for social, exploration, and puzzle beats.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
 - EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists POIs the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them.
 
 WHEN TO USE query_campaign:
 - type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes for the CURRENT ACT so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen. NPC data is act-scoped — it only contains what you should know right now, never future-act spoilers.
-- type='story_beat': Call when the NEXT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during.
-- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act.
+- type='story_beat': Call when the CURRENT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during. Only the current beat and already-completed beats can be queried — future beats are blocked.
+- type='act': Call when you need act-level context — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act. Returns act metadata only (no individual beat details).
 - Do NOT call query_campaign for information already visible in the briefing. Only call it when you need deeper detail.
+
+WHEN TO USE query_session_memory:
+- Call when the player references past events, NPCs, or relationships that aren't in your immediate context (CAMPAIGN STATE section).
+- Call when you need to recall what happened earlier in the campaign but the details aren't in recentEvents or milestones.
+- The query costs nothing — it's a local database read, not an API call. Don't hesitate to use it.
+
+WHEN TO USE create_supporting_npc:
+- Call when you introduce a named NPC that is NOT listed in the campaign's NPC roster but seems worth remembering for future interactions.
+- Good candidates: helpful shopkeepers, suspicious strangers, rescued prisoners, informants, quest givers who appeared organically.
+- Do NOT use for: campaign NPCs (already tracked), unnamed generic NPCs (guards, commoners), or enemies (use npcs_to_create for combat stat blocks).
+- The NPC profile is generated automatically — just provide the name, role, and a brief context sentence.
 
 TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
 
@@ -165,6 +183,8 @@ export async function getDMResponse(
   const tools: Anthropic.Messages.Tool[] = [
     UPDATE_GAME_STATE_TOOL,
     UPDATE_NPC_TOOL,
+    CREATE_SUPPORTING_NPC_TOOL,
+    QUERY_SESSION_MEMORY_TOOL,
     ...(campaignSlug ? [QUERY_CAMPAIGN_TOOL] : []),
     { ...QUERY_SRD_TOOL, cache_control: { type: "ephemeral" } },
   ];
@@ -209,7 +229,7 @@ export async function getDMResponse(
     const hasLookupCall = response.content.some(
       (b) =>
         b.type === "tool_use" &&
-        (b.name === "query_srd" || b.name === "query_campaign"),
+        (b.name === "query_srd" || b.name === "query_campaign" || b.name === "query_session_memory"),
     );
 
     for (const block of response.content) {
@@ -303,6 +323,7 @@ export async function getDMResponse(
           input,
           campaignSlug,
           gameState.story.currentAct ?? 1,
+          gameState.story.completedStoryBeats ?? [],
           campaignQueryCount,
           MAX_SRD_QUERIES,
           "DM Agent",
@@ -312,6 +333,50 @@ export async function getDMResponse(
           type: "tool_result",
           tool_use_id: block.id,
           content: resultContent,
+        });
+      } else if (block.name === "query_session_memory") {
+        hasQuerySRD = true; // needs continuation like SRD/campaign queries
+        const input = block.input as { query_type: string };
+        console.log(
+          `[DM Agent] Tool call: query_session_memory (${input.query_type})`,
+        );
+        const resultContent = handleSessionMemoryQuery(
+          input,
+          getSessionImportantEvents(),
+          getSessionSupportingNPCs(),
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: resultContent,
+        });
+      } else if (block.name === "create_supporting_npc") {
+        const input = block.input as {
+          name: string;
+          role: string;
+          context: string;
+          combat_slug?: string;
+        };
+        console.log(
+          `[DM Agent] Tool call: create_supporting_npc — ${input.name} (${input.role})`,
+        );
+        const result = await getSupportingNPCProfile({
+          name: input.name,
+          role: input.role,
+          context: input.context,
+          combatSlug: input.combat_slug,
+          currentLocation: gameState.story.currentLocation,
+        });
+        addSupportingNPC(result.npc);
+        totalInputTokens += result.inputTokens;
+        totalOutputTokens += result.outputTokens;
+        console.log(
+          `[DM Agent] Created supporting NPC: ${result.npc.id} (${result.npc.role})`,
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: JSON.stringify({ ok: true, npc_id: result.npc.id }),
         });
       }
     }

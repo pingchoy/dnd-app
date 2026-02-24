@@ -41,6 +41,7 @@ import {
   serializeExplorationContext,
   serializeRegionContext,
   setEncounter,
+  getSessionSupportingNPCs,
   updateNPC,
 } from "../../lib/gameState";
 import {
@@ -165,20 +166,23 @@ async function processChatAction(
   const agentLabel = inCombat ? "Combat Agent" : "DM Agent";
   const agentModel = inCombat ? MODELS.UTILITY : MODELS.NARRATIVE;
 
+  // Fetch campaign + act unconditionally — needed for both DM context and combat beat auto-completion
+  const campaignSlug = getCampaignSlug();
+  let act: Awaited<ReturnType<typeof getCampaignAct>> = null;
+  if (campaignSlug) {
+    const actNumber = gameState.story.currentAct ?? 1;
+    act = await getCampaignAct(campaignSlug, actNumber);
+  }
+
   // Build DM context (campaign briefing + spatial awareness) — skipped during combat
   let dmContext: string | undefined;
-  let campaignSlug: string | undefined;
-  let act: Awaited<ReturnType<typeof getCampaignAct>> = null;
   if (!inCombat) {
     const contextParts: string[] = [];
 
     // Campaign context
-    campaignSlug = getCampaignSlug();
     if (campaignSlug) {
       const campaign = await getCampaign(campaignSlug);
       if (campaign) {
-        const actNumber = gameState.story.currentAct ?? 1;
-        act = await getCampaignAct(campaignSlug, actNumber);
         contextParts.push(
           serializeCampaignContext(
             campaign,
@@ -528,6 +532,49 @@ async function processChatAction(
   // Apply state changes and persist to Firestore (including encounter state if active)
   console.log("[Persist] Applying state changes and saving to Firestore...");
   await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
+
+  // Persist session-level supporting NPCs (not part of StoryState, stored on session doc)
+  const supportingNPCs = getSessionSupportingNPCs();
+  if (supportingNPCs.length > 0) {
+    await saveSessionState(sessionId, { supportingNPCs });
+  }
+
+  // Auto-complete combat/boss beats when combat ends
+  // Check: was in combat at start, encounter now cleared, current beat is combat/boss type,
+  // and the agent didn't already mark a beat completed this turn.
+  const combatJustEnded =
+    inCombat &&
+    !getEncounter()?.activeNPCs.some(
+      (n) => n.disposition === "hostile" && n.currentHp > 0,
+    );
+  if (
+    combatJustEnded &&
+    campaignSlug &&
+    act &&
+    !dmResult.stateChanges?.story_beat_completed
+  ) {
+    const completed = new Set(
+      (gameState.story.completedStoryBeats ?? []).map((n) =>
+        n.trim().toLowerCase(),
+      ),
+    );
+    const remaining = act.storyBeats.filter(
+      (b) => !completed.has(b.name.trim().toLowerCase()),
+    );
+    const currentBeat = remaining[0];
+    if (
+      currentBeat &&
+      (currentBeat.type === "combat" || currentBeat.type === "boss")
+    ) {
+      console.log(
+        `[Story] Auto-completing combat beat: "${currentBeat.name}"`,
+      );
+      await applyStateChangesAndPersist(
+        { story_beat_completed: currentBeat.name },
+        characterId,
+      );
+    }
+  }
 
   // When the act advances, set the new act's starting POI
   if (dmResult.stateChanges?.act_advance && campaignSlug) {
