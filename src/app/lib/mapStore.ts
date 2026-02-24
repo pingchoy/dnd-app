@@ -165,6 +165,12 @@ export async function loadCampaignMap(
   return snap.data() as CampaignMap;
 }
 
+export interface InstantiatedCampaignMaps {
+  maps: MapDocument[];
+  /** Maps campaign spec IDs (e.g. "valdris-city") to session-scoped Firestore map IDs. */
+  specIdToSessionId: Map<string, string>;
+}
+
 /**
  * Instantiate all campaign map templates into session-scoped maps.
  * Copies each campaignMaps/ template into maps/ with the given sessionId.
@@ -183,13 +189,13 @@ export async function instantiateCampaignMaps(
   campaignSlug: string,
   sessionId: string,
   campaign?: Campaign | null,
-): Promise<MapDocument[]> {
+): Promise<InstantiatedCampaignMaps> {
   const snap = await adminDb
     .collection("campaignMaps")
     .where("campaignSlug", "==", campaignSlug)
     .get();
 
-  if (snap.empty) return [];
+  if (snap.empty) return { maps: [], specIdToSessionId: new Map() };
 
   const now = Date.now();
   const maps: MapDocument[] = [];
@@ -312,7 +318,7 @@ export async function instantiateCampaignMaps(
       return (specOrder.get(specIds[a]) ?? 999) - (specOrder.get(specIds[b]) ?? 999);
     });
 
-    return indices.map((i) => maps[i]);
+    return { maps: indices.map((i) => maps[i]), specIdToSessionId };
   }
 
   // ─── Legacy flat-list path ──────────────────────────────────────────────────
@@ -368,8 +374,16 @@ export async function instantiateCampaignMaps(
       return (specOrder.get(specIds[a]) ?? 999) - (specOrder.get(specIds[b]) ?? 999);
     });
 
-    return indices.map((i) => maps[i]);
+    const legacyMapping = new Map<string, string>();
+    for (let i = 0; i < specIds.length; i++) {
+      legacyMapping.set(specIds[i], maps[i].id!);
+    }
+    return { maps: indices.map((i) => maps[i]), specIdToSessionId: legacyMapping };
   }
 
-  return maps;
+  const fallbackMapping = new Map<string, string>();
+  for (let i = 0; i < specIds.length; i++) {
+    fallbackMapping.set(specIds[i], maps[i].id!);
+  }
+  return { maps, specIdToSessionId: fallbackMapping };
 }

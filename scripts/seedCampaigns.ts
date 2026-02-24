@@ -82,12 +82,32 @@ const BATCH_SIZE = 400;
 async function batchWrite(
   colPath: string,
   docs: Array<{ id: string; data: Record<string, unknown> }>,
-): Promise<void> {
-  console.log(`  Writing ${docs.length} docs to ${colPath}...`);
+  skipExisting = false,
+): Promise<{ written: number; skipped: number }> {
+  let filteredDocs = docs;
+
+  if (skipExisting) {
+    const existing = new Set<string>();
+    for (const { id } of docs) {
+      const snap = await db.collection(colPath).doc(id).get();
+      if (snap.exists) existing.add(id);
+    }
+    filteredDocs = docs.filter((d) => !existing.has(d.id));
+    if (existing.size > 0) {
+      console.log(`  Skipping ${existing.size} existing docs in ${colPath}`);
+    }
+  }
+
+  if (filteredDocs.length === 0) {
+    console.log(`  No new docs to write to ${colPath}`);
+    return { written: 0, skipped: docs.length - filteredDocs.length };
+  }
+
+  console.log(`  Writing ${filteredDocs.length} docs to ${colPath}...`);
   let batch = db.batch();
   let opCount = 0;
 
-  for (const { id, data } of docs) {
+  for (const { id, data } of filteredDocs) {
     batch.set(
       db.collection(colPath).doc(id),
       lowercaseStrings(data) as Record<string, unknown>,
@@ -102,6 +122,7 @@ async function batchWrite(
   }
 
   if (opCount > 0) await batch.commit();
+  return { written: filteredDocs.length, skipped: docs.length - filteredDocs.length };
 }
 
 // ─── Campaign Map Builder ────────────────────────────────────────────────────
@@ -199,13 +220,14 @@ async function main(): Promise<void> {
       console.log(`  ✓ Act ${act.actNumber}: "${act.title}" seeded`);
     }
 
-    // Seed campaign map templates
+    // Seed campaign map templates — skip docs that already exist to preserve
+    // user-generated content (uploaded images, edited grids, positioned POIs)
     const mapDocs = buildCampaignMapDocs(campaign);
     if (mapDocs.length > 0) {
-      await batchWrite("campaignMaps", mapDocs);
+      const { written, skipped } = await batchWrite("campaignMaps", mapDocs, true);
       const combatCount = mapDocs.filter((d) => (d.data as unknown as CampaignMap).mapType === "combat").length;
       const explorationCount = mapDocs.length - combatCount;
-      console.log(`  ✓ ${mapDocs.length} campaign maps seeded (${combatCount} combat, ${explorationCount} exploration)`);
+      console.log(`  ✓ ${mapDocs.length} campaign maps (${combatCount} combat, ${explorationCount} exploration): ${written} new, ${skipped} existing preserved`);
     }
     console.log();
   }

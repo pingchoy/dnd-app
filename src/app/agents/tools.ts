@@ -190,10 +190,10 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         description:
           "Advance the campaign to a new act number (e.g. 2 or 3). Use when the party completes the current act's climax or major plot milestone.",
       },
-      encounter_completed: {
+      story_beat_completed: {
         type: "string",
         description:
-          "Mark a campaign encounter as completed when the set-piece wraps up. Use the exact encounter name from the NEXT ENCOUNTER section (e.g. 'Dockside Smuggler Ambush').",
+          "Mark a campaign story beat as completed when it wraps up. Use the exact beat name from the NEXT STORY BEAT section (e.g. 'Dockside Smuggler Ambush').",
       },
       reveal_poi: {
         type: "string",
@@ -342,17 +342,17 @@ export const QUERY_SRD_TOOL: Anthropic.Messages.Tool = {
 export const QUERY_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "query_campaign",
   description:
-    "Look up detailed campaign data. Use when you need more detail than the compact campaign briefing provides — e.g. full NPC personality/secrets/motivations, an encounter's dmGuidance with specific DC checks and NPC behavior, or an act's mysteries/keyEvents.",
+    "Look up detailed campaign data for the CURRENT ACT. Use when you need more detail than the compact campaign briefing provides — e.g. full NPC personality/secrets/motivations, a story beat's dmGuidance with specific DC checks and NPC behavior, or an act's mysteries and hooks. NPC data is act-scoped and only contains what the DM should know at this point in the story.",
   input_schema: {
     type: "object",
     properties: {
       type: {
         type: "string",
-        enum: ["npc", "act", "encounter"],
+        enum: ["npc", "act", "story_beat"],
         description:
-          "'npc' = full personality, secrets, motivations, voice notes for a campaign NPC. " +
-          "'act' = encounters list, mysteries, keyEvents, transitionToNextAct for an act. " +
-          "'encounter' = a specific encounter's dmGuidance, enemies, rewards, NPC involvement.",
+          "'npc' = full personality, secrets, motivations, voice notes for a campaign NPC in the current act. " +
+          "'act' = story beats list, mysteries, hooks, transitionToNextAct for an act. " +
+          "'story_beat' = a specific story beat's dmGuidance, enemies, rewards, NPC involvement.",
       },
       npc_id: {
         type: "string",
@@ -360,11 +360,11 @@ export const QUERY_CAMPAIGN_TOOL: Anthropic.Tool = {
       },
       act_number: {
         type: "integer",
-        description: "Act number (1, 2, 3). Used by type='act' and type='encounter'. Defaults to current act.",
+        description: "Act number (1, 2, 3). Used by type='act' and type='story_beat'. Defaults to current act.",
       },
-      encounter_name: {
+      story_beat_name: {
         type: "string",
-        description: "Encounter name to look up (e.g. 'Smuggler Warehouse Raid'). Required when type='encounter'.",
+        description: "Story beat name to look up (e.g. 'Smuggler Warehouse Raid'). Required when type='story_beat'.",
       },
     },
     required: ["type"],

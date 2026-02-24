@@ -12,7 +12,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { StoredMessage, OPENING_NARRATIVE } from "../lib/gameTypes";
+import { StoredMessage } from "../lib/gameTypes";
 import type { GameState, StoredEncounter, AOEResultData, GridPosition, MapDocument } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
@@ -104,6 +104,9 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   // Track which doc IDs existed on the first snapshot (historical rolls don't animate)
   const historicalDocIdsRef = useRef<Set<string> | null>(null);
   const isFirstSnapshotRef = useRef(true);
+
+  // Prevents duplicate campaign intro requests on empty sessions
+  const campaignIntroRequestedRef = useRef(false);
 
   // Keep characterId ref in sync
   useEffect(() => {
@@ -208,8 +211,30 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
       }
 
       if (msgs.length === 0) {
-        // Brand-new session — show opening narrative
-        setMessages([{ role: "assistant", content: OPENING_NARRATIVE, timestamp: Date.now(), id: "opening" }]);
+        // Brand-new session — request a campaign-specific intro from the DM agent.
+        // The intro message will arrive via this same Firestore listener once generated.
+        if (!campaignIntroRequestedRef.current && characterIdRef.current) {
+          campaignIntroRequestedRef.current = true;
+          setIsNarrating(true);
+          fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ characterId: characterIdRef.current, campaignIntro: true }),
+          })
+            .then((res) => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return res.json();
+            })
+            .then((data) => {
+              if (data.gameState) setGameState(data.gameState);
+              onEncounterDataRef.current?.(data.encounter ?? null);
+            })
+            .catch((err) => {
+              console.error("[useChat] Campaign intro request failed:", err);
+              campaignIntroRequestedRef.current = false;
+            })
+            .finally(() => setIsNarrating(false));
+        }
       } else {
         setMessages(msgs);
       }

@@ -4,7 +4,7 @@
  * Shared helpers for DM and combat agents.
  */
 
-import { querySRD, getCampaign, getCampaignAct } from "../lib/characterStore";
+import { querySRD, getCampaignAct } from "../lib/characterStore";
 
 /**
  * Handle a query_srd tool call, enforcing a per-turn query limit.
@@ -58,7 +58,7 @@ export async function handleCampaignQuery(
     type: string;
     npc_id?: string;
     act_number?: number;
-    encounter_name?: string;
+    story_beat_name?: string;
   },
   campaignSlug: string | undefined,
   currentAct: number,
@@ -85,11 +85,11 @@ export async function handleCampaignQuery(
   );
 
   if (input.type === "npc") {
-    const campaign = await getCampaign(campaignSlug);
-    const npc = campaign?.npcs.find((n) => n.id === input.npc_id);
+    const act = await getCampaignAct(campaignSlug, currentAct);
+    const npc = act?.npcs?.find((n) => n.id === input.npc_id);
     if (!npc)
       return {
-        resultContent: `{"error":"NPC '${input.npc_id}' not found."}`,
+        resultContent: `{"error":"NPC '${input.npc_id}' not found in act ${currentAct}."}`,
         newCount: queryCount + 1,
       };
     return { resultContent: JSON.stringify(npc), newCount: queryCount + 1 };
@@ -106,7 +106,7 @@ export async function handleCampaignQuery(
     return { resultContent: JSON.stringify(act), newCount: queryCount + 1 };
   }
 
-  if (input.type === "encounter") {
+  if (input.type === "story_beat") {
     const actNum = input.act_number ?? currentAct;
     const act = await getCampaignAct(campaignSlug, actNum);
     if (!act)
@@ -114,15 +114,15 @@ export async function handleCampaignQuery(
         resultContent: `{"error":"Act ${actNum} not found."}`,
         newCount: queryCount + 1,
       };
-    const enc = act.encounters.find(
-      (e) => e.name.toLowerCase() === input.encounter_name?.toLowerCase(),
+    const beat = act.storyBeats.find(
+      (e) => e.name.toLowerCase() === input.story_beat_name?.toLowerCase(),
     );
-    if (!enc)
+    if (!beat)
       return {
-        resultContent: `{"error":"Encounter '${input.encounter_name}' not found in act ${actNum}."}`,
+        resultContent: `{"error":"Story beat '${input.story_beat_name}' not found in act ${actNum}."}`,
         newCount: queryCount + 1,
       };
-    return { resultContent: JSON.stringify(enc), newCount: queryCount + 1 };
+    return { resultContent: JSON.stringify(beat), newCount: queryCount + 1 };
   }
 
   return {
@@ -130,3 +130,4 @@ export async function handleCampaignQuery(
     newCount: queryCount,
   };
 }
+

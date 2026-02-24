@@ -58,8 +58,7 @@ const fakeAct = {
   actNumber: 1,
   title: "Shadows Over Valdris",
   dmBriefing: "The party investigates disappearances.",
-  plotPoints: ["find the missing people"],
-  encounters: [
+  storyBeats: [
     {
       name: "Dockside Smuggler Ambush",
       type: "combat",
@@ -78,6 +77,27 @@ const fakeAct = {
       npcInvolvement: ["lysara-thorne"],
     },
   ],
+  npcs: [
+    {
+      id: "lysara-thorne",
+      name: "Lysara Thorne",
+      role: "patron",
+      personality: { traits: ["charming", "polished"], ideals: [], bonds: [], flaws: [] },
+      motivations: ["hire adventurers to investigate"],
+      secrets: [],
+      relationshipArc: { act1: "trusted patron", act2: "", act3: "" },
+      dmNotes: "Play her as a warm, generous quest-giver. No hidden agenda hints.",
+    },
+    {
+      id: "captain-aldric-vane",
+      name: "Captain Aldric Vane",
+      role: "ally",
+      personality: { traits: ["loyal", "gruff"], ideals: [], bonds: [], flaws: [] },
+      motivations: ["justice"],
+      secrets: ["has unofficial case files"],
+      relationshipArc: { act1: "cautious ally", act2: "", act3: "" },
+    },
+  ],
 };
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -90,7 +110,7 @@ beforeEach(() => {
 
 describe("handleCampaignQuery", () => {
   describe("type='npc'", () => {
-    it("returns full NPC data for a valid npc_id", async () => {
+    it("returns act-scoped NPC data (spoiler-safe) when act has npcs", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
         CAMPAIGN_SLUG, 1, 0, 3, "Test",
@@ -99,8 +119,23 @@ describe("handleCampaignQuery", () => {
       const result = JSON.parse(resultContent);
       expect(result.id).toBe("lysara-thorne");
       expect(result.name).toBe("Lysara Thorne");
-      expect(result.secrets).toContain("secretly a villain");
+      expect(result.role).toBe("patron");
+      expect(result.secrets).toEqual([]);
+      expect(result.relationshipArc.act1).toBe("trusted patron");
+      expect(result.personality.traits).toContain("charming");
       expect(newCount).toBe(1);
+    });
+
+    it("returns error when act has no npcs array", async () => {
+      mockGetCampaignAct.mockResolvedValueOnce({ ...fakeAct, npcs: undefined });
+
+      const { resultContent } = await handleCampaignQuery(
+        { type: "npc", npc_id: "lysara-thorne" },
+        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+      );
+
+      const result = JSON.parse(resultContent);
+      expect(result.error).toContain("lysara-thorne");
     });
 
     it("returns error for unknown npc_id", async () => {
@@ -125,7 +160,7 @@ describe("handleCampaignQuery", () => {
       const result = JSON.parse(resultContent);
       expect(result.actNumber).toBe(1);
       expect(result.title).toBe("Shadows Over Valdris");
-      expect(result.encounters).toHaveLength(2);
+      expect(result.storyBeats).toHaveLength(2);
       expect(newCount).toBe(1);
     });
 
@@ -151,10 +186,10 @@ describe("handleCampaignQuery", () => {
     });
   });
 
-  describe("type='encounter'", () => {
-    it("returns encounter data by name (case-insensitive)", async () => {
+  describe("type='story_beat'", () => {
+    it("returns story beat data by name (case-insensitive)", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
-        { type: "encounter", encounter_name: "dockside smuggler ambush" },
+        { type: "story_beat", story_beat_name: "dockside smuggler ambush" },
         CAMPAIGN_SLUG, 1, 0, 3, "Test",
       );
 
@@ -165,9 +200,9 @@ describe("handleCampaignQuery", () => {
       expect(newCount).toBe(1);
     });
 
-    it("returns error for unknown encounter name", async () => {
+    it("returns error for unknown story beat name", async () => {
       const { resultContent } = await handleCampaignQuery(
-        { type: "encounter", encounter_name: "Nonexistent Battle" },
+        { type: "story_beat", story_beat_name: "Nonexistent Battle" },
         CAMPAIGN_SLUG, 1, 0, 3, "Test",
       );
 
@@ -175,11 +210,11 @@ describe("handleCampaignQuery", () => {
       expect(result.error).toContain("Nonexistent Battle");
     });
 
-    it("returns error when act not found for encounter query", async () => {
+    it("returns error when act not found for story beat query", async () => {
       mockGetCampaignAct.mockResolvedValueOnce(null);
 
       const { resultContent } = await handleCampaignQuery(
-        { type: "encounter", encounter_name: "Dockside Smuggler Ambush", act_number: 99 },
+        { type: "story_beat", story_beat_name: "Dockside Smuggler Ambush", act_number: 99 },
         CAMPAIGN_SLUG, 1, 0, 3, "Test",
       );
 

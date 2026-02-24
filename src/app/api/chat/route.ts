@@ -66,17 +66,33 @@ import type { StoredAction, GridPosition } from "../../lib/gameTypes";
 
 interface ChatRequestBody {
   characterId: string;
-  playerInput: string;
+  playerInput?: string;
+  /** When true, the DM generates a campaign-specific opening narration (no user message needed). */
+  campaignIntro?: boolean;
 }
 
 /**
  * Process a single chat action: run agents, write messages, persist state.
  * Extracted so it can be called for both the initial action and chained actions.
  */
+/** Prompt injected as playerInput when generating the campaign opening narration. */
+const CAMPAIGN_INTRO_PROMPT = `[CAMPAIGN START — This is the very first moment of the adventure. No previous actions have occurred.]
+
+Write an atmospheric opening narration for this campaign. You have the campaign briefing and player character details above.
+
+Your opening should:
+1. Set the scene with vivid sensory details — where is the player, what do they see/hear/smell?
+2. Establish the tone and mood of the campaign
+3. Introduce the player character's immediate situation naturally (reference their race/class/background without being mechanical)
+4. End with a clear moment that invites the player to act — a knock on a door, a stranger approaching, a scream in the distance, etc.
+
+Write 2-4 paragraphs of immersive, second-person prose. Do NOT ask the player what they look like or what class they are — you already know from the character sheet above.`;
+
 async function processChatAction(
   characterId: string,
   playerInput: string,
   sessionId: string,
+  campaignIntro?: boolean,
 ) {
   const gameState = await loadGameState(characterId);
 
@@ -85,13 +101,16 @@ async function processChatAction(
     return { levelUpPending: true };
   }
 
-  // Write user message to subcollection
-  await addMessage(sessionId, {
-    role: "user",
-    content: playerInput,
-    characterId,
-    timestamp: Date.now(),
-  });
+  // Campaign intro: skip user message and rules check entirely
+  if (!campaignIntro) {
+    // Write user message to subcollection
+    await addMessage(sessionId, {
+      role: "user",
+      content: playerInput,
+      characterId,
+      timestamp: Date.now(),
+    });
+  }
 
   // Inline rules check: run the rules agent if the action is contested,
   // then write the roll result to Firestore so all players see the animation
@@ -99,7 +118,7 @@ async function processChatAction(
   let rulesOutcome = null;
   let rulesCost = 0;
 
-  if (isContestedAction(playerInput)) {
+  if (!campaignIntro && isContestedAction(playerInput)) {
     console.log(
       "[Rules Agent] Contested action detected, calling rules agent...",
     );
@@ -148,6 +167,7 @@ async function processChatAction(
   // Build DM context (campaign briefing + spatial awareness) — skipped during combat
   let dmContext: string | undefined;
   let campaignSlug: string | undefined;
+  let act: Awaited<ReturnType<typeof getCampaignAct>> = null;
   if (!inCombat) {
     const contextParts: string[] = [];
 
@@ -157,12 +177,12 @@ async function processChatAction(
       const campaign = await getCampaign(campaignSlug);
       if (campaign) {
         const actNumber = gameState.story.currentAct ?? 1;
-        const act = await getCampaignAct(campaignSlug, actNumber);
+        act = await getCampaignAct(campaignSlug, actNumber);
         contextParts.push(
           serializeCampaignContext(
             campaign,
             act,
-            gameState.story.completedEncounters,
+            gameState.story.completedStoryBeats,
             gameState.story.metNPCs,
           ),
         );
@@ -177,7 +197,16 @@ async function processChatAction(
       const explMap = await loadExplorationMap(sessionId, explorationMapId);
       if (explMap) {
         const freshSession = await loadSession(sessionId);
-        const poiId = freshSession?.currentPOIId ?? getCurrentPOIId();
+        let poiId = freshSession?.currentPOIId ?? getCurrentPOIId();
+
+        // If no POI is set yet, use the act's starting POI
+        if (!poiId && act?.startingPOIId) {
+          poiId = act.startingPOIId;
+          setCurrentPOIId(poiId);
+          await saveSessionState(sessionId, { currentPOIId: poiId });
+          console.log(`[POI] Initialized starting POI from act: ${poiId}`);
+        }
+
         if (poiId) setCurrentPOIId(poiId);
         const explorationCtx = serializeExplorationContext(explMap, poiId);
         console.log(
@@ -221,13 +250,14 @@ async function processChatAction(
     }
   }
 
+  const effectiveInput = campaignIntro ? CAMPAIGN_INTRO_PROMPT : playerInput;
   console.log(
-    `[${agentLabel}] Calling with player input:`,
-    playerInput.slice(0, 100),
+    `[${agentLabel}] Calling with${campaignIntro ? " campaign intro prompt" : " player input:"}`,
+    campaignIntro ? "" : playerInput.slice(0, 100),
   );
   const dmResult = inCombat
     ? await getCombatResponse(
-        playerInput,
+        effectiveInput,
         {
           player: gameState.player,
           encounter: currentEncounter!,
@@ -236,7 +266,7 @@ async function processChatAction(
         sessionId,
       )
     : await getDMResponse(
-        playerInput,
+        effectiveInput,
         gameState,
         rulesOutcome,
         sessionId,
@@ -454,6 +484,16 @@ async function processChatAction(
   console.log("[Persist] Applying state changes and saving to Firestore...");
   await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
 
+  // When the act advances, set the new act's starting POI
+  if (dmResult.stateChanges?.act_advance && campaignSlug) {
+    const newAct = await getCampaignAct(campaignSlug, dmResult.stateChanges.act_advance);
+    if (newAct?.startingPOIId) {
+      setCurrentPOIId(newAct.startingPOIId);
+      await saveSessionState(sessionId, { currentPOIId: newAct.startingPOIId });
+      console.log(`[POI] Act advanced — set starting POI to ${newAct.startingPOIId}`);
+    }
+  }
+
   const totalCost = dmCost + rulesCost + npcAgentCost;
   const costBreakdown: Record<string, string> = {};
   if (inCombat) {
@@ -485,9 +525,9 @@ async function processChatAction(
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
-    const { characterId, playerInput } = body;
+    const { characterId, playerInput, campaignIntro } = body;
 
-    if (!playerInput?.trim()) {
+    if (!campaignIntro && !playerInput?.trim()) {
       return NextResponse.json(
         { error: "playerInput is required" },
         { status: 400 },
@@ -516,7 +556,7 @@ export async function POST(req: NextRequest) {
     const actionId = await enqueueAction(sessionId, {
       characterId,
       type: "chat",
-      payload: { playerInput },
+      payload: { playerInput: playerInput ?? "", campaignIntro },
     });
 
     // Try to claim the next action for processing
@@ -536,12 +576,13 @@ export async function POST(req: NextRequest) {
     try {
       let currentAction: StoredAction | null = claimed;
       while (currentAction) {
-        const payload = currentAction.payload as { playerInput: string };
+        const payload = currentAction.payload as { playerInput: string; campaignIntro?: boolean };
 
         const result = await processChatAction(
           currentAction.characterId,
           payload.playerInput,
           sessionId,
+          payload.campaignIntro,
         );
 
         // If level-up is pending, mark action as completed and stop
@@ -596,6 +637,23 @@ export async function GET(req: NextRequest) {
     const activeMap = activeMapId
       ? await loadMap(sessionId, activeMapId)
       : null;
+
+    // If no POI is set, initialize from the act's starting POI
+    let poiId = getCurrentPOIId() ?? null;
+    if (!poiId) {
+      const slug = getCampaignSlug();
+      if (slug) {
+        const actNumber = gameState.story.currentAct ?? 1;
+        const currentAct = await getCampaignAct(slug, actNumber);
+        if (currentAct?.startingPOIId) {
+          poiId = currentAct.startingPOIId;
+          setCurrentPOIId(poiId);
+          await saveSessionState(sessionId, { currentPOIId: poiId });
+          console.log(`[POI] GET: Initialized starting POI from act ${actNumber}: ${poiId}`);
+        }
+      }
+    }
+
     return NextResponse.json({
       gameState,
       encounter: getEncounter(),
@@ -603,7 +661,7 @@ export async function GET(req: NextRequest) {
       explorationPositions: getExplorationPositions() ?? null,
       activeMapId: activeMapId ?? null,
       activeMap,
-      currentPOIId: getCurrentPOIId() ?? null,
+      currentPOIId: poiId,
     });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);

@@ -82,14 +82,14 @@ CAMPAIGN CONTEXT:
 - When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
 - Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
-- When a campaign encounter (shown in NEXT ENCOUNTER) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with encounter_completed set to the encounter name. This advances the story to the next set-piece.
+- When a campaign story beat (shown in NEXT STORY BEAT) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with story_beat_completed set to the beat name. This advances the story to the next beat.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
 - EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists POIs the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them.
 
 WHEN TO USE query_campaign:
-- type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen.
-- type='encounter': Call when the NEXT ENCOUNTER is about to trigger — the player arrives at the encounter location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the encounter, not during.
-- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what key events should happen, or what triggers the transition to the next act.
+- type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes for the CURRENT ACT so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen. NPC data is act-scoped — it only contains what you should know right now, never future-act spoilers.
+- type='story_beat': Call when the NEXT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during.
+- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act.
 - Do NOT call query_campaign for information already visible in the briefing. Only call it when you need deeper detail.
 
 TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
@@ -275,7 +275,7 @@ export async function getDMResponse(
           type: string;
           npc_id?: string;
           act_number?: number;
-          encounter_name?: string;
+          story_beat_name?: string;
         };
         const { resultContent, newCount } = await handleCampaignQuery(
           input,
