@@ -149,6 +149,10 @@ export default function Dashboard() {
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
+  const companions = useMemo(
+    () => activeNPCs.filter(n => n.disposition === "friendly" && n.currentHp > 0),
+    [activeNPCs],
+  );
   // Victory screen or active processing keep the combat layout visible even if
   // encounter data is momentarily null due to Firestore/HTTP race conditions.
   const inCombat =
@@ -651,6 +655,7 @@ export default function Dashboard() {
           <OrnateFrame className="flex-1 overflow-hidden">
             <CharacterSidebar
               player={player}
+              companions={companions}
               onOpenFullSheet={handleOpenFullSheet}
               onClose={collapseSidebar}
             />

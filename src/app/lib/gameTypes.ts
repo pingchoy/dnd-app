@@ -445,6 +445,8 @@ export interface StoryState {
   currentAct?: number;
   /** Story beat names completed in the current act. Reset on act advance. */
   completedStoryBeats?: string[];
+  /** Long-term important events (alliances, secrets, promises). Persisted to session doc. */
+  importantEvents?: string[];
 }
 
 /** The only campaign currently available. Used as default for all new sessions. */
@@ -716,6 +718,19 @@ export interface StoredEncounter {
   updatedAt?: number;
 }
 
+/** A non-campaign NPC that emerged during play and is worth remembering. */
+export interface SupportingNPC {
+  id: string;
+  name: string;
+  role: "ally" | "rival" | "neutral" | "informant" | "merchant" | "quest_giver";
+  appearance: string;
+  personality: string;
+  motivations: string[];
+  location: string;
+  notes: string;
+  combatSlug?: string;
+}
+
 /** Session document (sessions/{id}) — story + conversation history. */
 export interface StoredSession {
   id?: string;
@@ -731,6 +746,10 @@ export interface StoredSession {
   activeMapId?: string;
   /** @deprecated Exploration-mode token positions keyed by "player" or characterId. */
   explorationPositions?: Record<string, GridPosition>;
+  /** Important events worth remembering long-term (alliances, secrets, promises). */
+  importantEvents?: string[];
+  /** Non-campaign NPCs that emerged during play. */
+  supportingNPCs?: SupportingNPC[];
   createdAt?: number;
   updatedAt?: number;
 }

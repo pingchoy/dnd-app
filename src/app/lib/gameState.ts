@@ -48,6 +48,7 @@ export type {
   MapDocument,
   ExplorationMapDocument,
   CombatMapDocument,
+  SupportingNPC,
 } from "./gameTypes";
 
 export {
@@ -628,6 +629,8 @@ export interface StateChanges {
   cantrips_learned?: string[];
   /** NPCs the DM wants to introduce. Handled by the API route, not applied to state directly. */
   npcs_to_create?: NPCToCreate[];
+  /** NPC IDs to remove from the scene (friendly/neutral NPCs departing). */
+  npcs_to_dismiss?: string[];
   // ─── Memory tier fields ───
   /** A major plot milestone to record permanently (e.g. "defeated the shadow dragon"). */
   milestone?: string;
@@ -700,6 +703,7 @@ export function mergeStateChanges(
     "quests_completed",
     "npcs_met",
     "npcs_to_create",
+    "npcs_to_dismiss",
     "weapons_gained",
     "spells_learned",
     "spells_removed",
@@ -1023,9 +1027,12 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   let xpAwarded = 0;
 
   if (justDied) {
-    // Snapshot the NPC for loot context and victory screen
-    if (!encounter.defeatedNPCs) encounter.defeatedNPCs = [];
-    encounter.defeatedNPCs.push({ ...npc });
+    // Snapshot hostile NPCs for loot context and victory screen.
+    // Friendly/neutral NPCs are excluded — they shouldn't appear in loot or the defeated list.
+    if (npc.disposition === "hostile") {
+      if (!encounter.defeatedNPCs) encounter.defeatedNPCs = [];
+      encounter.defeatedNPCs.push({ ...npc });
+    }
 
     // Track XP earned from hostile NPC kills — deferred until combat ends
     if (npc.disposition === "hostile" && npc.xpValue > 0) {
@@ -1039,10 +1046,11 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
         `[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`,
       );
     }
-    // Record the kill in recentEvents so the DM agent has context on future turns
-    state.story.recentEvents.push(
-      `Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`,
-    );
+    // Record the death in recentEvents so the DM agent has context on future turns
+    const deathLabel = npc.disposition === "hostile"
+      ? `Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`
+      : `Lost companion ${npc.name}`;
+    state.story.recentEvents.push(deathLabel);
     if (state.story.recentEvents.length > 10)
       state.story.recentEvents = state.story.recentEvents.slice(-10);
   }

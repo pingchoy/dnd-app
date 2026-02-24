@@ -41,6 +41,7 @@ import {
   serializeExplorationContext,
   serializeRegionContext,
   setEncounter,
+  updateNPC,
 } from "../../lib/gameState";
 import {
   createEncounter,
@@ -388,7 +389,15 @@ async function processChatAction(
         combatRegions,
         getExplorationPositions(),
       );
-      enc.turnOrder = ["player", ...enc.activeNPCs.map((n) => n.id)];
+      enc.turnOrder = [
+        "player",
+        ...enc.activeNPCs
+          .filter(n => n.disposition === "friendly")
+          .map(n => n.id),
+        ...enc.activeNPCs
+          .filter(n => n.disposition === "hostile")
+          .map(n => n.id),
+      ];
       enc.currentTurnIndex = 0;
       console.log(
         `[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`,
@@ -399,6 +408,18 @@ async function processChatAction(
       `[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`,
     );
     delete dmResult.stateChanges.npcs_to_create;
+  }
+
+  // Dismiss friendly/neutral NPCs the DM wants to remove from the party
+  if (dmResult.stateChanges?.npcs_to_dismiss?.length) {
+    const enc = getEncounter();
+    if (enc) {
+      for (const npcId of dmResult.stateChanges.npcs_to_dismiss) {
+        const result = updateNPC({ id: npcId, remove_from_scene: true });
+        console.log(`[NPC Dismiss] Removed "${result.name}" (found=${result.found}, removed=${result.removed})`);
+      }
+    }
+    delete dmResult.stateChanges.npcs_to_dismiss;
   }
 
   // Safety net: auto-apply pre-rolled NPC damage if the DM forgot to set hp_delta
