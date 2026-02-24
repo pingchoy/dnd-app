@@ -703,6 +703,7 @@ export function mergeStateChanges(
     "quests_completed",
     "npcs_met",
     "npcs_to_create",
+    "npcs_to_dismiss",
     "weapons_gained",
     "spells_learned",
     "spells_removed",
