@@ -72,7 +72,7 @@ STATE TRACKING — use update_game_state on EVERY turn to keep the game state cu
 - campaign_summary_update: Rewrite only when the story fundamentally shifts — a new act begins, a major revelation changes everything, or the core quest changes direction. Do NOT update for minor progress.
 - quests_added / quests_completed: Track quest objectives as the player accepts or resolves them. Use short descriptive names ("find the cult leader", "retrieve lyra's stolen holy symbol").
 - npcs_met: Record campaign NPCs the player has met using their [id] from the NPC list (e.g. "lysara-thorne", "captain-aldric-vane"). Only story-relevant characters, not every shopkeeper or guard.
-- story_beat_completed: CRITICAL — set this the SAME TURN the NEXT STORY BEAT wraps up. Use the exact beat name shown in NEXT STORY BEAT. A beat is complete when its core scene has played out: the social encounter concluded, the combat won, the exploration finished, or the key information was delivered. The "Transition:" line in the beat's guidance tells you what marks the end — once that transition happens, the beat is done. Do NOT wait extra turns. If you narrated the transition, include story_beat_completed in the SAME update_game_state call.
+- story_beat_completed: CRITICAL — set this the SAME TURN the CURRENT STORY BEAT wraps up. Use the exact beat name shown in CURRENT STORY BEAT. The "BEAT COMPLETE WHEN" line tells you exactly when to set this — once that condition is met, the beat is done. Do NOT wait extra turns. If you narrated the completion, include story_beat_completed in the SAME update_game_state call. Combat/boss beats are auto-completed when all hostiles die — you do NOT need to set story_beat_completed for combat or boss beats.
 
 FORMATTING:
 - Use **bold** for key names, places, and dramatic moments.
@@ -84,14 +84,14 @@ CAMPAIGN CONTEXT:
 - When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
 - Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
-- When the NEXT STORY BEAT concludes, you MUST call update_game_state with story_beat_completed (see STATE TRACKING above). Without this, the story will not advance to the next beat.
+- When the CURRENT STORY BEAT concludes (the BEAT COMPLETE WHEN condition is met), you MUST call update_game_state with story_beat_completed (see STATE TRACKING above). Without this, the story will not advance to the next beat. Combat/boss beats auto-complete — only set story_beat_completed for social, exploration, and puzzle beats.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
 - EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists POIs the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them.
 
 WHEN TO USE query_campaign:
 - type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes for the CURRENT ACT so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen. NPC data is act-scoped — it only contains what you should know right now, never future-act spoilers.
-- type='story_beat': Call when the NEXT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during.
-- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act.
+- type='story_beat': Call when the CURRENT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during. Only the current beat and already-completed beats can be queried — future beats are blocked.
+- type='act': Call when you need act-level context — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act. Returns act metadata only (no individual beat details).
 - Do NOT call query_campaign for information already visible in the briefing. Only call it when you need deeper detail.
 
 TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
@@ -301,6 +301,7 @@ export async function getDMResponse(
           input,
           campaignSlug,
           gameState.story.currentAct ?? 1,
+          gameState.story.completedStoryBeats ?? [],
           campaignQueryCount,
           MAX_SRD_QUERIES,
           "DM Agent",

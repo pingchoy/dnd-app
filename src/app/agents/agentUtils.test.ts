@@ -113,7 +113,7 @@ describe("handleCampaignQuery", () => {
     it("returns act-scoped NPC data (spoiler-safe) when act has npcs", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -131,7 +131,7 @@ describe("handleCampaignQuery", () => {
 
       const { resultContent } = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -141,7 +141,7 @@ describe("handleCampaignQuery", () => {
     it("returns error for unknown npc_id", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "npc", npc_id: "nonexistent" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -154,20 +154,21 @@ describe("handleCampaignQuery", () => {
     it("returns act data for current act", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "act" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
       expect(result.actNumber).toBe(1);
       expect(result.title).toBe("Shadows Over Valdris");
-      expect(result.storyBeats).toHaveLength(2);
+      // storyBeats should be stripped from act queries
+      expect(result.storyBeats).toBeUndefined();
       expect(newCount).toBe(1);
     });
 
     it("uses explicit act_number over currentAct", async () => {
       await handleCampaignQuery(
         { type: "act", act_number: 2 },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       expect(mockGetCampaignAct).toHaveBeenCalledWith(CAMPAIGN_SLUG, 2);
@@ -178,7 +179,7 @@ describe("handleCampaignQuery", () => {
 
       const { resultContent } = await handleCampaignQuery(
         { type: "act", act_number: 99 },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -190,7 +191,7 @@ describe("handleCampaignQuery", () => {
     it("returns story beat data by name (case-insensitive)", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "story_beat", story_beat_name: "dockside smuggler ambush" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -203,11 +204,31 @@ describe("handleCampaignQuery", () => {
     it("returns error for unknown story beat name", async () => {
       const { resultContent } = await handleCampaignQuery(
         { type: "story_beat", story_beat_name: "Nonexistent Battle" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
       expect(result.error).toContain("Nonexistent Battle");
+    });
+
+    it("blocks querying future story beats", async () => {
+      const { resultContent } = await handleCampaignQuery(
+        { type: "story_beat", story_beat_name: "Council Reception" },
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
+      );
+
+      const result = JSON.parse(resultContent);
+      expect(result.error).toContain("Cannot query future story beats");
+    });
+
+    it("allows querying completed story beats", async () => {
+      const { resultContent } = await handleCampaignQuery(
+        { type: "story_beat", story_beat_name: "Dockside Smuggler Ambush" },
+        CAMPAIGN_SLUG, 1, ["Dockside Smuggler Ambush"], 0, 3, "Test",
+      );
+
+      const result = JSON.parse(resultContent);
+      expect(result.name).toBe("Dockside Smuggler Ambush");
     });
 
     it("returns error when act not found for story beat query", async () => {
@@ -215,7 +236,7 @@ describe("handleCampaignQuery", () => {
 
       const { resultContent } = await handleCampaignQuery(
         { type: "story_beat", story_beat_name: "Dockside Smuggler Ambush", act_number: 99 },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -227,7 +248,7 @@ describe("handleCampaignQuery", () => {
     it("returns error when no campaign slug is set", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
-        undefined, 1, 0, 3, "Test",
+        undefined, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -239,7 +260,7 @@ describe("handleCampaignQuery", () => {
     it("returns error when query limit is reached", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
-        CAMPAIGN_SLUG, 1, 3, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 3, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);
@@ -251,13 +272,13 @@ describe("handleCampaignQuery", () => {
     it("increments query count on each successful call", async () => {
       const r1 = await handleCampaignQuery(
         { type: "npc", npc_id: "lysara-thorne" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
       expect(r1.newCount).toBe(1);
 
       const r2 = await handleCampaignQuery(
         { type: "npc", npc_id: "captain-aldric-vane" },
-        CAMPAIGN_SLUG, 1, r1.newCount, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], r1.newCount, 3, "Test",
       );
       expect(r2.newCount).toBe(2);
     });
@@ -265,7 +286,7 @@ describe("handleCampaignQuery", () => {
     it("returns error for unknown query type", async () => {
       const { resultContent, newCount } = await handleCampaignQuery(
         { type: "unknown" },
-        CAMPAIGN_SLUG, 1, 0, 3, "Test",
+        CAMPAIGN_SLUG, 1, [], 0, 3, "Test",
       );
 
       const result = JSON.parse(resultContent);

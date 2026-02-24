@@ -237,6 +237,7 @@ interface StoryBeat {
     items?: string[];
   };
   dmGuidance?: string;                 // how to run this story beat, MUST include transition to the next beat
+  completionTrigger: string;           // concise condition that marks this beat as complete (e.g. "All smugglers defeated", "Lysara recommends visiting the watch house")
 }
 
 interface CampaignEnemy {

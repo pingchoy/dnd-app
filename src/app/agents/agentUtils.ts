@@ -62,6 +62,7 @@ export async function handleCampaignQuery(
   },
   campaignSlug: string | undefined,
   currentAct: number,
+  completedStoryBeats: string[],
   queryCount: number,
   maxQueries: number,
   agentLabel: string,
@@ -103,7 +104,13 @@ export async function handleCampaignQuery(
         resultContent: `{"error":"Act ${actNum} not found."}`,
         newCount: queryCount + 1,
       };
-    return { resultContent: JSON.stringify(act), newCount: queryCount + 1 };
+    // Strip storyBeats — DM only sees beat details via the serialized context
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { storyBeats, ...actWithoutBeats } = act;
+    return {
+      resultContent: JSON.stringify(actWithoutBeats),
+      newCount: queryCount + 1,
+    };
   }
 
   if (input.type === "story_beat") {
@@ -122,6 +129,28 @@ export async function handleCampaignQuery(
         resultContent: `{"error":"Story beat '${input.story_beat_name}' not found in act ${actNum}."}`,
         newCount: queryCount + 1,
       };
+
+    // Only allow querying the current (next uncompleted) beat or already-completed beats
+    const completedSet = new Set(
+      completedStoryBeats.map((n) => n.trim().toLowerCase()),
+    );
+    const remaining = act.storyBeats.filter(
+      (b) => !completedSet.has(b.name.trim().toLowerCase()),
+    );
+    const currentBeatName = remaining[0]?.name.trim().toLowerCase();
+    const requestedName = beat.name.trim().toLowerCase();
+
+    if (
+      requestedName !== currentBeatName &&
+      !completedSet.has(requestedName)
+    ) {
+      return {
+        resultContent:
+          '{"error":"Cannot query future story beats — focus on the current beat."}',
+        newCount: queryCount + 1,
+      };
+    }
+
     return { resultContent: JSON.stringify(beat), newCount: queryCount + 1 };
   }
 

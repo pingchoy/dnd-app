@@ -583,6 +583,7 @@ export interface StoryBeat {
     items?: string[];
   };
   dmGuidance?: string;
+  completionTrigger: string; // "All smugglers defeated" or "Lysara recommends visiting the watch house"
 }
 
 export interface CampaignAct {

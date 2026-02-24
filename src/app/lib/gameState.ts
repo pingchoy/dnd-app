@@ -375,40 +375,45 @@ export function serializeCampaignContext(
     );
 
     if (remaining.length > 0) {
-      const next = remaining[0];
+      const current = remaining[0];
       lines.push("");
       lines.push(
-        `>>> NEXT STORY BEAT (GUIDE THE PLAYER HERE): ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`,
+        `>>> CURRENT STORY BEAT: ${current.name} (${current.type}, ${current.difficulty}) @ ${current.location}`,
       );
       lines.push(
-        `DIRECTIVE: Steer the player toward "${next.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`,
+        `DIRECTIVE: Steer the player toward "${current.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`,
       );
-      if (next.dmGuidance) lines.push(next.dmGuidance);
-      if (next.enemies?.length) {
+      lines.push(
+        `>>> BEAT COMPLETE WHEN: ${current.completionTrigger}`,
+      );
+      if (current.dmGuidance) lines.push(current.dmGuidance);
+      if (current.enemies?.length) {
         lines.push(
-          `Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`,
+          `Enemies: ${current.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`,
         );
       }
-      if (next.npcInvolvement?.length) {
-        lines.push(`NPCs involved: ${next.npcInvolvement.join(", ")}`);
+      if (current.npcInvolvement?.length) {
+        lines.push(`NPCs involved: ${current.npcInvolvement.join(", ")}`);
       }
-      if (next.rewards) {
+      if (current.rewards) {
         const parts: string[] = [];
-        if (next.rewards.xp) parts.push(`${next.rewards.xp} XP`);
-        if (next.rewards.gold) parts.push(`${next.rewards.gold} gold`);
-        if (next.rewards.items?.length)
-          parts.push(next.rewards.items.join(", "));
+        if (current.rewards.xp) parts.push(`${current.rewards.xp} XP`);
+        if (current.rewards.gold) parts.push(`${current.rewards.gold} gold`);
+        if (current.rewards.items?.length)
+          parts.push(current.rewards.items.join(", "));
         if (parts.length) lines.push(`Rewards: ${parts.join(", ")}`);
       }
 
+      // One-beat peek-ahead: name, type, and location only
       if (remaining.length > 1) {
+        const peek = remaining[1];
         lines.push("");
         lines.push(
-          "UPCOMING STORY BEATS (do not skip ahead — complete the next story beat first):",
+          `NEXT UP (preview only): ${peek.name} (${peek.type}) @ ${peek.location}`,
         );
-        for (const enc of remaining.slice(1)) {
-          lines.push(`  - ${enc.name} (${enc.type}, ${enc.difficulty})`);
-        }
+      }
+      if (remaining.length > 2) {
+        lines.push(`${remaining.length - 1} more beats remain in this act.`);
       }
     }
   }
