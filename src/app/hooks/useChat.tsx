@@ -12,7 +12,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "../lib/firebaseClient";
 import { ParsedRollResult } from "../agents/rulesAgent";
-import { StoredMessage, OPENING_NARRATIVE } from "../lib/gameTypes";
+import { StoredMessage } from "../lib/gameTypes";
 import type { GameState, StoredEncounter, AOEResultData, GridPosition, MapDocument } from "../lib/gameTypes";
 
 export const CHARACTER_ID_KEY = "dnd_character_id";
@@ -66,6 +66,10 @@ export interface UseChatReturn {
   activeMapId: string | null;
   /** Active map document (tileData, regions, backgroundImageUrl). */
   activeMap: MapDocument | null;
+  /** Current point-of-interest ID within the exploration map (null until loaded). */
+  currentPOIId: string | null;
+  /** Update the current POI ID (e.g. when the player clicks a POI on the exploration map). */
+  setCurrentPOIId: (id: string | null) => void;
 }
 
 interface UseChatParams {
@@ -85,6 +89,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   const [explorationPositions, setExplorationPositions] = useState<Record<string, GridPosition> | null>(null);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [activeMap, setActiveMap] = useState<MapDocument | null>(null);
+  const [currentPOIId, setCurrentPOIId] = useState<string | null>(null);
 
   // Ref to hold the latest onEncounterData callback (avoids stale closures in async handlers)
   const onEncounterDataRef = useRef(onEncounterData);
@@ -99,6 +104,9 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   // Track which doc IDs existed on the first snapshot (historical rolls don't animate)
   const historicalDocIdsRef = useRef<Set<string> | null>(null);
   const isFirstSnapshotRef = useRef(true);
+
+  // Prevents duplicate campaign intro requests on empty sessions
+  const campaignIntroRequestedRef = useRef(false);
 
   // Keep characterId ref in sync
   useEffect(() => {
@@ -128,6 +136,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
         setExplorationPositions(data.explorationPositions ?? null);
         setActiveMapId(data.activeMapId ?? null);
         setActiveMap(data.activeMap ?? null);
+        setCurrentPOIId(data.currentPOIId ?? null);
       })
       .catch((err) => {
         console.error("[useChat] Failed to load character state:", err);
@@ -202,8 +211,30 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
       }
 
       if (msgs.length === 0) {
-        // Brand-new session — show opening narrative
-        setMessages([{ role: "assistant", content: OPENING_NARRATIVE, timestamp: Date.now(), id: "opening" }]);
+        // Brand-new session — request a campaign-specific intro from the DM agent.
+        // The intro message will arrive via this same Firestore listener once generated.
+        if (!campaignIntroRequestedRef.current && characterIdRef.current) {
+          campaignIntroRequestedRef.current = true;
+          setIsNarrating(true);
+          fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ characterId: characterIdRef.current, campaignIntro: true }),
+          })
+            .then((res) => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return res.json();
+            })
+            .then((data) => {
+              if (data.gameState) setGameState(data.gameState);
+              onEncounterDataRef.current?.(data.encounter ?? null);
+            })
+            .catch((err) => {
+              console.error("[useChat] Campaign intro request failed:", err);
+              campaignIntroRequestedRef.current = false;
+            })
+            .finally(() => setIsNarrating(false));
+        }
       } else {
         setMessages(msgs);
       }
@@ -252,6 +283,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
       // Narrative arrives via Firestore listener — just update game state from response
       if (data.gameState) setGameState(data.gameState);
       if (data.encounter !== undefined) onEncounterDataRef.current?.(data.encounter ?? null);
+      if (data.currentPOIId != null) setCurrentPOIId(data.currentPOIId);
       setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
       setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
     } catch (err) {
@@ -311,5 +343,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     explorationPositions,
     activeMapId,
     activeMap,
+    currentPOIId,
+    setCurrentPOIId,
   };
 }

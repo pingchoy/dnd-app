@@ -10,7 +10,6 @@
     "seed": "tsx scripts/seedFirestore.ts",
     "seed:campaigns": "tsx scripts/seedCampaigns.ts",
     "generate:campaign": "tsx scripts/generateCampaign.ts",
-    "generate:maps": "tsx scripts/generateCampaignMaps.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -27,7 +26,8 @@
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

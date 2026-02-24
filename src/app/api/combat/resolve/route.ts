@@ -172,7 +172,8 @@ export async function POST(req: NextRequest) {
         timestamp: Date.now(),
       });
 
-      // Persist after each NPC turn
+      // Persist after each NPC turn (includes lastNpcResult for real-time client labels)
+      encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
       await Promise.all([
         saveCharacterState(characterId, {
           player: gameState.player,
@@ -185,6 +186,7 @@ export async function POST(req: NextRequest) {
           turnOrder: encounter.turnOrder,
           currentTurnIndex: encounter.currentTurnIndex,
           combatStats: encounter.combatStats,
+          lastNpcResult: encounter.lastNpcResult,
         }),
       ]);
 
@@ -264,6 +266,10 @@ export async function POST(req: NextRequest) {
           timestamp: Date.now(),
         });
       }
+
+      // Update currentScene to reflect combat aftermath
+      const defeatedNames = defeated.map(n => n.name).join(", ");
+      gameState.story.currentScene = `Combat ended — defeated ${defeatedNames} at ${encounter.location}.`;
 
       // Complete encounter and clear link
       await completeEncounter(encounterId);

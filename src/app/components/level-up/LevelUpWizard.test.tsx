@@ -39,8 +39,16 @@ const pending: PendingLevelUp = {
   levels: [
     {
       level: 5,
-      hpIncrease: 7,
+      hpGain: 7,
+      proficiencyBonus: 3,
       newFeatures: [],
+      newSubclassFeatures: [],
+      isASILevel: false,
+      requiresSubclass: false,
+      featureChoices: [],
+      newCantripSlots: 0,
+      newSpellSlots: 0,
+      maxNewSpellLevel: 0,
     },
   ],
 };

@@ -19,9 +19,21 @@ body {
 .bg-dungeon {
   background-color: #0d0a08;
   background-image:
-    radial-gradient(ellipse at 15% 40%, rgba(80, 45, 15, 0.18) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 25%, rgba(60, 25, 10, 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 85%, rgba(40, 20, 5, 0.10) 0%, transparent 50%);
+    radial-gradient(
+      ellipse at 15% 40%,
+      rgba(80, 45, 15, 0.18) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 85% 25%,
+      rgba(60, 25, 10, 0.12) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 50% 85%,
+      rgba(40, 20, 5, 0.1) 0%,
+      transparent 50%
+    );
 }
 
 /* ── Global scrollbar (gold-themed, all elements) ─────────── */
@@ -65,8 +77,16 @@ body {
 .card-parchment {
   background-color: #f4e0ae;
   background-image:
-    radial-gradient(ellipse at 80% 10%, rgba(255,255,255,0.25) 0%, transparent 60%),
-    radial-gradient(ellipse at 20% 90%, rgba(180,120,30,0.08) 0%, transparent 60%);
+    radial-gradient(
+      ellipse at 80% 10%,
+      rgba(255, 255, 255, 0.25) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 20% 90%,
+      rgba(180, 120, 30, 0.08) 0%,
+      transparent 60%
+    );
   box-shadow:
     0 2px 16px rgba(0, 0, 0, 0.5),
     inset 0 0 30px rgba(180, 130, 40, 0.06);
@@ -74,8 +94,11 @@ body {
 
 .card-parchment-player {
   background-color: #fdf3dc;
-  background-image:
-    radial-gradient(ellipse at 80% 10%, rgba(255,255,255,0.35) 0%, transparent 60%);
+  background-image: radial-gradient(
+    ellipse at 80% 10%,
+    rgba(255, 255, 255, 0.35) 0%,
+    transparent 60%
+  );
   box-shadow:
     0 2px 10px rgba(0, 0, 0, 0.35),
     inset 0 0 20px rgba(200, 170, 80, 0.04);
@@ -84,14 +107,23 @@ body {
 /* ── Gold divider ──────────────────────────────────────────── */
 .divider-gold {
   height: 1px;
-  background: linear-gradient(to right, transparent, #c9a84c, #e5c97e, #c9a84c, transparent);
+  background: linear-gradient(
+    to right,
+    transparent,
+    #c9a84c,
+    #e5c97e,
+    #c9a84c,
+    transparent
+  );
   opacity: 0.6;
 }
 
 /* ── Ornamental border ─────────────────────────────────────── */
 .border-gold-ornate {
   border: 1px solid #8b6914;
-  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.15), inset 0 0 0 1px rgba(201, 168, 76, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(201, 168, 76, 0.15),
+    inset 0 0 0 1px rgba(201, 168, 76, 0.08);
 }
 
 /* ── Tome container ────────────────────────────────────────── */
@@ -114,24 +146,62 @@ body {
 .hp-fill {
   height: 100%;
   border-radius: 3px;
-  transition: width 0.6s ease, background-color 0.6s ease;
+  transition:
+    width 0.6s ease,
+    background-color 0.6s ease;
 }
 
 /* ── Loading dots animation ────────────────────────────────── */
 @keyframes dot-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
-  40%           { transform: translateY(-6px); opacity: 1; }
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
 }
-.dot-1 { animation: dot-bounce 1.2s ease-in-out infinite; }
-.dot-2 { animation: dot-bounce 1.2s ease-in-out 0.2s infinite; }
-.dot-3 { animation: dot-bounce 1.2s ease-in-out 0.4s infinite; }
+.dot-1 {
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.dot-2 {
+  animation: dot-bounce 1.2s ease-in-out 0.2s infinite;
+}
+.dot-3 {
+  animation: dot-bounce 1.2s ease-in-out 0.4s infinite;
+}
+
+/* ── Map loading shimmer — indeterminate sliding highlight ── */
+@keyframes loading-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+.animate-loading-shimmer {
+  animation: loading-shimmer 1.4s ease-in-out infinite;
+}
 
 /* Toast: fades in, holds, then gradually dissipates over 5 seconds */
 @keyframes toast-dissipate {
-  0%   { opacity: 0; }
-  5%   { opacity: 1; }
-  60%  { opacity: 1; }
-  100% { opacity: 0; pointer-events: none; }
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    pointer-events: none;
+  }
 }
 .animate-toast-dissipate {
   animation: toast-dissipate 5s ease-out forwards;
@@ -173,7 +243,9 @@ body {
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
   user-select: none;
 }
 .combat-zoom-controls button:hover {
@@ -226,7 +298,10 @@ body {
   border: 1px solid rgba(139, 105, 20, 0.4);
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
   user-select: none;
 }
 .combat-ability-btn:hover:not(:disabled) {
@@ -325,7 +400,10 @@ body {
   border-radius: 6px;
   color: rgba(245, 232, 200, 0.5);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 .combat-hotbar-chat-toggle:hover {
   background: rgba(26, 20, 16, 0.95);
@@ -382,7 +460,10 @@ body {
   height: 32px;
   border-radius: 2px;
   background: rgba(139, 105, 20, 0.25);
-  transition: background 0.2s, height 0.2s, box-shadow 0.2s;
+  transition:
+    background 0.2s,
+    height 0.2s,
+    box-shadow 0.2s;
 }
 .resize-handle:hover::after {
   background: rgba(201, 168, 76, 0.6);

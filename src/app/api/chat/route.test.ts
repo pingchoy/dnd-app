@@ -51,9 +51,16 @@ vi.mock("../../lib/gameState", () => ({
   getEncounter: () => mockGetEncounter(),
   getActiveNPCs: () => mockGetActiveNPCs(),
   getActiveMapId: vi.fn().mockReturnValue(undefined),
+  getExplorationMapId: vi.fn().mockReturnValue(undefined),
   getExplorationPositions: vi.fn().mockReturnValue(undefined),
+  getCurrentPOIId: vi.fn().mockReturnValue(undefined),
+  setCurrentPOIId: vi.fn(),
+  getCampaignSlug: vi.fn().mockReturnValue(undefined),
   setEncounter: vi.fn(),
   createNPC: vi.fn(),
+  serializeCampaignContext: vi.fn().mockReturnValue(""),
+  serializeExplorationContext: vi.fn().mockReturnValue(""),
+  serializeRegionContext: vi.fn().mockReturnValue(""),
 }));
 
 vi.mock("../../lib/encounterStore", () => ({
@@ -63,10 +70,16 @@ vi.mock("../../lib/encounterStore", () => ({
 
 vi.mock("../../lib/mapStore", () => ({
   loadMap: vi.fn().mockResolvedValue(null),
+  loadExplorationMap: vi.fn().mockResolvedValue(null),
+  updateMap: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../lib/characterStore", () => ({
   querySRD: vi.fn(),
+  loadSession: vi.fn().mockResolvedValue(null),
+  saveSessionState: vi.fn().mockResolvedValue(undefined),
+  getCampaign: vi.fn().mockResolvedValue(null),
+  getCampaignAct: vi.fn().mockResolvedValue(null),
 }));
 
 const mockCalculateCost = vi.fn().mockReturnValue(0.001);

@@ -90,7 +90,7 @@ function makeCombatContext(playerOverrides: Partial<PlayerState> = {}): CombatCo
     encounter: {
       id: "enc-1",
       sessionId: "session-1",
-      characterId: "char-1",
+      characterIds: ["char-1"],
       status: "active",
       activeNPCs: [makeNPC()],
       positions: { player: { row: 0, col: 0 }, "goblin-1": { row: 1, col: 1 } },

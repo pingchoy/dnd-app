@@ -12,11 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  anthropic,
-  MAX_TOKENS,
-  MODELS,
-} from "../lib/anthropic";
+import { anthropic, MAX_TOKENS, MODELS } from "../lib/anthropic";
 import {
   GameState,
   StateChanges,
@@ -64,9 +60,12 @@ YOUR ROLE:
   Spell save DC and spell attack are pre-computed in the character state — use those values.
   Use query_srd("spell", slug) for spell details (slug = lowercase hyphenated name, e.g. "cure-wounds").
 - Do not allow impossible actions or meta-gaming.
-- Keep responses to 2–4 paragraphs. Do not end with a question; offer information and let the player decide.
+- Keep responses to 1-2 paragraphs. Do not end with a question; offer information and let the player decide.
 
-MEMORY TRACKING — use update_game_state to maintain campaign memory across turns:
+STATE TRACKING — use update_game_state on EVERY turn to keep the game state current:
+- scene_update: ALWAYS include this. A 1-2 sentence summary of what is happening RIGHT NOW ("The party stands in the dimly lit tavern, negotiating with the innkeeper", "Combat just ended in the dockside warehouse; crates are smashed and the air smells of smoke"). This is the player's at-a-glance scene context.
+- location_changed: Set whenever the player moves to a new named location ("Valdris Docks", "The Gilded Tankard", "Sewers beneath the market district").
+- set_current_poi: ALWAYS set this when the party travels to a different POI on the exploration map. Use the POI's id (e.g. "poi_docks"). This updates the map marker so the player sees where they are. If the player says they want to go somewhere that matches a POI name, set it immediately.
 - notable_event: Granular short-term events ("spoke with the barkeep", "found a hidden passage", "bought a healing potion"). Record one per turn when something noteworthy happens.
 - milestone: Permanent major plot beats only ("defeated the shadow dragon", "betrayed by captain aldric", "completed the thieves guild initiation"). Use sparingly — 1-2 per session at most. These are never forgotten.
 - campaign_summary_update: Rewrite only when the story fundamentally shifts — a new act begins, a major revelation changes everything, or the core quest changes direction. Do NOT update for minor progress.
@@ -83,13 +82,14 @@ CAMPAIGN CONTEXT:
 - When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
 - Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
-- When a campaign encounter (shown in NEXT ENCOUNTER) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with encounter_completed set to the encounter name. This advances the story to the next set-piece.
+- When a campaign story beat (shown in NEXT STORY BEAT) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with story_beat_completed set to the beat name. This advances the story to the next beat.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
+- EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists POIs the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them.
 
 WHEN TO USE query_campaign:
-- type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen.
-- type='encounter': Call when the NEXT ENCOUNTER is about to trigger — the player arrives at the encounter location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the encounter, not during.
-- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what key events should happen, or what triggers the transition to the next act.
+- type='npc': Call BEFORE roleplaying a named campaign NPC in dialogue or a significant interaction. The briefing only shows traits — query_campaign gives you their full personality, secrets, motivations, and voice notes for the CURRENT ACT so you can portray them authentically. Always do this the first time an NPC speaks or acts on-screen. NPC data is act-scoped — it only contains what you should know right now, never future-act spoilers.
+- type='story_beat': Call when the NEXT STORY BEAT is about to trigger — the player arrives at the beat's location or the narrative naturally leads into it. This gives you dmGuidance with specific DC checks, NPC behavior, and narrative beats to run the scene properly. Do this BEFORE narrating the beat, not during.
+- type='act': Call when you need the full act structure — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act.
 - Do NOT call query_campaign for information already visible in the briefing. Only call it when you need deeper detail.
 
 TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
@@ -148,8 +148,10 @@ export async function getDMResponse(
 
   // Fetch recent messages from subcollection for agent context window
   const recentMessages = await getRecentMessages(sessionId, DM_HISTORY_ENTRIES);
-  const historyMessages: Anthropic.MessageParam[] =
-    recentMessages.map((m) => ({ role: m.role, content: m.content }));
+  const historyMessages: Anthropic.MessageParam[] = recentMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
 
   const messages: Anthropic.MessageParam[] = [
     ...historyMessages,
@@ -175,8 +177,14 @@ export async function getDMResponse(
   // narrative. Exits when: (a) the model emits end_turn, (b) only state-mutation
   // tools were called (no further context needed), or (c) MAX_ITERATIONS is hit.
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    console.log(`[DM Agent] Loop iteration ${iter + 1}/${MAX_ITERATIONS} — calling ${MODELS.NARRATIVE}...`);
-    if (iter === 0) console.log("[DM Agent] CAMPAIGN STATE:\n", userContent.split("\n\nPLAYER CHARACTER:")[0]);
+    console.log(
+      `[DM Agent] Loop iteration ${iter + 1}/${MAX_ITERATIONS} — calling ${MODELS.NARRATIVE}...`,
+    );
+    if (iter === 0)
+      console.log(
+        "[DM Agent] CAMPAIGN STATE:\n",
+        userContent.split("\n\nPLAYER CHARACTER:")[0],
+      );
     const response = await anthropic.messages.create({
       model: MODELS.NARRATIVE,
       max_tokens: MAX_TOKENS.NARRATIVE,
@@ -187,7 +195,9 @@ export async function getDMResponse(
 
     totalInputTokens += response.usage.input_tokens;
     totalOutputTokens += response.usage.output_tokens;
-    console.log(`[DM Agent] Response: stop_reason=${response.stop_reason}, tokens={ in: ${response.usage.input_tokens}, out: ${response.usage.output_tokens} }`);
+    console.log(
+      `[DM Agent] Response: stop_reason=${response.stop_reason}, tokens={ in: ${response.usage.input_tokens}, out: ${response.usage.output_tokens} }`,
+    );
 
     // Collect narrative text from this turn
     for (const block of response.content) {
@@ -208,7 +218,10 @@ export async function getDMResponse(
       if (block.type !== "tool_use") continue;
 
       if (block.name === "update_game_state") {
-        console.log("[DM Agent] Tool call: update_game_state", JSON.stringify(block.input, null, 2));
+        console.log(
+          "[DM Agent] Tool call: update_game_state",
+          JSON.stringify(block.input, null, 2),
+        );
         stateChanges = block.input as StateChanges;
         toolResults.push({
           type: "tool_result",
@@ -216,9 +229,15 @@ export async function getDMResponse(
           content: '{"ok":true}',
         });
       } else if (block.name === "update_npc") {
-        console.log("[DM Agent] Tool call: update_npc", JSON.stringify(block.input));
+        console.log(
+          "[DM Agent] Tool call: update_npc",
+          JSON.stringify(block.input),
+        );
         const result = updateNPC(block.input as UpdateNPCInput);
-        const resultPayload: Record<string, unknown> = { ok: true, newHp: result.newHp };
+        const resultPayload: Record<string, unknown> = {
+          ok: true,
+          newHp: result.newHp,
+        };
         if (result.died) {
           resultPayload.died = true;
           resultPayload.name = result.name;
@@ -237,7 +256,12 @@ export async function getDMResponse(
           class_slug?: string;
           level?: number;
         };
-        const { resultContent, newCount } = await handleSRDQuery(input, srdQueryCount, MAX_SRD_QUERIES, "DM Agent");
+        const { resultContent, newCount } = await handleSRDQuery(
+          input,
+          srdQueryCount,
+          MAX_SRD_QUERIES,
+          "DM Agent",
+        );
         srdQueryCount = newCount;
 
         toolResults.push({
@@ -251,11 +275,15 @@ export async function getDMResponse(
           type: string;
           npc_id?: string;
           act_number?: number;
-          encounter_name?: string;
+          story_beat_name?: string;
         };
         const { resultContent, newCount } = await handleCampaignQuery(
-          input, campaignSlug, gameState.story.currentAct ?? 1,
-          campaignQueryCount, MAX_SRD_QUERIES, "DM Agent",
+          input,
+          campaignSlug,
+          gameState.story.currentAct ?? 1,
+          campaignQueryCount,
+          MAX_SRD_QUERIES,
+          "DM Agent",
         );
         campaignQueryCount = newCount;
         toolResults.push({
@@ -272,10 +300,13 @@ export async function getDMResponse(
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
 
-    // If this iteration had no SRD queries, only state-mutation tools were called.
-    // The model is done after receiving their acknowledgements.
-    if (!hasQuerySRD) {
-      console.log("[DM Agent] No SRD queries this iteration — breaking loop");
+    // If only state-mutation tools were called (no SRD/campaign queries that need
+    // incorporation), we can stop looping — UNLESS the model hasn't produced any
+    // narrative yet, in which case we need one more turn for it to narrate.
+    if (!hasQuerySRD && narrative.trim().length > 0) {
+      console.log(
+        "[DM Agent] No SRD queries and narrative present — breaking loop",
+      );
       break;
     }
   }

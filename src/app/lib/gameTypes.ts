@@ -18,19 +18,19 @@ export type RegionType =
   | "residential"
   | "street"
   | "guard_post"
-  | "danger"    // traps, hazards — DM generates tension
-  | "safe"      // players can long rest here
-  | "custom";   // freeform — use dmNote for description
+  | "danger" // traps, hazards — DM generates tension
+  | "safe" // players can long rest here
+  | "custom"; // freeform — use dmNote for description
 
 /** Semantic region painted on a map — tells the DM what's at each location. */
 export interface MapRegion {
-  id: string;                    // "region_tavern_main"
-  name: string;                  // "The Rusty Flagon — Common Room"
+  id: string; // "region_tavern_main"
+  name: string; // "The Rusty Flagon — Common Room"
   type: RegionType;
-  cells: number[];               // flat cell indices (row * 20 + col) — arbitrary shape
-  dmNote?: string;               // "Barkeep Mira behind counter. Patrons are tense."
-  defaultNPCSlugs?: string[];    // ["guard", "commoner"] — NPCs placed here by default
-  shopInventory?: string[];      // for type="shop" — items the DM can reference
+  cells: number[]; // flat cell indices (row * 20 + col) — arbitrary shape
+  dmNote?: string; // "Barkeep Mira behind counter. Patrons are tense."
+  defaultNPCSlugs?: string[]; // ["guard", "commoner"] — NPCs placed here by default
+  shopInventory?: string[]; // for type="shop" — items the DM can reference
 }
 
 /**
@@ -38,8 +38,11 @@ export interface MapRegion {
  * Safe to call on regions that already have `cells`.
  */
 export function normalizeRegion(r: Record<string, unknown>): MapRegion {
-  const region = r as unknown as MapRegion & { bounds?: { minRow: number; maxRow: number; minCol: number; maxCol: number } };
-  if (region.cells && Array.isArray(region.cells)) return { ...region, cells: region.cells };
+  const region = r as unknown as MapRegion & {
+    bounds?: { minRow: number; maxRow: number; minCol: number; maxCol: number };
+  };
+  if (region.cells && Array.isArray(region.cells))
+    return { ...region, cells: region.cells };
   // Convert legacy bounds → cells
   if (region.bounds) {
     const { minRow, maxRow, minCol, maxCol } = region.bounds;
@@ -61,18 +64,49 @@ export function normalizeRegions(regions: unknown[]): MapRegion[] {
   return regions.map((r) => normalizeRegion(r as Record<string, unknown>));
 }
 
-/** Full map document — stored in Firestore `sessions/{sessionId}/maps/{id}`. */
-export interface MapDocument {
+/** A numbered point of interest on an exploration map — links to a combat map. */
+export interface PointOfInterest {
+  id: string; // "poi_docks"
+  number: number; // display number on the map (1-indexed)
+  name: string; // "valdris docks"
+  description: string; // "a busy waterfront district"
+  position: { x: number; y: number }; // percentage coordinates on the exploration image (0-100)
+  combatMapId: string; // Firestore ID of the linked CombatMapDocument
+  isHidden: boolean; // hidden POIs are revealed by DM during play
+  actNumbers: number[]; // which acts this POI is relevant in
+  locationTags: string[]; // patterns for DM agent location matching
+  defaultNPCSlugs?: string[]; // NPCs placed here by default
+}
+
+/** Shared fields for all map documents — not exported directly. */
+interface BaseMapDocument {
   id?: string;
-  name: string;                  // "The Rusty Flagon"
-  backgroundImageUrl?: string;   // user-uploaded image (Firebase Storage)
-  gridSize: number;              // always 20
-  feetPerSquare: number;         // 5 for detailed, 50-100 for zone
-  regions: MapRegion[];
-  tileData?: number[];           // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door. Omitted for zone maps.
+  name: string;
+  backgroundImageUrl?: string; // user-uploaded or AI-generated image
   createdAt?: number;
   updatedAt?: number;
 }
+
+/** Exploration map — a background image with numbered points of interest. */
+export interface ExplorationMapDocument extends BaseMapDocument {
+  mapType: "exploration";
+  backgroundImageUrl: string; // required for exploration maps (overrides optional base)
+  pointsOfInterest: PointOfInterest[];
+}
+
+/** Combat (tactical battle grid) map — stored in Firestore `sessions/{sessionId}/maps/{id}`. */
+export interface CombatMapDocument extends BaseMapDocument {
+  mapType: "combat";
+  gridSize: number; // always 20
+  feetPerSquare: number; // 5 for detailed, 50-100 for zone
+  regions: MapRegion[];
+  tileData?: number[]; // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door
+  parentMapId?: string; // Firestore ID of the parent ExplorationMapDocument
+  poiId?: string; // PointOfInterest.id this combat map is linked from
+}
+
+/** Discriminated union — narrow on `mapType` to access type-specific fields. */
+export type MapDocument = ExplorationMapDocument | CombatMapDocument;
 
 // ─── Grid & Combat Types ─────────────────────────────────────────────────────
 
@@ -82,29 +116,29 @@ export interface GridPosition {
 }
 
 export interface AbilityRange {
-  type: "melee" | "ranged" | "both" | "self" | "touch";  // "both" = thrown weapons
-  reach?: number;       // melee/touch reach in feet (default 5)
-  shortRange?: number;  // normal range in feet for ranged/thrown
-  longRange?: number;   // max range (disadvantage beyond short)
+  type: "melee" | "ranged" | "both" | "self" | "touch"; // "both" = thrown weapons
+  reach?: number; // melee/touch reach in feet (default 5)
+  shortRange?: number; // normal range in feet for ranged/thrown
+  longRange?: number; // max range (disadvantage beyond short)
 }
 export interface SRDWeaponData {
   slug: string;
   name: string;
-  category: string;       // "Simple Melee Weapons", "Martial Ranged Weapons", etc.
+  category: string; // "Simple Melee Weapons", "Martial Ranged Weapons", etc.
   damageDice: string;
   damageType: string;
-  properties: string[];   // ["reach", "thrown (range 30/120)", "ammunition (range 80/320)"]
-  range?: number;         // normal range in feet (0 for melee-only)
-  longRange?: number;     // long range in feet (0 for melee-only)
-  isSimple?: boolean;     // true for simple weapons, false for martial
+  properties: string[]; // ["reach", "thrown (range 30/120)", "ammunition (range 80/320)"]
+  range?: number; // normal range in feet (0 for melee-only)
+  longRange?: number; // long range in feet (0 for melee-only)
+  isSimple?: boolean; // true for simple weapons, false for martial
 }
 
 // ─── Ability Types ───────────────────────────────────────────────────────────
 
 export interface AOEData {
   shape: "cone" | "sphere" | "cube" | "line" | "cylinder";
-  size: number;       // radius (sphere/cylinder/cube) or length (cone/line) in feet
-  width?: number;     // for line spells only, in feet (default 5)
+  size: number; // radius (sphere/cylinder/cube) or length (cone/line) in feet
+  width?: number; // for line spells only, in feet (default 5)
   origin: "self" | "target"; // "self" = emanates from caster (Burning Hands), "target" = placed at a point (Fireball)
 }
 
@@ -117,18 +151,18 @@ export interface SpellScalingEntry {
 }
 
 export interface Ability {
-  id: string;                    // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
+  id: string; // "weapon:rapier", "cantrip:fire-bolt", "action:dodge"
   name: string;
   type: "weapon" | "cantrip" | "spell" | "action" | "racial";
-  spellLevel?: number;           // 0=cantrip, 1+=leveled (base level for spells)
-  attackType?: SpellAttackType;  // how this ability targets
-  saveAbility?: string;          // "dexterity" for Sacred Flame etc.
+  spellLevel?: number; // 0=cantrip, 1+=leveled (base level for spells)
+  attackType?: SpellAttackType; // how this ability targets
+  saveAbility?: string; // "dexterity" for Sacred Flame etc.
   /** Ability score used to compute save DC (DC = 8 + prof + this mod). e.g. "constitution" for Breath Weapon. */
   saveDCAbility?: string;
-  range?: AbilityRange;           // unified parsed range (weapons, spells, cantrips)
-  requiresTarget: boolean;       // false for Self spells, Dodge, Dash, Disengage
-  damageRoll?: string;           // "1d10" — current damage (updated at level-up for cantrips)
-  damageType?: string;           // "fire", "piercing"
+  range?: AbilityRange; // unified parsed range (weapons, spells, cantrips)
+  requiresTarget: boolean; // false for Self spells, Dodge, Dash, Disengage
+  damageRoll?: string; // "1d10" — current damage (updated at level-up for cantrips)
+  damageType?: string; // "fire", "piercing"
   /** Number of targets/beams (e.g. Eldritch Blast). Updated at level-up for scaling cantrips. */
   targetCount?: number;
   /** Leveled spells: slot level → scaling overrides. Only breakpoint levels stored. */
@@ -297,25 +331,25 @@ export interface PlayerState {
   // ─── Active conditions (tracks current character state for effect aggregation) ───
   activeConditions?: string[];
   // ─── Aggregated offense (computed by applyEffects from feature gameplayEffects) ───
-  numAttacks?: number;             // default 1
-  meleeAttackBonus?: number;       // default 0
-  rangedAttackBonus?: number;      // default 0
-  spellAttackBonus?: number;       // default 0
-  meleeDamageBonus?: number;       // default 0
-  rangedDamageBonus?: number;      // default 0
-  critBonusDice?: number;          // default 0
-  critRange?: number;              // default 20
-  spellDamageBonus?: number;       // default 0
-  bonusDamage?: string[];          // default []
+  numAttacks?: number; // default 1
+  meleeAttackBonus?: number; // default 0
+  rangedAttackBonus?: number; // default 0
+  spellAttackBonus?: number; // default 0
+  meleeDamageBonus?: number; // default 0
+  rangedDamageBonus?: number; // default 0
+  critBonusDice?: number; // default 0
+  critRange?: number; // default 20
+  spellDamageBonus?: number; // default 0
+  bonusDamage?: string[]; // default []
   // ─── Aggregated defense (computed by applyEffects) ───
-  resistances?: string[];          // default []
-  immunities?: string[];           // default []
-  evasion?: boolean;               // default false
+  resistances?: string[]; // default []
+  immunities?: string[]; // default []
+  evasion?: boolean; // default false
   // ─── Aggregated saves & checks (computed by applyEffects) ───
-  saveAdvantages?: string[];       // default [] — abilities with save advantage (e.g. "dexterity")
-  initiativeAdvantage?: boolean;   // default false
-  halfProficiency?: boolean;       // default false
-  minCheckRoll?: number;           // default 0
+  saveAdvantages?: string[]; // default [] — abilities with save advantage (e.g. "dexterity")
+  initiativeAdvantage?: boolean; // default false
+  halfProficiency?: boolean; // default false
+  minCheckRoll?: number; // default 0
   bonusSaveProficiencies?: string[]; // separate from base savingThrowProficiencies
   // ─── Spellcasting (optional — non-casters carry none of these) ───
   spellcastingAbility?: keyof CharacterStats;
@@ -345,15 +379,30 @@ export interface PendingLevelData {
   level: number;
   hpGain: number;
   proficiencyBonus: number;
-  newFeatures: Array<{ name: string; description: string; type?: "active" | "passive" | "reaction"; gameplayEffects?: GameplayEffects }>;
-  newSubclassFeatures: Array<{ name: string; description: string; type?: "active" | "passive" | "reaction"; gameplayEffects?: GameplayEffects }>;
+  newFeatures: Array<{
+    name: string;
+    description: string;
+    type?: "active" | "passive" | "reaction";
+    gameplayEffects?: GameplayEffects;
+  }>;
+  newSubclassFeatures: Array<{
+    name: string;
+    description: string;
+    type?: "active" | "passive" | "reaction";
+    gameplayEffects?: GameplayEffects;
+  }>;
   spellSlots?: Record<string, number>;
   maxCantrips?: number;
   maxKnownSpells?: number;
   maxPreparedSpells?: number;
   isASILevel: boolean;
   requiresSubclass: boolean;
-  featureChoices: Array<{ name: string; description: string; options: string[]; picks?: number }>;
+  featureChoices: Array<{
+    name: string;
+    description: string;
+    options: string[];
+    picks?: number;
+  }>;
   newCantripSlots: number;
   newSpellSlots: number;
   maxNewSpellLevel: number;
@@ -375,7 +424,7 @@ export interface NPC {
   disposition: "hostile" | "neutral" | "friendly";
   conditions: string[];
   notes: string;
-  speed?: number;  // walking speed in feet (default 30)
+  speed?: number; // walking speed in feet (default 30)
 }
 
 export interface StoryState {
@@ -394,8 +443,8 @@ export interface StoryState {
   activeEncounterId?: string;
   /** Current act number within the campaign (1-indexed). Defaults to 1. */
   currentAct?: number;
-  /** Encounter names completed in the current act. Reset on act advance. */
-  completedEncounters?: string[];
+  /** Story beat names completed in the current act. Reset on act advance. */
+  completedStoryBeats?: string[];
 }
 
 /** The only campaign currently available. Used as default for all new sessions. */
@@ -403,53 +452,53 @@ export const DEFAULT_CAMPAIGN_SLUG = "the-crimson-accord";
 
 // ─── Campaign Map Types ──────────────────────────────────────────────────────
 
-/** Region blueprint for a campaign map — guides the map generator. */
-export interface CampaignMapRegionSpec {
-  id: string;                      // "region_main_hall"
-  name: string;                    // "main hall"
-  type: RegionType;
-  approximateSize: "small" | "medium" | "large";
-  position?: "north" | "south" | "east" | "west" | "center"
-    | "northeast" | "northwest" | "southeast" | "southwest";
-  dmNote?: string;
+/** Point-of-interest blueprint for a campaign exploration map. */
+export interface CampaignPOISpec {
+  id: string; // "poi_docks"
+  number: number; // display number (1-indexed)
+  name: string; // "valdris docks"
+  description: string;
+  combatMapSpecId: string; // References CampaignCombatMapSpec.id
+  isHidden: boolean;
+  actNumbers: number[];
+  locationTags: string[];
   defaultNPCSlugs?: string[];
-  shopInventory?: string[];
+  position?: { x: number; y: number }; // percentage coordinates for map editor placement
 }
 
-/** Connection from one campaign map to another. */
-export interface CampaignMapConnection {
-  targetMapSpecId: string;
-  direction: string;               // "north", "underground", "through the tunnel"
-  description: string;             // "a heavy iron door leads down into the undercity"
+/** Blueprint for an exploration map — a background image with numbered POIs. */
+export interface CampaignExplorationMapSpec {
+  id: string; // "valdris-city"
+  name: string; // "The Free City of Valdris"
+  imagePrompt: string; // Copy-pasteable prompt for AI image generation
+  pointsOfInterest: CampaignPOISpec[];
 }
 
-/**
- * Blueprint for a map that a campaign needs.
- * Contains enough detail for a future generator to produce a MapDocument.
- */
-export interface CampaignMapSpec {
-  id: string;                      // "valdris-docks" — unique within the campaign
-  name: string;                    // "Valdris Docks, Pier 7"
-  layoutDescription: string;       // Prose description of physical layout for the generator
-  feetPerSquare: number;           // 5 for indoor/dungeon, 50-100 for zone
-  terrain: "urban" | "dungeon" | "wilderness" | "underground" | "interior" | "mixed";
-  lighting: "bright" | "dim" | "dark" | "mixed";
-  atmosphereNotes?: string;        // Visual/mood hints for image generation
-  regions: CampaignMapRegionSpec[];
-  connections?: CampaignMapConnection[];
-  actNumbers: number[];            // Which acts this map appears in
-  locationTags: string[];          // Patterns for DM agent location matching
+/** Blueprint for a combat (tactical battle grid) map. */
+export interface CampaignCombatMapSpec {
+  id: string; // "valdris-docks" — unique within the campaign
+  name: string; // "Valdris Docks, Pier 7"
+  feetPerSquare: number; // 5 for indoor/dungeon, 50-100 for zone
+  imagePrompt: string; // Copy-pasteable prompt for AI image generation
 }
+
+/** @deprecated Use CampaignCombatMapSpec instead. Kept for backwards compatibility. */
+export type CampaignMapSpec = CampaignCombatMapSpec;
 
 /** Pre-generated map template for a campaign location. */
 export interface CampaignMap {
   campaignSlug: string;
-  mapSpecId: string;               // References CampaignMapSpec.id
+  mapSpecId: string; // References CampaignCombatMapSpec.id or CampaignExplorationMapSpec.id
+  mapType: "exploration" | "combat";
   name: string;
-  gridSize: number;                // 20
-  feetPerSquare: number;
-  tileData: number[];              // 400-element flat array
-  regions: MapRegion[];
+  imagePrompt?: string; // Copy-pasteable prompt for AI image generation
+  // Combat map fields
+  gridSize?: number; // 20 (combat maps only)
+  feetPerSquare?: number;
+  tileData?: number[]; // 400-element flat array (combat maps only)
+  regions?: MapRegion[]; // combat maps only
+  // Exploration map fields
+  pointsOfInterest?: PointOfInterest[]; // exploration maps only
   backgroundImageUrl?: string;
   generatedAt: number;
 }
@@ -457,10 +506,17 @@ export interface CampaignMap {
 // ─── Campaign Types ──────────────────────────────────────────────────────────
 
 export interface CampaignNPC {
-  id: string;                          // "lysara-thorne"
-  name: string;                        // "Lysara Thorne"
-  srdMonsterSlug?: string;             // SRD creature slug for combat stats (e.g. "noble")
-  role: "patron" | "ally" | "rival" | "villain" | "informant" | "betrayer" | "neutral";
+  id: string; // "lysara-thorne"
+  name: string; // "Lysara Thorne"
+  srdMonsterSlug?: string; // SRD creature slug for combat stats (e.g. "noble")
+  role:
+    | "patron"
+    | "ally"
+    | "rival"
+    | "villain"
+    | "informant"
+    | "betrayer"
+    | "neutral";
   appearance: string;
   personality: {
     traits: string[];
@@ -490,34 +546,35 @@ export interface CampaignNPC {
 }
 
 export interface Campaign {
-  slug: string;                        // "the-crimson-accord"
-  title: string;                       // "The Crimson Accord"
-  playerTeaser: string;                // Spoiler-free hook
-  theme: string;                       // "political intrigue"
+  slug: string; // "the-crimson-accord"
+  title: string; // "The Crimson Accord"
+  playerTeaser: string; // Spoiler-free hook
+  theme: string; // "political intrigue"
   suggestedLevel: { min: number; max: number };
   estimatedDurationHours: number;
-  hooks: string[];
-  actSlugs: string[];                  // ["the-crimson-accord_act-1", ...]
-  npcs: CampaignNPC[];
-  dmSummary: string;                   // Spoiler-free theme/tone/setting for DM injection (~50 tokens)
-  mapSpecs?: CampaignMapSpec[];        // Blueprints for maps this campaign needs
+  actSlugs: string[]; // ["the-crimson-accord_act-1", ...]
+  dmSummary: string; // Spoiler-free theme/tone/setting for DM injection (~50 tokens)
+  /** @deprecated Use explorationMapSpecs + combatMapSpecs instead. */
+  mapSpecs?: CampaignMapSpec[]; // Legacy: flat list of combat map blueprints
+  explorationMapSpecs?: CampaignExplorationMapSpec[];
+  combatMapSpecs?: CampaignCombatMapSpec[];
 }
 
 export interface CampaignEnemy {
-  srdMonsterSlug: string;              // "bandit", "thug", "guard"
+  srdMonsterSlug: string; // "bandit", "thug", "guard"
   count: number;
   notes?: string;
 }
 
-export interface CampaignEncounter {
-  name: string;                        // "Smuggler Warehouse Raid"
+export interface StoryBeat {
+  name: string; // "Smuggler Warehouse Raid"
   description: string;
   type: "combat" | "social" | "exploration" | "puzzle" | "boss";
   difficulty: "easy" | "medium" | "hard" | "deadly";
   enemies?: CampaignEnemy[];
-  npcInvolvement?: string[];           // CampaignNPC ids involved
+  npcInvolvement?: string[]; // CampaignNPC ids involved
   location: string;
-  mapSpecId?: string;                  // References CampaignMapSpec.id
+  mapSpecId?: string; // References CampaignMapSpec.id
   rewards?: {
     xp?: number;
     gold?: number;
@@ -527,19 +584,25 @@ export interface CampaignEncounter {
 }
 
 export interface CampaignAct {
-  campaignSlug: string;                // "the-crimson-accord"
-  actNumber: number;                   // 1, 2, or 3
-  title: string;                       // "Shadows in the Market"
-  summary: string;                     // Player-facing act summary
+  campaignSlug: string; // "the-crimson-accord"
+  actNumber: number; // 1, 2, or 3
+  title: string; // "Shadows in the Market"
+  summary: string; // Player-facing act summary
   suggestedLevel: { min: number; max: number };
-  setting: string;                     // Primary location description
-  plotPoints: string[];
-  mysteries: string[];
-  keyEvents: string[];
-  encounters: CampaignEncounter[];
+  setting: string; // Primary location description
+  mysteries: string[]; // Open questions the party investigates — no answers (answers live in NPCs/storyBeats)
+  storyBeats: StoryBeat[];
   relevantNPCIds: string[];
   transitionToNextAct?: string;
-  dmBriefing: string;                  // Compact DM briefing for injection (~500 tokens)
+  dmBriefing: string; // Compact DM briefing for injection (~500 tokens)
+  /** Exploration map spec to activate when this act begins. */
+  explorationMapSpecId?: string;
+  /** POI where the party starts when this act begins. */
+  startingPOIId?: string;
+  /** Standalone NPC data for this act — only contains what the DM should know at this point in the story. */
+  npcs?: CampaignNPC[];
+  /** Act-specific adventure hooks for drawing the party into this act's story. */
+  hooks?: string[];
 }
 
 export interface ConversationTurn {
@@ -640,6 +703,13 @@ export interface StoredEncounter {
   defeatedNPCs?: NPC[];
   /** Cumulative XP earned in this encounter. Flushed to all players when combat ends. */
   totalXPAwarded?: number;
+  /** Most recent NPC attack result — written after each NPC turn for real-time label display. */
+  lastNpcResult?: {
+    npcId: string;
+    hit: boolean;
+    damage: number;
+    timestamp: number;
+  };
   /** Populated when combat ends — consumed by the frontend victory screen. */
   victoryData?: VictoryData;
   createdAt?: number;
@@ -653,9 +723,13 @@ export interface StoredSession {
   /** Campaign this session is running (e.g. "the-crimson-accord"). */
   campaignSlug?: string;
   characterIds: string[];
-  /** Which map is currently displayed in the grid. */
+  /** Firestore ID of the currently active exploration map. */
+  currentExplorationMapId?: string;
+  /** Currently active PointOfInterest.id within the exploration map. */
+  currentPOIId?: string;
+  /** @deprecated Use currentExplorationMapId / currentPOIId instead. Which combat map is currently displayed. */
   activeMapId?: string;
-  /** Exploration-mode token positions keyed by "player" or characterId. */
+  /** @deprecated Exploration-mode token positions keyed by "player" or characterId. */
   explorationPositions?: Record<string, GridPosition>;
   createdAt?: number;
   updatedAt?: number;
@@ -735,7 +809,10 @@ export function getProficiencyBonus(level: number): number {
 }
 
 /** Format weapon damage from an Ability for display (e.g. "1d8+3"). */
-export function formatAbilityDamage(ability: Ability, stats: CharacterStats): string {
+export function formatAbilityDamage(
+  ability: Ability,
+  stats: CharacterStats,
+): string {
   if (!ability.damageRoll) return "";
   const strMod = getModifier(stats.strength);
   const dexMod = getModifier(stats.dexterity);
@@ -743,13 +820,15 @@ export function formatAbilityDamage(ability: Ability, stats: CharacterStats): st
   if (ability.weaponStat === "str") mod += strMod;
   else if (ability.weaponStat === "dex") mod += dexMod;
   else if (ability.weaponStat === "finesse") mod += Math.max(strMod, dexMod);
-  return mod === 0 ? ability.damageRoll : `${ability.damageRoll}${mod >= 0 ? "+" : ""}${mod}`;
+  return mod === 0
+    ? ability.damageRoll
+    : `${ability.damageRoll}${mod >= 0 ? "+" : ""}${mod}`;
 }
 
 /** XP required to reach each level (index 0 = level 1). */
 export const XP_THRESHOLDS = [
-  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
-  85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
+  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000,
+  120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
 ];
 
 export function xpForLevel(level: number): number {
@@ -758,26 +837,46 @@ export function xpForLevel(level: number): number {
 
 /** Racial traits already surfaced as discrete stats — fully hidden from all trait lists. */
 export const HIDDEN_RACIAL_TRAITS = new Set([
-  "ability score increase", "speed",
+  "ability score increase",
+  "speed",
 ]);
 
 /** Racial traits that are lore/flavour — hidden from the main trait list, shown in a dedicated lore section. */
 export const LORE_RACIAL_TRAITS = new Set([
-  "age", "alignment", "size", "languages",
+  "age",
+  "alignment",
+  "size",
+  "languages",
 ]);
 
 /** Title-case a lowercase D&D term for display. Handles hyphens and minor words. */
 export function toDisplayCase(s: string): string {
   if (!s) return s;
-  const MINOR_WORDS = new Set(["of", "the", "and", "or", "in", "a", "an", "at", "to", "for", "on", "by", "with"]);
+  const MINOR_WORDS = new Set([
+    "of",
+    "the",
+    "and",
+    "or",
+    "in",
+    "a",
+    "an",
+    "at",
+    "to",
+    "for",
+    "on",
+    "by",
+    "with",
+  ]);
   const words = s.split(" ");
   return words
     .map((word, i) => {
       const parts = word.split("-");
       return parts
         .map((part, j) => {
-          if (i === 0 && j === 0) return part.charAt(0).toUpperCase() + part.slice(1);
-          if (i === words.length - 1 && j === parts.length - 1) return part.charAt(0).toUpperCase() + part.slice(1);
+          if (i === 0 && j === 0)
+            return part.charAt(0).toUpperCase() + part.slice(1);
+          if (i === words.length - 1 && j === parts.length - 1)
+            return part.charAt(0).toUpperCase() + part.slice(1);
           if (MINOR_WORDS.has(part.toLowerCase())) return part.toLowerCase();
           return part.charAt(0).toUpperCase() + part.slice(1);
         })
@@ -824,9 +923,9 @@ export function doubleDice(expr: string): string {
 // ─── Dice rolling ─────────────────────────────────────────────────────────────
 
 export interface DiceRollResult {
-  expression: string;  // "2d6"
-  rolls: number[];     // [3, 5]
-  total: number;       // 8
+  expression: string; // "2d6"
+  rolls: number[]; // [3, 5]
+  total: number; // 8
 }
 
 /**
@@ -849,13 +948,40 @@ export function rollDice(expression: string): DiceRollResult {
 
 /** Standard D&D 5e Challenge Rating to XP mapping. */
 const CR_TO_XP: Record<string, number> = {
-  "0": 10, "0.125": 25, "0.25": 50, "0.5": 100,
-  "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
-  "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
-  "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
-  "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
-  "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000,
-  "26": 90000, "27": 105000, "28": 120000, "29": 135000, "30": 155000,
+  "0": 10,
+  "0.125": 25,
+  "0.25": 50,
+  "0.5": 100,
+  "1": 200,
+  "2": 450,
+  "3": 700,
+  "4": 1100,
+  "5": 1800,
+  "6": 2300,
+  "7": 2900,
+  "8": 3900,
+  "9": 5000,
+  "10": 5900,
+  "11": 7200,
+  "12": 8400,
+  "13": 10000,
+  "14": 11500,
+  "15": 13000,
+  "16": 15000,
+  "17": 18000,
+  "18": 20000,
+  "19": 22000,
+  "20": 25000,
+  "21": 33000,
+  "22": 41000,
+  "23": 50000,
+  "24": 62000,
+  "25": 75000,
+  "26": 90000,
+  "27": 105000,
+  "28": 120000,
+  "29": 135000,
+  "30": 155000,
 };
 
 /** Convert a challenge rating (number or string like "1/4") to XP. */
@@ -913,10 +1039,14 @@ export interface ParsedRollResult {
  */
 function computeACFromFormula(formula: string, stats: CharacterStats): number {
   const abilityMap: Record<string, keyof CharacterStats> = {
-    str: "strength", dex: "dexterity", con: "constitution",
-    int: "intelligence", wis: "wisdom", cha: "charisma",
+    str: "strength",
+    dex: "dexterity",
+    con: "constitution",
+    int: "intelligence",
+    wis: "wisdom",
+    cha: "charisma",
   };
-  const parts = formula.split("+").map(p => p.trim().toLowerCase());
+  const parts = formula.split("+").map((p) => p.trim().toLowerCase());
   let ac = 0;
   for (const part of parts) {
     const num = parseInt(part);
@@ -982,19 +1112,25 @@ export function applyEffects(player: PlayerState): void {
     if (cond !== "always" && !conditions.includes(cond)) continue;
 
     // Offense
-    if (fx.numAttacks != null) player.numAttacks = Math.max(player.numAttacks!, fx.numAttacks);
+    if (fx.numAttacks != null)
+      player.numAttacks = Math.max(player.numAttacks!, fx.numAttacks);
     if (fx.meleeAttackBonus) player.meleeAttackBonus! += fx.meleeAttackBonus;
     if (fx.rangedAttackBonus) player.rangedAttackBonus! += fx.rangedAttackBonus;
     if (fx.spellAttackBonus) player.spellAttackBonus! += fx.spellAttackBonus;
     if (fx.meleeDamageBonus) player.meleeDamageBonus! += fx.meleeDamageBonus;
     if (fx.rangedDamageBonus) player.rangedDamageBonus! += fx.rangedDamageBonus;
     if (fx.critBonusDice) player.critBonusDice! += fx.critBonusDice;
-    if (fx.critRange != null) player.critRange = Math.min(player.critRange!, fx.critRange);
+    if (fx.critRange != null)
+      player.critRange = Math.min(player.critRange!, fx.critRange);
     if (fx.bonusDamage) player.bonusDamage!.push(fx.bonusDamage);
     if (fx.spellDamageBonusAbility) {
       const abilityMap: Record<string, keyof CharacterStats> = {
-        strength: "strength", dexterity: "dexterity", constitution: "constitution",
-        intelligence: "intelligence", wisdom: "wisdom", charisma: "charisma",
+        strength: "strength",
+        dexterity: "dexterity",
+        constitution: "constitution",
+        intelligence: "intelligence",
+        wisdom: "wisdom",
+        charisma: "charisma",
       };
       const stat = abilityMap[fx.spellDamageBonusAbility];
       if (stat) player.spellDamageBonus! += getModifier(player.stats[stat]);
@@ -1026,10 +1162,12 @@ export function applyEffects(player: PlayerState): void {
     }
     if (fx.initiativeAdvantage) player.initiativeAdvantage = true;
     if (fx.halfProficiency) player.halfProficiency = true;
-    if (fx.minCheckRoll != null) player.minCheckRoll = Math.max(player.minCheckRoll!, fx.minCheckRoll);
+    if (fx.minCheckRoll != null)
+      player.minCheckRoll = Math.max(player.minCheckRoll!, fx.minCheckRoll);
     if (fx.saveProficiencies?.length) {
       for (const sp of fx.saveProficiencies) {
-        if (!player.bonusSaveProficiencies!.includes(sp)) player.bonusSaveProficiencies!.push(sp);
+        if (!player.bonusSaveProficiencies!.includes(sp))
+          player.bonusSaveProficiencies!.push(sp);
       }
     }
 
@@ -1037,17 +1175,20 @@ export function applyEffects(player: PlayerState): void {
     if (fx.proficiencyGrants) {
       if (fx.proficiencyGrants.armor) {
         for (const a of fx.proficiencyGrants.armor) {
-          if (!player.armorProficiencies.includes(a)) player.armorProficiencies.push(a);
+          if (!player.armorProficiencies.includes(a))
+            player.armorProficiencies.push(a);
         }
       }
       if (fx.proficiencyGrants.weapons) {
         for (const w of fx.proficiencyGrants.weapons) {
-          if (!player.weaponProficiencies.includes(w)) player.weaponProficiencies.push(w);
+          if (!player.weaponProficiencies.includes(w))
+            player.weaponProficiencies.push(w);
         }
       }
       if (fx.proficiencyGrants.skills) {
         for (const s of fx.proficiencyGrants.skills) {
-          if (!player.skillProficiencies.includes(s)) player.skillProficiencies.push(s);
+          if (!player.skillProficiencies.includes(s))
+            player.skillProficiencies.push(s);
         }
       }
     }
@@ -1072,45 +1213,82 @@ export function applyEffects(player: PlayerState): void {
  * Used at character creation and by applyEffects() aggregation.
  */
 export const FIGHTING_STYLE_EFFECTS: Record<string, GameplayEffects> = {
-  archery:                  { rangedAttackBonus: 2 },
-  defense:                  { acBonus: 1 },
-  dueling:                  { condition: "wielding_onehanded", meleeDamageBonus: 2 },
-  "great weapon fighting":  { condition: "wielding_twohanded" },
-  protection:               { condition: "wielding_shield" },
-  "two-weapon fighting":    {},
+  archery: { rangedAttackBonus: 2 },
+  defense: { acBonus: 1 },
+  dueling: { condition: "wielding_onehanded", meleeDamageBonus: 2 },
+  "great weapon fighting": { condition: "wielding_twohanded" },
+  protection: { condition: "wielding_shield" },
+  "two-weapon fighting": {},
 };
 
 /**
  * Shared option data for features that require a player choice.
  * Used at both character creation and level-up time.
  */
-export const FEATURE_CHOICE_OPTIONS: Record<string, { options: string[]; picks?: number }> = {
+export const FEATURE_CHOICE_OPTIONS: Record<
+  string,
+  { options: string[]; picks?: number }
+> = {
   "fighting style": {
-    options: ["Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"],
+    options: [
+      "Archery",
+      "Defense",
+      "Dueling",
+      "Great Weapon Fighting",
+      "Protection",
+      "Two-Weapon Fighting",
+    ],
   },
   "favored enemy": {
-    options: ["Aberrations", "Beasts", "Celestials", "Constructs", "Dragons", "Elementals", "Fey", "Fiends", "Giants", "Monstrosities", "Oozes", "Plants", "Undead"],
+    options: [
+      "Aberrations",
+      "Beasts",
+      "Celestials",
+      "Constructs",
+      "Dragons",
+      "Elementals",
+      "Fey",
+      "Fiends",
+      "Giants",
+      "Monstrosities",
+      "Oozes",
+      "Plants",
+      "Undead",
+    ],
   },
   "natural explorer": {
-    options: ["Arctic", "Coast", "Desert", "Forest", "Grassland", "Mountain", "Swamp"],
-  },
-  "expertise": {
     options: [
-      "Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception",
-      "History", "Insight", "Intimidation", "Investigation", "Medicine",
-      "Nature", "Perception", "Performance", "Persuasion", "Religion",
-      "Sleight of Hand", "Stealth", "Survival", "Thieves' Tools",
+      "Arctic",
+      "Coast",
+      "Desert",
+      "Forest",
+      "Grassland",
+      "Mountain",
+      "Swamp",
+    ],
+  },
+  expertise: {
+    options: [
+      "Acrobatics",
+      "Animal Handling",
+      "Arcana",
+      "Athletics",
+      "Deception",
+      "History",
+      "Insight",
+      "Intimidation",
+      "Investigation",
+      "Medicine",
+      "Nature",
+      "Perception",
+      "Performance",
+      "Persuasion",
+      "Religion",
+      "Sleight of Hand",
+      "Stealth",
+      "Survival",
+      "Thieves' Tools",
     ],
     picks: 2,
   },
 };
-
-// ─── UI constants ─────────────────────────────────────────────────────────────
-
-export const OPENING_NARRATIVE = `*Your adventure begins.*
-
-The world stretches before you — full of shadow, wonder, and danger in equal measure. Ancient ruins whisper secrets to those bold enough to listen. Taverns buzz with rumour. Roads fork at crossroads where choices echo for lifetimes.
-
-Describe your first action, and the story will unfold from there.
-
-**What do you do?**`;

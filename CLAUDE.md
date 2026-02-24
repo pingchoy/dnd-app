@@ -104,8 +104,6 @@ Characters are created via the character creation wizard (`/character-creation`)
 ```
 ANTHROPIC_API_KEY=your-key-here            # Required for AI agents
 NEXT_PUBLIC_DEMIGOD_MODE=true              # Optional: enables debug menu (floating button, bottom-right)
-STABILITY_API_KEY=your-key-here            # Optional: enables AI map image generation
-FIREBASE_STORAGE_BUCKET=your-bucket.appspot.com  # Required for map image storage (when using STABILITY_API_KEY)
 ```
 
 ## Development

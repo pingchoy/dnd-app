@@ -46,6 +46,8 @@ export type {
   MapRegion,
   RegionType,
   MapDocument,
+  ExplorationMapDocument,
+  CombatMapDocument,
 } from "./gameTypes";
 
 export {
@@ -56,7 +58,6 @@ export {
   toDisplayCase,
   XP_THRESHOLDS,
   xpForLevel,
-  OPENING_NARRATIVE,
   rollD20,
   getWeaponAbilityMod,
   doubleDice,
@@ -81,6 +82,8 @@ import {
   SpellAttackType,
   GridPosition,
   MapDocument,
+  ExplorationMapDocument,
+  CombatMapDocument,
   MapRegion,
   Campaign,
   CampaignAct,
@@ -253,6 +256,8 @@ export function serializeRegionContext(
   map: MapDocument | null,
 ): string {
   if (!map || playerPositions.size === 0) return "";
+  // Region context only applies to combat maps (exploration maps have POIs instead)
+  if (map.mapType !== "combat") return "";
 
   const lines: string[] = ["CURRENT POSITION (authoritative — overrides any prior location references):"];
 
@@ -260,7 +265,7 @@ export function serializeRegionContext(
     // Find which region(s) the player is standing in
     const cellIndex = pos.row * 20 + pos.col;
     const matchingRegions = map.regions.filter(
-      (r) => (r.cells ?? []).includes(cellIndex),
+      (r: MapRegion) => (r.cells ?? []).includes(cellIndex),
     );
 
     if (matchingRegions.length > 0) {
@@ -282,6 +287,33 @@ export function serializeRegionContext(
 }
 
 /**
+ * Serialize exploration map context for the DM agent.
+ * Lists all POIs with the current one highlighted.
+ */
+export function serializeExplorationContext(
+  explorationMap: ExplorationMapDocument | null,
+  currentPoiId: string | undefined,
+): string {
+  if (!explorationMap) return "";
+
+  const lines: string[] = ["CURRENT EXPLORATION MAP: " + explorationMap.name];
+  lines.push("Points of Interest:");
+
+  for (const poi of explorationMap.pointsOfInterest) {
+    const isCurrent = poi.id === currentPoiId;
+    const hiddenTag = poi.isHidden ? " [HIDDEN from players]" : "";
+    const currentTag = isCurrent ? " ← PARTY IS HERE" : "";
+    lines.push(`  ${poi.number}. ${poi.name} [id: ${poi.id}]${hiddenTag}${currentTag}`);
+    lines.push(`     ${poi.description}`);
+    if (poi.defaultNPCSlugs?.length) {
+      lines.push(`     NPCs: ${poi.defaultNPCSlugs.join(", ")}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Serialize campaign context for the DM agent. Provides a compact briefing
  * (campaign arc, current act objectives, NPC personalities) — enough for
  * most narration. The DM can call query_campaign for deeper detail.
@@ -291,7 +323,7 @@ export function serializeRegionContext(
 export function serializeCampaignContext(
   campaign: Campaign,
   act: CampaignAct | null,
-  completedEncounters?: string[],
+  completedStoryBeats?: string[],
   metNPCs?: string[],
 ): string {
   const lines: string[] = [];
@@ -303,18 +335,16 @@ export function serializeCampaignContext(
     lines.push("");
     lines.push(`CURRENT ACT: ${act.title} (Act ${act.actNumber})`);
     lines.push(act.dmBriefing);
-    if (act.plotPoints?.length) {
-      lines.push(`Plot points: ${act.plotPoints.join("; ")}`);
-    }
 
-    // Encounter progression — full details for next, names-only for upcoming
-    const completed = new Set((completedEncounters ?? []).map((e) => e.toLowerCase()));
-    const remaining = act.encounters.filter((e) => !completed.has(e.name.toLowerCase()));
+    // Story beat progression — full details for next, names-only for upcoming
+    const completed = new Set((completedStoryBeats ?? []).map((e) => e.toLowerCase()));
+    const remaining = act.storyBeats.filter((e) => !completed.has(e.name.toLowerCase()));
 
     if (remaining.length > 0) {
       const next = remaining[0];
       lines.push("");
-      lines.push(`NEXT ENCOUNTER: ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`);
+      lines.push(`>>> NEXT STORY BEAT (GUIDE THE PLAYER HERE): ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`);
+      lines.push(`DIRECTIVE: Steer the player toward "${next.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`);
       if (next.dmGuidance) lines.push(next.dmGuidance);
       if (next.enemies?.length) {
         lines.push(`Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`);
@@ -332,7 +362,7 @@ export function serializeCampaignContext(
 
       if (remaining.length > 1) {
         lines.push("");
-        lines.push("UPCOMING ENCOUNTERS:");
+        lines.push("UPCOMING STORY BEATS (do not skip ahead — complete the next story beat first):");
         for (const enc of remaining.slice(1)) {
           lines.push(`  - ${enc.name} (${enc.type}, ${enc.difficulty})`);
         }
@@ -340,9 +370,8 @@ export function serializeCampaignContext(
     }
   }
 
-  // Compact NPC summaries — act-relevant only, split by met/unmet using campaign NPC IDs
-  const relevantIds = act?.relevantNPCIds ?? campaign.npcs.map((n) => n.id);
-  const npcs = campaign.npcs.filter((n) => relevantIds.includes(n.id));
+  // Compact NPC summaries from the act's standalone NPC list
+  const npcs = act?.npcs ?? [];
   const metIdSet = new Set((metNPCs ?? []).map((id) => id.toLowerCase()));
 
   if (npcs.length > 0) {
@@ -442,8 +471,10 @@ let state: GameState = {
 
 /** SessionId for the current character — set by loadGameState(). */
 let currentSessionId = "";
-/** Active map ID from the session — set by loadGameState(). */
-let currentActiveMapId: string | undefined;
+/** Exploration map ID from the session — set by loadGameState(). */
+let currentExplorationMapId: string | undefined;
+/** Current POI within the exploration map — set by loadGameState(). */
+let currentPOIId: string | undefined;
 /** Exploration positions from the session — set by loadGameState(). */
 let currentExplorationPositions: Record<string, GridPosition> | undefined;
 /** Campaign slug from the session — set by loadGameState(). */
@@ -468,8 +499,21 @@ export function getSessionId(): string {
   return currentSessionId;
 }
 
+export function getExplorationMapId(): string | undefined {
+  return currentExplorationMapId;
+}
+
+/** @deprecated Use getExplorationMapId instead. */
 export function getActiveMapId(): string | undefined {
-  return currentActiveMapId;
+  return currentExplorationMapId;
+}
+
+export function getCurrentPOIId(): string | undefined {
+  return currentPOIId;
+}
+
+export function setCurrentPOIId(poiId: string | undefined): void {
+  currentPOIId = poiId;
 }
 
 export function getExplorationPositions(): Record<string, GridPosition> | undefined {
@@ -543,8 +587,12 @@ export interface StateChanges {
   npcs_met?: string[];
   /** Advance to a new campaign act number. */
   act_advance?: number;
-  /** Mark a campaign encounter as completed by name (e.g. "Dockside Smuggler Ambush"). */
-  encounter_completed?: string;
+  /** Mark a campaign story beat as completed by name (e.g. "Dockside Smuggler Ambush"). */
+  story_beat_completed?: string;
+  /** POI ID to reveal on the exploration map (sets isHidden to false). */
+  reveal_poi?: string;
+  /** Set the current POI ID where the party is located. */
+  set_current_poi?: string;
 }
 
 /**
@@ -621,12 +669,12 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.act_advance != null && changes.act_advance > 0) {
     s.currentAct = changes.act_advance;
-    s.completedEncounters = [];
+    s.completedStoryBeats = [];
   }
-  if (changes.encounter_completed) {
-    if (!s.completedEncounters) s.completedEncounters = [];
-    const lower = changes.encounter_completed.toLowerCase();
-    if (!s.completedEncounters.includes(lower)) s.completedEncounters.push(lower);
+  if (changes.story_beat_completed) {
+    if (!s.completedStoryBeats) s.completedStoryBeats = [];
+    const lower = changes.story_beat_completed.toLowerCase();
+    if (!s.completedStoryBeats.includes(lower)) s.completedStoryBeats.push(lower);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   // Defer XP during combat — accumulate on encounter, flush to all players when combat ends
@@ -995,9 +1043,10 @@ export async function loadGameState(characterId: string): Promise<GameState> {
     story: stored.story,
   };
 
-  // Load session-level spatial data (activeMapId, explorationPositions)
+  // Load session-level spatial data (exploration map, POI, positions)
   const session = await loadSession(stored.sessionId);
-  currentActiveMapId = session?.activeMapId;
+  currentExplorationMapId = session?.currentExplorationMapId ?? session?.activeMapId;
+  currentPOIId = session?.currentPOIId;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
 
