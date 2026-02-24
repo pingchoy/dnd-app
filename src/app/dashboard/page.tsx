@@ -8,7 +8,7 @@ import DemigodMenu from "../components/DemigodMenu";
 import LevelUpWizard from "../components/level-up/LevelUpWizard";
 import VictoryScreen from "../components/VictoryScreen";
 import CombatGrid, { CombatGridHandle } from "../components/CombatGrid";
-import ExplorationMap from "../components/ExplorationMap";
+import ExplorationTabs from "../components/ExplorationTabs";
 import CombatHotbar from "../components/CombatHotbar";
 import CombatChatPanel from "../components/CombatChatPanel";
 import LastActionToast from "../components/LastActionToast";
@@ -18,7 +18,7 @@ import { useChat } from "../hooks/useChat";
 import { useCombat } from "../hooks/useCombat";
 import { useCombatGrid } from "../hooks/useCombatGrid";
 import { useResizablePanel } from "../hooks/useResizablePanel";
-import type { GameState, Ability, StoredEncounter, GridPosition } from "../lib/gameTypes";
+import type { GameState, Ability, StoredEncounter, GridPosition, MapDocument, CombatMapDocument } from "../lib/gameTypes";
 import { feetDistance, validateAttackRange } from "../lib/combatEnforcement";
 
 /** Regex for attack-like actions in player input. */
@@ -89,6 +89,7 @@ export default function Dashboard() {
   const [showSidebarTab, setShowSidebarTab] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
   const [selectedAbility, setSelectedAbility] = useState<Ability | null>(null);
+  const [combatMap, setCombatMap] = useState<CombatMapDocument | null>(null);
   const gridRef = useRef<CombatGridHandle>(null);
   const prevMsgCountRef = useRef(0);
 
@@ -155,6 +156,31 @@ export default function Dashboard() {
     isCombatProcessing ||
     (encounter != null &&
       activeNPCs.some((n) => n.disposition === "hostile" && n.currentHp > 0));
+
+  // Load the POI's combat map whenever a POI is selected (exploration tabs + combat both use it)
+  useEffect(() => {
+    if (!sessionId || !currentPOIId || activeMap?.mapType !== "exploration") {
+      setCombatMap(null);
+      return;
+    }
+    const poi = activeMap.pointsOfInterest.find((p) => p.id === currentPOIId);
+    if (!poi?.combatMapId) {
+      setCombatMap(null);
+      return;
+    }
+
+    // Clear stale map while the new one loads
+    setCombatMap(null);
+
+    let cancelled = false;
+    fetch(`/api/maps?sessionId=${encodeURIComponent(sessionId)}&mapId=${encodeURIComponent(poi.combatMapId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.map) setCombatMap(data.map);
+      })
+      .catch((err) => console.error("[Dashboard] Failed to load map for POI:", err));
+    return () => { cancelled = true; };
+  }, [sessionId, currentPOIId, activeMap]);
 
   const { positions, moveToken, gridSize } = useCombatGrid(
     activeNPCs,
@@ -285,7 +311,7 @@ export default function Dashboard() {
     else collapseChat();
   }, [isChatCollapsed, restoreChat, collapseChat]);
 
-  /** Handle POI click on the exploration map: set current POI and tell the DM. */
+  /** Handle POI click on the exploration map: persist POI to Firestore and tell the DM. */
   const handlePOIClick = useCallback(
     (poiId: string) => {
       if (isBusy) return;
@@ -294,10 +320,20 @@ export default function Dashboard() {
           ? activeMap.pointsOfInterest.find((p) => p.id === poiId)
           : undefined;
       setCurrentPOIId(poiId);
+
+      // Persist to Firestore immediately (fire-and-forget)
+      if (sessionId) {
+        fetch("/api/maps", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, currentPOIId: poiId }),
+        }).catch((err) => console.error("[POI] Failed to persist currentPOIId:", err));
+      }
+
       const label = poi ? `area ${poi.number} (${poi.name})` : `area ${poiId}`;
       sendMessage(`I want to go to ${label}`);
     },
-    [isBusy, activeMap, setCurrentPOIId, sendMessage],
+    [isBusy, activeMap, setCurrentPOIId, sendMessage, sessionId],
   );
 
   // Memoize filtered messages to avoid creating a new array on every keystroke
@@ -515,12 +551,13 @@ export default function Dashboard() {
             <OrnateFrame className="flex-1 overflow-hidden min-w-0">
               <div className="relative h-full">
                 {!inCombat && activeMap?.mapType === "exploration" ? (
-                  /* Exploration overview — background image with POI markers */
-                  <ExplorationMap
+                  /* Exploration tabs — world map overview + POI interior map */
+                  <ExplorationTabs
                     backgroundImageUrl={activeMap.backgroundImageUrl}
                     pointsOfInterest={activeMap.pointsOfInterest}
                     currentPOIId={currentPOIId}
                     onPOIClick={handlePOIClick}
+                    poiMap={combatMap}
                   />
                 ) : (
                   /* Tactical grid — combat or grid-based exploration */
@@ -532,10 +569,10 @@ export default function Dashboard() {
                     onMoveToken={moveToken}
                     gridSize={gridSize}
                     mode={inCombat ? "combat" : "exploration"}
-                    tileData={activeMap?.mapType === "combat" ? activeMap.tileData : undefined}
-                    regions={activeMap?.mapType === "combat" ? activeMap.regions : undefined}
-                    mapBackgroundUrl={activeMap?.backgroundImageUrl}
-                    feetPerSquare={activeMap?.mapType === "combat" ? activeMap.feetPerSquare : undefined}
+                    tileData={combatMap?.tileData ?? (activeMap?.mapType === "combat" ? activeMap.tileData : undefined)}
+                    regions={combatMap?.regions ?? (activeMap?.mapType === "combat" ? activeMap.regions : undefined)}
+                    mapBackgroundUrl={combatMap?.backgroundImageUrl ?? activeMap?.backgroundImageUrl}
+                    feetPerSquare={combatMap?.feetPerSquare ?? (activeMap?.mapType === "combat" ? activeMap.feetPerSquare : undefined)}
                     targetingAbility={inCombat ? selectedAbility : null}
                     onTargetSelected={inCombat ? handleTargetSelected : undefined}
                     onCancel={inCombat ? () => setSelectedAbility(null) : undefined}

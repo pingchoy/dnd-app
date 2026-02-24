@@ -49,11 +49,11 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       },
       location_changed: {
         type: "string",
-        description: "New location if the player moved.",
+        description: "New named location if the player moved (e.g. 'Valdris Docks', 'The Gilded Tankard').",
       },
       scene_update: {
         type: "string",
-        description: "Current scene state (1-2 sentences).",
+        description: "ALWAYS include. 1-2 sentence snapshot of what is happening right now (e.g. 'The party negotiates with the innkeeper in the dimly lit tavern').",
       },
       notable_event: {
         type: "string",

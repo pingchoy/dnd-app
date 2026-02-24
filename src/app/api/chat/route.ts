@@ -42,12 +42,26 @@ import {
   serializeRegionContext,
   setEncounter,
 } from "../../lib/gameState";
-import { createEncounter, computeInitialPositions } from "../../lib/encounterStore";
+import {
+  createEncounter,
+  computeInitialPositions,
+} from "../../lib/encounterStore";
 import { loadExplorationMap, loadMap, updateMap } from "../../lib/mapStore";
-import { querySRD, loadSession, saveSessionState, getCampaign, getCampaignAct } from "../../lib/characterStore";
+import {
+  querySRD,
+  loadSession,
+  saveSessionState,
+  getCampaign,
+  getCampaignAct,
+} from "../../lib/characterStore";
 import { MODELS, calculateCost } from "../../lib/anthropic";
 import { addMessage } from "../../lib/messageStore";
-import { enqueueAction, claimNextAction, completeAction, failAction } from "../../lib/actionQueue";
+import {
+  enqueueAction,
+  claimNextAction,
+  completeAction,
+  failAction,
+} from "../../lib/actionQueue";
 import type { StoredAction, GridPosition } from "../../lib/gameTypes";
 
 interface ChatRequestBody {
@@ -86,12 +100,25 @@ async function processChatAction(
   let rulesCost = 0;
 
   if (isContestedAction(playerInput)) {
-    console.log("[Rules Agent] Contested action detected, calling rules agent...");
-    rulesOutcome = await getRulesOutcome(playerInput, gameState.player, getActiveNPCs());
-    rulesCost = calculateCost(MODELS.UTILITY, rulesOutcome.inputTokens, rulesOutcome.outputTokens);
+    console.log(
+      "[Rules Agent] Contested action detected, calling rules agent...",
+    );
+    rulesOutcome = await getRulesOutcome(
+      playerInput,
+      gameState.player,
+      getActiveNPCs(),
+    );
+    rulesCost = calculateCost(
+      MODELS.UTILITY,
+      rulesOutcome.inputTokens,
+      rulesOutcome.outputTokens,
+    );
     console.log("[Rules Agent] Done:", {
       roll: rulesOutcome.roll,
-      tokens: { input: rulesOutcome.inputTokens, output: rulesOutcome.outputTokens },
+      tokens: {
+        input: rulesOutcome.inputTokens,
+        output: rulesOutcome.outputTokens,
+      },
       cost: `$${rulesCost.toFixed(4)}`,
     });
 
@@ -110,9 +137,11 @@ async function processChatAction(
 
   // Deterministic routing: combat agent for active encounter with hostiles, DM agent otherwise
   const currentEncounter = getEncounter();
-  const inCombat = currentEncounter != null && currentEncounter.activeNPCs.some(
-    (n) => n.disposition === "hostile" && n.currentHp > 0,
-  );
+  const inCombat =
+    currentEncounter != null &&
+    currentEncounter.activeNPCs.some(
+      (n) => n.disposition === "hostile" && n.currentHp > 0,
+    );
   const agentLabel = inCombat ? "Combat Agent" : "DM Agent";
   const agentModel = inCombat ? MODELS.UTILITY : MODELS.NARRATIVE;
 
@@ -129,17 +158,32 @@ async function processChatAction(
       if (campaign) {
         const actNumber = gameState.story.currentAct ?? 1;
         const act = await getCampaignAct(campaignSlug, actNumber);
-        contextParts.push(serializeCampaignContext(campaign, act, gameState.story.completedEncounters, gameState.story.metNPCs));
+        contextParts.push(
+          serializeCampaignContext(
+            campaign,
+            act,
+            gameState.story.completedEncounters,
+            gameState.story.metNPCs,
+          ),
+        );
       }
     }
 
-    // Spatial context — exploration maps use POI context, combat maps use region context
+    // Spatial context — exploration maps use POI context, combat maps use region context.
+    // Re-read currentPOIId from Firestore to pick up the latest value
+    // (the client persists it via PATCH before sending the chat message).
     const explorationMapId = getExplorationMapId();
     if (explorationMapId) {
       const explMap = await loadExplorationMap(sessionId, explorationMapId);
       if (explMap) {
-        const explorationCtx = serializeExplorationContext(explMap, getCurrentPOIId());
-        console.log("[Spatial] Exploration context injected:", explorationCtx.slice(0, 200));
+        const freshSession = await loadSession(sessionId);
+        const poiId = freshSession?.currentPOIId ?? getCurrentPOIId();
+        if (poiId) setCurrentPOIId(poiId);
+        const explorationCtx = serializeExplorationContext(explMap, poiId);
+        console.log(
+          "[Spatial] Exploration context injected:",
+          explorationCtx.slice(0, 200),
+        );
         if (explorationCtx) contextParts.push(explorationCtx);
       }
     }
@@ -148,8 +192,17 @@ async function processChatAction(
     if (!explorationMapId) {
       const activeMapId = getActiveMapId();
       const explorationPositions = getExplorationPositions();
-      console.log("[Spatial] activeMapId:", activeMapId, "positions:", JSON.stringify(explorationPositions));
-      if (activeMapId && explorationPositions && Object.keys(explorationPositions).length > 0) {
+      console.log(
+        "[Spatial] activeMapId:",
+        activeMapId,
+        "positions:",
+        JSON.stringify(explorationPositions),
+      );
+      if (
+        activeMapId &&
+        explorationPositions &&
+        Object.keys(explorationPositions).length > 0
+      ) {
         const map = await loadMap(sessionId, activeMapId);
         if (map) {
           const posMap = new Map<string, GridPosition>();
@@ -168,14 +221,33 @@ async function processChatAction(
     }
   }
 
-  console.log(`[${agentLabel}] Calling with player input:`, playerInput.slice(0, 100));
+  console.log(
+    `[${agentLabel}] Calling with player input:`,
+    playerInput.slice(0, 100),
+  );
   const dmResult = inCombat
-    ? await getCombatResponse(playerInput, {
-        player: gameState.player,
-        encounter: currentEncounter!,
-      }, rulesOutcome, sessionId)
-    : await getDMResponse(playerInput, gameState, rulesOutcome, sessionId, dmContext, campaignSlug);
-  const dmCost = calculateCost(agentModel, dmResult.inputTokens, dmResult.outputTokens);
+    ? await getCombatResponse(
+        playerInput,
+        {
+          player: gameState.player,
+          encounter: currentEncounter!,
+        },
+        rulesOutcome,
+        sessionId,
+      )
+    : await getDMResponse(
+        playerInput,
+        gameState,
+        rulesOutcome,
+        sessionId,
+        dmContext,
+        campaignSlug,
+      );
+  const dmCost = calculateCost(
+    agentModel,
+    dmResult.inputTokens,
+    dmResult.outputTokens,
+  );
   console.log(`[${agentLabel}] Done:`, {
     narrativeLength: dmResult.narrative.length,
     hasStateChanges: !!dmResult.stateChanges,
@@ -183,7 +255,10 @@ async function processChatAction(
     cost: `$${dmCost.toFixed(4)}`,
   });
   if (dmResult.stateChanges) {
-    console.log("[DM Agent] State changes:", JSON.stringify(dmResult.stateChanges, null, 2));
+    console.log(
+      "[DM Agent] State changes:",
+      JSON.stringify(dmResult.stateChanges, null, 2),
+    );
   }
 
   // Write assistant message to subcollection
@@ -206,9 +281,13 @@ async function processChatAction(
 
     // Load active map (if any) for region-aware NPC placement
     const activeMapId = getActiveMapId();
-    const activeMap = needsEncounter && activeMapId ? await loadMap(sessionId, activeMapId) : null;
+    const activeMap =
+      needsEncounter && activeMapId
+        ? await loadMap(sessionId, activeMapId)
+        : null;
     // Extract combat regions (only combat maps have regions)
-    const combatRegions = activeMap?.mapType === "combat" ? activeMap.regions : undefined;
+    const combatRegions =
+      activeMap?.mapType === "combat" ? activeMap.regions : undefined;
 
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
@@ -237,9 +316,14 @@ async function processChatAction(
         const srdData = npcReq.slug
           ? await querySRD("monster", npcReq.slug)
           : null;
-        console.log(`[NPC Agent] SRD data for "${npcReq.name}":`, srdData ? "found" : "null (custom creature)");
+        console.log(
+          `[NPC Agent] SRD data for "${npcReq.name}":`,
+          srdData ? "found" : "null (custom creature)",
+        );
 
-        console.log(`[NPC Agent] Calling NPC agent for: ${npcReq.count || 1}x ${npcReq.name} (${npcReq.disposition})`);
+        console.log(
+          `[NPC Agent] Calling NPC agent for: ${npcReq.count || 1}x ${npcReq.name} (${npcReq.disposition})`,
+        );
         const result = await getNPCStats(
           { ...npcReq, count: npcReq.count || 1 },
           srdData,
@@ -251,9 +335,15 @@ async function processChatAction(
           result.outputTokens,
         );
 
-        console.log(`[NPC Agent] Created ${result.npcs.length} NPC(s):`, result.npcs.map(n => ({
-          name: n.name, ac: n.ac, hp: n.max_hp, atk: n.attack_bonus,
-        })));
+        console.log(
+          `[NPC Agent] Created ${result.npcs.length} NPC(s):`,
+          result.npcs.map((n) => ({
+            name: n.name,
+            ac: n.ac,
+            hp: n.max_hp,
+            atk: n.attack_bonus,
+          })),
+        );
 
         for (const npc of result.npcs) {
           createNPC(npc);
@@ -268,12 +358,16 @@ async function processChatAction(
         combatRegions,
         getExplorationPositions(),
       );
-      enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];
+      enc.turnOrder = ["player", ...enc.activeNPCs.map((n) => n.id)];
       enc.currentTurnIndex = 0;
-      console.log(`[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`);
+      console.log(
+        `[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`,
+      );
     }
 
-    console.log(`[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`);
+    console.log(
+      `[NPC Agent] Total NPC agent cost: $${npcAgentCost.toFixed(4)}`,
+    );
     delete dmResult.stateChanges.npcs_to_create;
   }
 
@@ -281,14 +375,20 @@ async function processChatAction(
   if (dmResult.npcDamagePreRolled > 0) {
     const changes = dmResult.stateChanges ?? {};
     if (changes.hp_delta == null) {
-      console.log(`[Safety Net] DM omitted hp_delta — auto-applying ${dmResult.npcDamagePreRolled} pre-rolled NPC damage`);
+      console.log(
+        `[Safety Net] DM omitted hp_delta — auto-applying ${dmResult.npcDamagePreRolled} pre-rolled NPC damage`,
+      );
       changes.hp_delta = -dmResult.npcDamagePreRolled;
       if (!dmResult.stateChanges) dmResult.stateChanges = changes;
     }
   }
 
   // Handle exploration map POI mutations from update_game_state
-  if (dmResult.stateChanges?.reveal_poi || dmResult.stateChanges?.set_current_poi) {
+  const hasPOIMutation =
+    dmResult.stateChanges?.reveal_poi ||
+    dmResult.stateChanges?.set_current_poi ||
+    dmResult.stateChanges?.location_changed;
+  if (hasPOIMutation) {
     const explMapId = getExplorationMapId();
     if (explMapId) {
       const explMap = await loadExplorationMap(sessionId, explMapId);
@@ -296,7 +396,7 @@ async function processChatAction(
         let mapDirty = false;
 
         // Reveal a hidden POI
-        if (dmResult.stateChanges.reveal_poi) {
+        if (dmResult.stateChanges!.reveal_poi) {
           const poi = explMap.pointsOfInterest.find(
             (p) => p.id === dmResult.stateChanges!.reveal_poi,
           );
@@ -307,13 +407,32 @@ async function processChatAction(
           }
         }
 
-        // Update the current POI
-        if (dmResult.stateChanges.set_current_poi) {
-          const newPoiId = dmResult.stateChanges.set_current_poi;
-          const poi = explMap.pointsOfInterest.find((p) => p.id === newPoiId);
+        // Update the current POI — explicit set_current_poi takes priority
+        let resolvedPoiId = dmResult.stateChanges!.set_current_poi;
+
+        // Auto-resolve POI from location_changed if set_current_poi wasn't provided
+        if (!resolvedPoiId && dmResult.stateChanges!.location_changed) {
+          const loc = dmResult.stateChanges!.location_changed.toLowerCase();
+          const matched = explMap.pointsOfInterest.find(
+            (p) =>
+              p.name.toLowerCase() === loc ||
+              p.locationTags.some((tag) => loc.includes(tag.toLowerCase())),
+          );
+          if (matched) {
+            resolvedPoiId = matched.id;
+            console.log(
+              `[POI] Auto-resolved location "${dmResult.stateChanges!.location_changed}" → POI "${matched.name}" (${matched.id})`,
+            );
+          }
+        }
+
+        if (resolvedPoiId) {
+          const poi = explMap.pointsOfInterest.find(
+            (p) => p.id === resolvedPoiId,
+          );
           if (poi) {
-            setCurrentPOIId(newPoiId);
-            await saveSessionState(sessionId, { currentPOIId: newPoiId });
+            setCurrentPOIId(resolvedPoiId);
+            await saveSessionState(sessionId, { currentPOIId: resolvedPoiId });
             console.log(`[POI] Set current POI to "${poi.name}" (${poi.id})`);
           }
         }
@@ -327,8 +446,8 @@ async function processChatAction(
     }
 
     // Clean up — these are handled here, not by applyStateChanges
-    delete dmResult.stateChanges.reveal_poi;
-    delete dmResult.stateChanges.set_current_poi;
+    delete dmResult.stateChanges!.reveal_poi;
+    delete dmResult.stateChanges!.set_current_poi;
   }
 
   // Apply state changes and persist to Firestore (including encounter state if active)
@@ -352,6 +471,7 @@ async function processChatAction(
   return {
     gameState: getGameState(),
     encounter: getEncounter(),
+    currentPOIId: getCurrentPOIId() ?? null,
     tokensUsed: {
       dmInput: dmResult.inputTokens,
       dmOutput: dmResult.outputTokens,
@@ -368,10 +488,16 @@ export async function POST(req: NextRequest) {
     const { characterId, playerInput } = body;
 
     if (!playerInput?.trim()) {
-      return NextResponse.json({ error: "playerInput is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "playerInput is required" },
+        { status: 400 },
+      );
     }
     if (!characterId?.trim()) {
-      return NextResponse.json({ error: "characterId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "characterId is required" },
+        { status: 400 },
+      );
     }
 
     // Load state to get sessionId and check for level-up
@@ -397,7 +523,10 @@ export async function POST(req: NextRequest) {
     const claimed = await claimNextAction(sessionId);
     if (!claimed) {
       // Another request is already processing — our action is queued
-      console.log("[/api/chat] Action queued (another processor active):", actionId);
+      console.log(
+        "[/api/chat] Action queued (another processor active):",
+        actionId,
+      );
       return NextResponse.json({ ok: true, queued: true }, { status: 202 });
     }
 
@@ -446,7 +575,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     console.error("[/api/chat]", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
+    const message =
+      err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -455,12 +585,17 @@ export async function GET(req: NextRequest) {
   try {
     const characterId = req.nextUrl.searchParams.get("characterId");
     if (!characterId) {
-      return NextResponse.json({ error: "characterId query param is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "characterId query param is required" },
+        { status: 400 },
+      );
     }
     const gameState = await loadGameState(characterId);
     const sessionId = getSessionId();
     const activeMapId = getActiveMapId();
-    const activeMap = activeMapId ? await loadMap(sessionId, activeMapId) : null;
+    const activeMap = activeMapId
+      ? await loadMap(sessionId, activeMapId)
+      : null;
     return NextResponse.json({
       gameState,
       encounter: getEncounter(),
@@ -472,7 +607,8 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: unknown) {
     console.error("[/api/chat GET]", err);
-    const message = err instanceof Error ? err.message : "Internal server error";
+    const message =
+      err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -13,12 +13,18 @@
  * Collections seeded:
  *   campaigns/{slug}                    (campaign metadata + NPC profiles)
  *   campaignActs/{campaignSlug}_act-{N} (per-act content)
+ *   campaignMaps/{slug}_{mapSpecId}     (pre-generated map templates)
  */
 
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
 import { ALL_CAMPAIGNS } from "./campaigns";
+import type {
+  Campaign,
+  CampaignMap,
+  PointOfInterest,
+} from "../src/app/lib/gameTypes";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
@@ -98,6 +104,76 @@ async function batchWrite(
   if (opCount > 0) await batch.commit();
 }
 
+// ─── Campaign Map Builder ────────────────────────────────────────────────────
+
+const GRID_SIZE = 20;
+
+/**
+ * Build CampaignMap documents from a campaign's exploration + combat map specs.
+ * Combat maps get a blank 20x20 grid; exploration maps get POIs with empty
+ * combatMapId (filled at session instantiation time).
+ */
+function buildCampaignMapDocs(
+  campaign: Campaign,
+): Array<{ id: string; data: Record<string, unknown> }> {
+  const slug = campaign.slug;
+  const now = Date.now();
+  const docs: Array<{ id: string; data: Record<string, unknown> }> = [];
+
+  // Combat maps
+  for (const spec of campaign.combatMapSpecs ?? []) {
+    const mapDoc: CampaignMap = {
+      campaignSlug: slug,
+      mapSpecId: spec.id,
+      mapType: "combat",
+      name: spec.name,
+      imagePrompt: spec.imagePrompt,
+      gridSize: GRID_SIZE,
+      feetPerSquare: spec.feetPerSquare,
+      tileData: new Array(GRID_SIZE * GRID_SIZE).fill(0),
+      regions: [],
+      generatedAt: now,
+    };
+    docs.push({
+      id: `${slug}_${spec.id}`,
+      data: mapDoc as unknown as Record<string, unknown>,
+    });
+  }
+
+  // Exploration maps
+  for (const spec of campaign.explorationMapSpecs ?? []) {
+    const pois: PointOfInterest[] = spec.pointsOfInterest.map((poiSpec) => ({
+      id: poiSpec.id,
+      number: poiSpec.number,
+      name: poiSpec.name,
+      description: poiSpec.description,
+      position: poiSpec.position ?? { x: 50, y: 50 },
+      combatMapId: poiSpec.combatMapSpecId,
+      isHidden: poiSpec.isHidden,
+      actNumbers: poiSpec.actNumbers,
+      locationTags: poiSpec.locationTags,
+      defaultNPCSlugs: poiSpec.defaultNPCSlugs,
+    }));
+
+    const mapDoc: CampaignMap = {
+      campaignSlug: slug,
+      mapSpecId: spec.id,
+      mapType: "exploration",
+      name: spec.name,
+      imagePrompt: spec.imagePrompt,
+      pointsOfInterest: pois,
+      backgroundImageUrl: "",
+      generatedAt: now,
+    };
+    docs.push({
+      id: `${slug}_${spec.id}`,
+      data: mapDoc as unknown as Record<string, unknown>,
+    });
+  }
+
+  return docs;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -122,12 +198,22 @@ async function main(): Promise<void> {
     for (const act of acts) {
       console.log(`  ✓ Act ${act.actNumber}: "${act.title}" seeded`);
     }
+
+    // Seed campaign map templates
+    const mapDocs = buildCampaignMapDocs(campaign);
+    if (mapDocs.length > 0) {
+      await batchWrite("campaignMaps", mapDocs);
+      const combatCount = mapDocs.filter((d) => (d.data as unknown as CampaignMap).mapType === "combat").length;
+      const explorationCount = mapDocs.length - combatCount;
+      console.log(`  ✓ ${mapDocs.length} campaign maps seeded (${combatCount} combat, ${explorationCount} exploration)`);
+    }
     console.log();
   }
 
   console.log("✅ Campaign seeding complete. Check your Firestore console.");
   for (const { campaign, acts } of ALL_CAMPAIGNS) {
-    console.log(`   ${campaign.title}: campaigns/${campaign.slug} + ${acts.length} acts`);
+    const mapCount = (campaign.combatMapSpecs?.length ?? 0) + (campaign.explorationMapSpecs?.length ?? 0);
+    console.log(`   ${campaign.title}: campaigns/${campaign.slug} + ${acts.length} acts + ${mapCount} maps`);
   }
   process.exit(0);
 }

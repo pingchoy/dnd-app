@@ -18,7 +18,11 @@ export interface UseCombatReturn {
   /** True while the turn-by-turn combat loop is processing. */
   isCombatProcessing: boolean;
   /** Execute a deterministic combat action (ability bar click). */
-  executeCombatAction: (ability: Ability, targetId?: string, aoeParams?: { aoeOrigin?: GridPosition; aoeDirection?: GridPosition }) => Promise<void>;
+  executeCombatAction: (
+    ability: Ability,
+    targetId?: string,
+    aoeParams?: { aoeOrigin?: GridPosition; aoeDirection?: GridPosition },
+  ) => Promise<void>;
   /** Ref to set a callback for showing floating combat labels on the grid. */
   combatLabelRef: React.MutableRefObject<
     ((tokenId: string, hit: boolean, damage: number) => void) | null
@@ -78,14 +82,17 @@ export function useCombat({
    * Real-time Firestore listener for the active encounter document.
    * Updates turn tracker (currentTurnIndex) and NPC state in real time
    * as the server processes each NPC turn during /api/combat/resolve.
+   * Also shows floating hit/miss labels as each NPC result arrives.
    */
   const encounterId = gameState?.story?.activeEncounterId ?? null;
+  const lastNpcResultTimestampRef = useRef<number>(0);
   useEffect(() => {
     if (!encounterId) {
       // Don't clear encounter while victory screen is showing — dismissVictory handles cleanup.
       if (!victoryRef.current && !victoryDelayRef.current) setEncounter(null);
       return;
     }
+    lastNpcResultTimestampRef.current = 0;
     const db = getClientDb();
     const encounterRef = doc(db, "encounters", encounterId);
 
@@ -95,6 +102,20 @@ export function useCombat({
         if (!snap.exists()) return;
         const data = snap.data() as StoredEncounter;
         setEncounter({ ...data, id: snap.id });
+
+        // Show floating label when a new NPC result arrives via Firestore
+        if (
+          data.lastNpcResult &&
+          data.lastNpcResult.timestamp > lastNpcResultTimestampRef.current
+        ) {
+          lastNpcResultTimestampRef.current = data.lastNpcResult.timestamp;
+          combatLabelRef.current?.(
+            "player",
+            data.lastNpcResult.hit,
+            data.lastNpcResult.damage,
+          );
+        }
+
         // Multiplayer: if encounter completed with victoryData, show victory screen
         if (data.status === "completed" && data.victoryData) {
           setVictoryData(data.victoryData);
@@ -159,7 +180,10 @@ export function useCombat({
       setEncounter(data.encounter ?? null);
 
       // Show floating labels -- AOE: one per target (skip non-damaging AOEs), single-target: one label
-      const damagingTargets = data.aoeResult?.targets?.filter((t: { damageTaken: number }) => t.damageTaken > 0) ?? [];
+      const damagingTargets =
+        data.aoeResult?.targets?.filter(
+          (t: { damageTaken: number }) => t.damageTaken > 0,
+        ) ?? [];
       if (damagingTargets.length > 0) {
         for (let i = 0; i < damagingTargets.length; i++) {
           const t = damagingTargets[i];
@@ -167,7 +191,11 @@ export function useCombat({
             combatLabelRef.current?.(t.npcId, true, t.damageTaken);
           }, i * 200);
         }
-      } else if (targetId && data.singleTargetResult && !data.singleTargetResult.noCheck) {
+      } else if (
+        targetId &&
+        data.singleTargetResult &&
+        !data.singleTargetResult.noCheck
+      ) {
         combatLabelRef.current?.(
           targetId,
           data.singleTargetResult.success,
@@ -177,7 +205,11 @@ export function useCombat({
 
       // Immediately proceed to narration + NPC turns
       setIsNarrating(false);
-      await requestCombatResolve(data.singleTargetResult ?? null, data.aoeResult ?? null, targetId);
+      await requestCombatResolve(
+        data.singleTargetResult ?? null,
+        data.aoeResult ?? null,
+        targetId,
+      );
     } catch (err) {
       console.error("[useCombat] executeCombatAction error:", err);
       onError?.();
@@ -222,16 +254,8 @@ export function useCombat({
       addTokens(data.tokensUsed ?? 0);
       addCost(data.estimatedCostUsd ?? 0);
 
-      // Show floating HIT/MISS labels for NPC attacks on the player
-      if (data.npcResults?.length) {
-        for (let i = 0; i < data.npcResults.length; i++) {
-          const nr = data.npcResults[i];
-          // Stagger labels so they don't overlap
-          setTimeout(() => {
-            combatLabelRef.current?.("player", nr.hit, nr.damage);
-          }, i * 1200);
-        }
-      }
+      // NPC hit/miss labels now arrive in real-time via the Firestore onSnapshot
+      // listener (lastNpcResult) — no need to batch-display from the HTTP response.
 
       // If combat ended, show victory screen instead of immediately clearing.
       // Cancel any pending delayed reveal — full data supersedes preliminary.

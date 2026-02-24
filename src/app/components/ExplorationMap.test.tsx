@@ -1,7 +1,23 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ExplorationMap from "./ExplorationMap";
 import type { PointOfInterest } from "../lib/gameTypes";
+
+beforeAll(() => {
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null);
+  global.ResizeObserver = class MockResizeObserver {
+    cb: ResizeObserverCallback;
+    constructor(cb: ResizeObserverCallback) { this.cb = cb; }
+    observe() {
+      this.cb(
+        [{ contentRect: { width: 800, height: 600 } } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
 
 const mockPOIs: PointOfInterest[] = [
   {
@@ -40,7 +56,19 @@ const mockPOIs: PointOfInterest[] = [
 ];
 
 describe("ExplorationMap", () => {
-  it("renders the background image", () => {
+  it("renders a canvas element", () => {
+    const { container } = render(
+      <ExplorationMap
+        backgroundImageUrl="https://example.com/map.png"
+        pointsOfInterest={mockPOIs}
+        currentPOIId={null}
+        onPOIClick={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("canvas")).toBeTruthy();
+  });
+
+  it("shows visible POIs in the legend bar but not hidden ones", () => {
     render(
       <ExplorationMap
         backgroundImageUrl="https://example.com/map.png"
@@ -49,25 +77,12 @@ describe("ExplorationMap", () => {
         onPOIClick={vi.fn()}
       />,
     );
-    const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("src", "https://example.com/map.png");
+    expect(screen.getByText("valdris docks")).toBeInTheDocument();
+    expect(screen.getByText("council hall")).toBeInTheDocument();
+    expect(screen.queryByText("ancient temple")).not.toBeInTheDocument();
   });
 
-  it("renders visible POI markers but not hidden ones", () => {
-    render(
-      <ExplorationMap
-        backgroundImageUrl="https://example.com/map.png"
-        pointsOfInterest={mockPOIs}
-        currentPOIId={null}
-        onPOIClick={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("1")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.queryByText("3")).not.toBeInTheDocument();
-  });
-
-  it("highlights the current POI", () => {
+  it("highlights the current POI in the legend", () => {
     render(
       <ExplorationMap
         backgroundImageUrl="https://example.com/map.png"
@@ -76,11 +91,11 @@ describe("ExplorationMap", () => {
         onPOIClick={vi.fn()}
       />,
     );
-    const marker = screen.getByText("1").closest("button");
-    expect(marker?.className).toContain("ring");
+    const legendBtn = screen.getByText("valdris docks").closest("button");
+    expect(legendBtn?.className).toContain("text-gold");
   });
 
-  it("calls onPOIClick when a marker is clicked", () => {
+  it("calls onPOIClick when a legend item is clicked", () => {
     const handleClick = vi.fn();
     render(
       <ExplorationMap
@@ -90,11 +105,11 @@ describe("ExplorationMap", () => {
         onPOIClick={handleClick}
       />,
     );
-    fireEvent.click(screen.getByText("1"));
+    fireEvent.click(screen.getByText("valdris docks"));
     expect(handleClick).toHaveBeenCalledWith("poi_docks");
   });
 
-  it("shows POI name on hover", () => {
+  it("shows the correct location count in the header", () => {
     render(
       <ExplorationMap
         backgroundImageUrl="https://example.com/map.png"
@@ -103,8 +118,6 @@ describe("ExplorationMap", () => {
         onPOIClick={vi.fn()}
       />,
     );
-    const marker = screen.getByText("1").closest("button");
-    fireEvent.mouseEnter(marker!);
-    expect(screen.getByText("valdris docks")).toBeInTheDocument();
+    expect(screen.getByText("2 locations")).toBeInTheDocument();
   });
 });

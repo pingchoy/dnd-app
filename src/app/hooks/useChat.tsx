@@ -258,6 +258,7 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
       // Narrative arrives via Firestore listener — just update game state from response
       if (data.gameState) setGameState(data.gameState);
       if (data.encounter !== undefined) onEncounterDataRef.current?.(data.encounter ?? null);
+      if (data.currentPOIId != null) setCurrentPOIId(data.currentPOIId);
       setTotalTokens((t) => t + (data.tokensUsed?.total ?? 0));
       setEstimatedCostUsd((c) => c + (data.estimatedCostUsd ?? 0));
     } catch (err) {

@@ -473,6 +473,7 @@ export interface CampaignMap {
   mapSpecId: string;               // References CampaignCombatMapSpec.id or CampaignExplorationMapSpec.id
   mapType: "exploration" | "combat";
   name: string;
+  imagePrompt?: string;            // Copy-pasteable prompt for AI image generation
   // Combat map fields
   gridSize?: number;               // 20 (combat maps only)
   feetPerSquare?: number;
@@ -675,6 +676,8 @@ export interface StoredEncounter {
   defeatedNPCs?: NPC[];
   /** Cumulative XP earned in this encounter. Flushed to all players when combat ends. */
   totalXPAwarded?: number;
+  /** Most recent NPC attack result — written after each NPC turn for real-time label display. */
+  lastNpcResult?: { npcId: string; hit: boolean; damage: number; timestamp: number };
   /** Populated when combat ends — consumed by the frontend victory screen. */
   victoryData?: VictoryData;
   createdAt?: number;

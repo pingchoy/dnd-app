@@ -304,7 +304,7 @@ export function serializeExplorationContext(
     const isCurrent = poi.id === currentPoiId;
     const hiddenTag = poi.isHidden ? " [HIDDEN from players]" : "";
     const currentTag = isCurrent ? " ← PARTY IS HERE" : "";
-    lines.push(`  ${poi.number}. ${poi.name}${hiddenTag}${currentTag}`);
+    lines.push(`  ${poi.number}. ${poi.name} [id: ${poi.id}]${hiddenTag}${currentTag}`);
     lines.push(`     ${poi.description}`);
     if (poi.defaultNPCSlugs?.length) {
       lines.push(`     NPCs: ${poi.defaultNPCSlugs.join(", ")}`);

@@ -269,18 +269,28 @@ export async function instantiateCampaignMaps(
       const explSpec = campaign.explorationMapSpecs.find((s) => s.id === explSpecId);
       if (!explSpec) continue;
 
-      const pois: PointOfInterest[] = explSpec.pointsOfInterest.map((poiSpec) => ({
-        id: poiSpec.id,
-        number: poiSpec.number,
-        name: poiSpec.name,
-        description: poiSpec.description,
-        position: { x: 50, y: 50 }, // default center — overridden when image is generated
-        combatMapId: specIdToSessionId.get(poiSpec.combatMapSpecId) ?? "",
-        isHidden: poiSpec.isHidden,
-        actNumbers: poiSpec.actNumbers,
-        locationTags: poiSpec.locationTags,
-        ...(poiSpec.defaultNPCSlugs ? { defaultNPCSlugs: poiSpec.defaultNPCSlugs } : {}),
-      }));
+      // Merge positions from the campaign map template (has actual positions)
+      // with spec data (has combatMapSpecId for linking).
+      const template = explorationTemplates.find((t) => t.mapSpecId === explSpecId);
+      const templatePOIMap = new Map(
+        (template?.pointsOfInterest ?? []).map((p) => [p.id, p]),
+      );
+
+      const pois: PointOfInterest[] = explSpec.pointsOfInterest.map((poiSpec) => {
+        const templatePOI = templatePOIMap.get(poiSpec.id);
+        return {
+          id: poiSpec.id,
+          number: poiSpec.number,
+          name: poiSpec.name,
+          description: poiSpec.description,
+          position: templatePOI?.position ?? poiSpec.position ?? { x: 50, y: 50 },
+          combatMapId: specIdToSessionId.get(poiSpec.combatMapSpecId) ?? "",
+          isHidden: poiSpec.isHidden,
+          actNumbers: poiSpec.actNumbers,
+          locationTags: poiSpec.locationTags,
+          ...(poiSpec.defaultNPCSlugs ? { defaultNPCSlugs: poiSpec.defaultNPCSlugs } : {}),
+        };
+      });
 
       await updateMap(sessionId, explMap.id!, {
         pointsOfInterest: pois,
