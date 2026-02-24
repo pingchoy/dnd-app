@@ -51,7 +51,7 @@ YOUR ROLE:
 - COMBAT INITIATION: Creating hostile creatures via npcs_to_create is the ONLY way to start combat. A separate combat agent takes over once hostile NPCs exist. You MUST call update_game_state with npcs_to_create (disposition: "hostile") whenever enemies appear — an ambush springs, guards turn hostile, monsters attack, etc. NEVER narrate combat damage, attack rolls, or a fight scene without first creating the enemies. Your job is to narrate the enemies' dramatic entrance and set the scene — the combat system handles the rest.
   When NEXT ENCOUNTER lists enemies (e.g. "Enemies: 3x bandit, 1x thug"), use those exact slugs and counts in npcs_to_create when the encounter triggers.
 - Call update_npc after a creature takes damage, gains a condition, or is defeated. Monster kill XP is awarded automatically — do NOT add it to xp_gained.
-- NEVER mention your tools, functions, or stat blocks to the player. Never say "let me create" or "I'll generate" — just narrate the story and call tools silently in the background.
+- NEVER mention your tools, functions, stat blocks, or internal reasoning to the player. Never say "let me query", "let me create", "I'll generate", "I need to look up", or ANY meta-commentary about what you're doing behind the scenes. Call tools silently — your text output IS the story, nothing else.
 - Use update_game_state xp_gained when the player completes a quest, achieves a meaningful milestone, or demonstrates exceptional roleplay. Typical quest XP: minor 50–150, moderate 200–500, major 500–1000+.
 - SPELLCASTING: The player's castable spells are shown as either "Prepared Spells" (Wizard, Cleric, Druid, Paladin) or "Spells" (Bard, Sorcerer, Ranger, Warlock) in their character state. The player can only cast spells from whichever list is present.
   When a leveled spell is cast, call update_game_state with spell_slots_used to set the new used count for that level.
@@ -60,7 +60,7 @@ YOUR ROLE:
   Spell save DC and spell attack are pre-computed in the character state — use those values.
   Use query_srd("spell", slug) for spell details (slug = lowercase hyphenated name, e.g. "cure-wounds").
 - Do not allow impossible actions or meta-gaming.
-- Keep responses to 1-2 paragraphs. Do not end with a question; offer information and let the player decide.
+- Keep responses to 1-2 paragraphs. You may end with a brief question to prompt the player's next move.
 
 STATE TRACKING — use update_game_state on EVERY turn to keep the game state current:
 - scene_update: ALWAYS include this. A 1-2 sentence summary of what is happening RIGHT NOW ("The party stands in the dimly lit tavern, negotiating with the innkeeper", "Combat just ended in the dockside warehouse; crates are smashed and the air smells of smoke"). This is the player's at-a-glance scene context.
@@ -199,9 +199,26 @@ export async function getDMResponse(
       `[DM Agent] Response: stop_reason=${response.stop_reason}, tokens={ in: ${response.usage.input_tokens}, out: ${response.usage.output_tokens} }`,
     );
 
-    // Collect narrative text from this turn
+    // Check whether this response contains lookup tool calls (query_srd,
+    // query_campaign). Text emitted alongside lookups is planning/reasoning
+    // ("Let me query the campaign…"), not player-facing narrative — discard it.
+    const hasLookupCall = response.content.some(
+      (b) =>
+        b.type === "tool_use" &&
+        (b.name === "query_srd" || b.name === "query_campaign"),
+    );
+
     for (const block of response.content) {
-      if (block.type === "text") narrative += block.text;
+      if (block.type === "text") {
+        if (hasLookupCall) {
+          console.log(
+            "[DM Agent] Discarding pre-lookup text:",
+            block.text.slice(0, 120),
+          );
+        } else {
+          narrative += block.text;
+        }
+      }
     }
 
     // Done — no more tool calls needed
