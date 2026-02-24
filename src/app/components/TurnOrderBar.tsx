@@ -22,22 +22,32 @@ export default function TurnOrderBar({ turnOrder, currentTurnIndex, activeNPCs }
       </span>
       {turnOrder.map((id, index) => {
         const isActive = index === currentTurnIndex;
-        const isDead = id !== "player" && !activeNPCs.some(n => n.id === id && n.currentHp > 0);
-        const name = id === "player"
-          ? "Player"
-          : activeNPCs.find(n => n.id === id)?.name ?? id;
+        const npc = id !== "player" ? activeNPCs.find(n => n.id === id) : null;
+        const isDead = npc != null && npc.currentHp <= 0;
+        const name = id === "player" ? "Player" : npc?.name ?? id;
+        const disposition = npc?.disposition ?? null;
+
+        // Color by disposition: green for friendly, red for hostile, gold for player
+        const dispositionStyles = isDead
+          ? "bg-dungeon/50 border border-parchment/10 text-parchment/20 line-through"
+          : isActive
+            ? disposition === "friendly"
+              ? "bg-emerald-900/40 border border-emerald-400 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
+              : disposition === "hostile"
+                ? "bg-red-900/40 border border-red-400 text-red-300 shadow-[0_0_8px_rgba(248,113,113,0.3)]"
+                : "bg-gold/20 border border-gold text-gold shadow-[0_0_8px_rgba(212,175,55,0.3)]"
+            : disposition === "friendly"
+              ? "bg-emerald-900/20 border border-emerald-600/30 text-emerald-400/60"
+              : disposition === "hostile"
+                ? "bg-red-900/20 border border-red-600/30 text-red-400/60"
+                : "bg-dungeon-mid/50 border border-parchment/20 text-parchment/50";
 
         return (
           <div
             key={id}
             className={`
               px-2.5 py-1 rounded font-cinzel text-xs tracking-wide transition-all duration-300
-              ${isDead
-                ? "bg-dungeon/50 border border-parchment/10 text-parchment/20 line-through"
-                : isActive
-                  ? "bg-gold/20 border border-gold text-gold shadow-[0_0_8px_rgba(212,175,55,0.3)]"
-                  : "bg-dungeon-mid/50 border border-parchment/20 text-parchment/50"
-              }
+              ${dispositionStyles}
             `}
           >
             {name}
