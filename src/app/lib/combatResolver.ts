@@ -75,6 +75,13 @@ export interface NPCTurnResult {
   damage: number;
 }
 
+export interface FriendlyNPCTurnResult extends NPCTurnResult {
+  /** The hostile NPC that was targeted. */
+  targetId: string;
+  targetName: string;
+  targetAC: number;
+}
+
 // ─── Player Attack Resolvers ────────────────────────────────────────────────
 
 /**
@@ -389,6 +396,69 @@ export function resolveNPCTurn(
   }
 
   return { npcId: npc.id, npcName: npc.name, d20, attackTotal, hit, damage };
+}
+
+/**
+ * Resolve a friendly NPC's attack against a random hostile NPC.
+ * Same math as resolveNPCTurn, but targets a hostile instead of the player.
+ */
+export function resolveFriendlyNPCTurn(
+  npc: NPC,
+  hostileNPCs: NPC[],
+): FriendlyNPCTurnResult | null {
+  const livingHostiles = hostileNPCs.filter(h => h.currentHp > 0 && h.disposition === "hostile");
+  if (livingHostiles.length === 0) return null;
+
+  // Pick a random living hostile as target
+  const target = livingHostiles[Math.floor(Math.random() * livingHostiles.length)];
+
+  const d20 = rollD20();
+  const attackTotal = d20 + npc.attackBonus;
+  const isNat1 = d20 === 1;
+  const isNat20 = d20 === 20;
+  const hit = isNat1 ? false : isNat20 ? true : attackTotal >= target.ac;
+
+  let damage = 0;
+  if (hit) {
+    let diceExpr = npc.damageDice;
+    if (isNat20) {
+      diceExpr = doubleDice(diceExpr);
+    }
+    const roll = rollDice(diceExpr);
+    damage = roll.total + npc.damageBonus;
+    if (damage < 0) damage = 0;
+  }
+
+  return {
+    npcId: npc.id,
+    npcName: npc.name,
+    d20,
+    attackTotal,
+    hit,
+    damage,
+    targetId: target.id,
+    targetName: target.name,
+    targetAC: target.ac,
+  };
+}
+
+/**
+ * Pick a target for a hostile NPC: randomly choose between the player
+ * and any living friendly NPCs. Returns "player" or a friendly NPC id.
+ */
+export function pickHostileTarget(
+  friendlyNPCs: NPC[],
+): { type: "player" } | { type: "npc"; npc: NPC } {
+  const livingFriendlies = friendlyNPCs.filter(
+    n => n.currentHp > 0 && n.disposition === "friendly",
+  );
+  if (livingFriendlies.length === 0) return { type: "player" };
+
+  // Equal chance for each possible target (player + each friendly NPC)
+  const totalTargets = 1 + livingFriendlies.length;
+  const roll = Math.floor(Math.random() * totalTargets);
+  if (roll === 0) return { type: "player" };
+  return { type: "npc", npc: livingFriendlies[roll - 1] };
 }
 
 /**
