@@ -16,11 +16,12 @@ import {
   getEncounter,
   getGameState,
   getSessionId,
+  getCampaignSlug,
   loadGameState,
   setEncounter,
   xpForLevel,
 } from "../../lib/gameState";
-import { saveCharacterState, querySRD, loadSession } from "../../lib/characterStore";
+import { saveCharacterState, querySRD, loadSession, getCampaignAct } from "../../lib/characterStore";
 import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
 import { getNPCStats } from "../../agents/npcAgent";
 import { addMessage } from "../../lib/messageStore";
@@ -159,6 +160,50 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           gameState: getGameState(),
           message,
+        });
+      }
+
+      case "advance_story_beat": {
+        const campaignSlug = getCampaignSlug();
+        if (!campaignSlug) {
+          return NextResponse.json({ error: "No campaign active" }, { status: 400 });
+        }
+        const actNumber = gameState.story.currentAct ?? 1;
+        const act = await getCampaignAct(campaignSlug, actNumber);
+        if (!act?.storyBeats?.length) {
+          return NextResponse.json({ error: "No story beats for current act" }, { status: 400 });
+        }
+
+        const completed = new Set(
+          (gameState.story.completedStoryBeats ?? []).map((b) => b.toLowerCase()),
+        );
+        const remaining = act.storyBeats.filter(
+          (b) => !completed.has(b.name.toLowerCase()),
+        );
+        if (remaining.length === 0) {
+          return NextResponse.json({ error: "All story beats already completed" }, { status: 400 });
+        }
+
+        const beatToComplete = remaining[0];
+        if (!gameState.story.completedStoryBeats) gameState.story.completedStoryBeats = [];
+        gameState.story.completedStoryBeats.push(beatToComplete.name.toLowerCase());
+
+        const message = `[DEMIGOD] Story beat "${beatToComplete.name}" marked as completed.`;
+        const sessionId = getSessionId();
+        await addMessage(sessionId, {
+          role: "assistant",
+          content: message,
+          timestamp: Date.now(),
+        });
+
+        await saveCharacterState(characterId, {
+          story: getGameState().story,
+        });
+
+        const nextBeat = remaining.length > 1 ? remaining[1].name : "(act complete)";
+        return NextResponse.json({
+          gameState: getGameState(),
+          message: `${message} Next beat: ${nextBeat}`,
         });
       }
 

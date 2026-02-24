@@ -441,10 +441,16 @@ async function processChatAction(
         // "none" means the DM explicitly wants to return to the world map.
         const explicitPoi = dmResult.stateChanges!.set_current_poi;
         const wantsWorldMap = explicitPoi === "none";
-        let resolvedPoiId: string | undefined = wantsWorldMap ? undefined : explicitPoi;
+        let resolvedPoiId: string | undefined = wantsWorldMap
+          ? undefined
+          : explicitPoi;
 
         // Auto-resolve POI from location_changed if set_current_poi wasn't provided
-        if (!resolvedPoiId && !wantsWorldMap && dmResult.stateChanges!.location_changed) {
+        if (
+          !resolvedPoiId &&
+          !wantsWorldMap &&
+          dmResult.stateChanges!.location_changed
+        ) {
           const loc = dmResult.stateChanges!.location_changed.toLowerCase();
           const matched = explMap.pointsOfInterest.find(
             (p) =>
@@ -489,17 +495,31 @@ async function processChatAction(
     delete dmResult.stateChanges!.set_current_poi;
   }
 
+  // Log story beat tracking for debugging
+  if (dmResult.stateChanges?.story_beat_completed) {
+    console.log(
+      `[Story] DM marked beat completed: "${dmResult.stateChanges.story_beat_completed}"`,
+    );
+  } else if (campaignSlug && !inCombat) {
+    console.log("[Story] DM did NOT set story_beat_completed this turn");
+  }
+
   // Apply state changes and persist to Firestore (including encounter state if active)
   console.log("[Persist] Applying state changes and saving to Firestore...");
   await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
 
   // When the act advances, set the new act's starting POI
   if (dmResult.stateChanges?.act_advance && campaignSlug) {
-    const newAct = await getCampaignAct(campaignSlug, dmResult.stateChanges.act_advance);
+    const newAct = await getCampaignAct(
+      campaignSlug,
+      dmResult.stateChanges.act_advance,
+    );
     if (newAct?.startingPOIId) {
       setCurrentPOIId(newAct.startingPOIId);
       await saveSessionState(sessionId, { currentPOIId: newAct.startingPOIId });
-      console.log(`[POI] Act advanced — set starting POI to ${newAct.startingPOIId}`);
+      console.log(
+        `[POI] Act advanced — set starting POI to ${newAct.startingPOIId}`,
+      );
     }
   }
 
@@ -585,7 +605,10 @@ export async function POST(req: NextRequest) {
     try {
       let currentAction: StoredAction | null = claimed;
       while (currentAction) {
-        const payload = currentAction.payload as { playerInput: string; campaignIntro?: boolean };
+        const payload = currentAction.payload as {
+          playerInput: string;
+          campaignIntro?: boolean;
+        };
 
         const result = await processChatAction(
           currentAction.characterId,
@@ -658,7 +681,9 @@ export async function GET(req: NextRequest) {
           poiId = currentAct.startingPOIId;
           setCurrentPOIId(poiId);
           await saveSessionState(sessionId, { currentPOIId: poiId });
-          console.log(`[POI] GET: Initialized starting POI from act ${actNumber}: ${poiId}`);
+          console.log(
+            `[POI] GET: Initialized starting POI from act ${actNumber}: ${poiId}`,
+          );
         }
       }
     }

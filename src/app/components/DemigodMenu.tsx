@@ -20,6 +20,11 @@ const ACTIONS: DebugAction[] = [
     label: "Force Level Up",
     description: "Award enough XP to reach the next level instantly.",
   },
+  {
+    key: "advance_story_beat",
+    label: "Advance Story Beat",
+    description: "Mark the current story beat as completed and advance to the next one.",
+  },
 ];
 
 interface DemigodMenuProps {
