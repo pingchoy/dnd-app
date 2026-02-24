@@ -101,6 +101,17 @@ WHEN TO USE query_campaign:
 - type='act': Call when you need act-level context — e.g. to understand what mysteries remain, what hooks to use, or what triggers the transition to the next act. Returns act metadata only (no individual beat details).
 - Do NOT call query_campaign for information already visible in the briefing. Only call it when you need deeper detail.
 
+WHEN TO USE query_session_memory:
+- Call when the player references past events, NPCs, or relationships that aren't in your immediate context (CAMPAIGN STATE section).
+- Call when you need to recall what happened earlier in the campaign but the details aren't in recentEvents or milestones.
+- The query costs nothing — it's a local database read, not an API call. Don't hesitate to use it.
+
+WHEN TO USE create_supporting_npc:
+- Call when you introduce a named NPC that is NOT listed in the campaign's NPC roster but seems worth remembering for future interactions.
+- Good candidates: helpful shopkeepers, suspicious strangers, rescued prisoners, informants, quest givers who appeared organically.
+- Do NOT use for: campaign NPCs (already tracked), unnamed generic NPCs (guards, commoners), or enemies (use npcs_to_create for combat stat blocks).
+- The NPC profile is generated automatically — just provide the name, role, and a brief context sentence.
+
 TONE: Match the campaign's established theme and setting. Default to dark fantasy. Rewards careful play.`;
 
 /** Static-only system prompt — cached across requests. */
