@@ -106,8 +106,7 @@ export async function handleCampaignQuery(
         newCount: queryCount + 1,
       };
     // Strip storyBeats — DM only sees beat details via the serialized context
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { storyBeats, ...actWithoutBeats } = act;
+    const { storyBeats: _storyBeats, ...actWithoutBeats } = act;
     return {
       resultContent: JSON.stringify(actWithoutBeats),
       newCount: queryCount + 1,
