@@ -389,7 +389,15 @@ async function processChatAction(
         combatRegions,
         getExplorationPositions(),
       );
-      enc.turnOrder = ["player", ...enc.activeNPCs.map((n) => n.id)];
+      enc.turnOrder = [
+        "player",
+        ...enc.activeNPCs
+          .filter(n => n.disposition === "friendly")
+          .map(n => n.id),
+        ...enc.activeNPCs
+          .filter(n => n.disposition === "hostile")
+          .map(n => n.id),
+      ];
       enc.currentTurnIndex = 0;
       console.log(
         `[Encounter] Computed initial positions for ${enc.activeNPCs.length} NPCs + player`,
