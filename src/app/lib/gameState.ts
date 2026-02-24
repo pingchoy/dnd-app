@@ -98,6 +98,7 @@ import {
   xpForLevel,
   XP_THRESHOLDS,
   applyEffects,
+  SupportingNPC,
 } from "./gameTypes";
 
 import { parseSpellRange } from "./combatEnforcement";
@@ -537,6 +538,10 @@ let currentPOIId: string | undefined;
 let currentExplorationPositions: Record<string, GridPosition> | undefined;
 /** Campaign slug from the session — set by loadGameState(). */
 let currentCampaignSlug: string | undefined;
+/** Important events from the session — set by loadGameState(). */
+let sessionImportantEvents: string[] | undefined;
+/** Supporting NPCs from the session — set by loadGameState(). */
+let sessionSupportingNPCs: SupportingNPC[] | undefined;
 
 // ─── Encounter singleton ─────────────────────────────────────────────────────
 
@@ -582,6 +587,19 @@ export function getExplorationPositions():
 
 export function getCampaignSlug(): string | undefined {
   return currentCampaignSlug;
+}
+
+export function getSessionImportantEvents(): string[] {
+  return sessionImportantEvents ?? [];
+}
+
+export function getSessionSupportingNPCs(): SupportingNPC[] {
+  return sessionSupportingNPCs ?? [];
+}
+
+export function addSupportingNPC(npc: SupportingNPC): void {
+  if (!sessionSupportingNPCs) sessionSupportingNPCs = [];
+  sessionSupportingNPCs.push(npc);
 }
 
 export function getEncounter(): StoredEncounter | null {
@@ -1265,6 +1283,10 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   currentPOIId = session?.currentPOIId ?? undefined;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
+
+  // Load session memory (important events, supporting NPCs)
+  sessionImportantEvents = session?.importantEvents;
+  sessionSupportingNPCs = session?.supportingNPCs;
 
   // Hydrate encounter if one is active
   encounter = null;
