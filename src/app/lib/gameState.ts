@@ -48,6 +48,7 @@ export type {
   MapDocument,
   ExplorationMapDocument,
   CombatMapDocument,
+  SupportingNPC,
 } from "./gameTypes";
 
 export {
