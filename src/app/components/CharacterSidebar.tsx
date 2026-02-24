@@ -3,6 +3,7 @@
 import { memo } from "react";
 import {
   PlayerState,
+  NPC,
   formatModifier,
   getModifier,
   getProficiencyBonus,
@@ -12,6 +13,7 @@ import {
 
 interface Props {
   player: PlayerState;
+  companions: NPC[];
   onOpenFullSheet: () => void;
   onClose?: () => void;
 }
@@ -40,7 +42,7 @@ function StatBlock({ label, value }: StatBlockProps) {
   );
 }
 
-function CharacterSidebar({ player, onOpenFullSheet, onClose }: Props) {
+function CharacterSidebar({ player, companions, onOpenFullSheet, onClose }: Props) {
   const prof = getProficiencyBonus(player.level);
   const hpPct = player.maxHP > 0 ? (player.currentHP / player.maxHP) * 100 : 0;
   const hpColor = hpPct > 50 ? "#5a9a5a" : hpPct > 25 ? "#d4a017" : "#dc4a4a";
@@ -258,6 +260,52 @@ function CharacterSidebar({ player, onOpenFullSheet, onClose }: Props) {
             </ul>
           )}
         </section>
+
+        {/* Companions */}
+        {companions.length > 0 && (
+          <section>
+            <h3 className="font-cinzel text-gold-dark text-xs tracking-widest font-bold uppercase mb-1.5">
+              Companions
+            </h3>
+            <div className="space-y-2">
+              {companions.map((npc) => {
+                const hpPct = npc.maxHp > 0 ? (npc.currentHp / npc.maxHp) * 100 : 0;
+                const hpColor = hpPct > 50 ? "#5a9a5a" : hpPct > 25 ? "#d4a017" : "#dc4a4a";
+                return (
+                  <div
+                    key={npc.id}
+                    className="bg-dungeon-mid/50 border border-emerald-600/30 rounded-lg p-2"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-cinzel text-sm text-emerald-300 font-bold truncate">
+                        {npc.name}
+                      </span>
+                      <span className="font-cinzel text-[11px] text-parchment/50">
+                        AC {npc.ac}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-dungeon rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${hpPct}%`, backgroundColor: hpColor }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="font-cinzel text-[10px] text-parchment/40">
+                        {npc.currentHp}/{npc.maxHp} HP
+                      </span>
+                      {npc.conditions.length > 0 && (
+                        <span className="font-cinzel text-[10px] text-red-400/80">
+                          {npc.conditions.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Sticky footer — Full Sheet button */}

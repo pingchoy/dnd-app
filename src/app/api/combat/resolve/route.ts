@@ -10,10 +10,10 @@
  *
  * Flow:
  * 1. Narrate player turn (Haiku) → write message to subcollection
- * 2. Loop through hostile NPCs in turnOrder:
- *    - Pre-roll this NPC's attack
- *    - Narrate (Haiku) → write message to subcollection
- *    - Apply damage to player, persist state
+ * 2. Loop through NPCs in turnOrder (friendly first, then hostile):
+ *    - Friendly NPCs: attack a random hostile, apply damage, narrate
+ *    - Hostile NPCs: pick a random target (player or friendly NPC), attack, narrate
+ *    - Persist state after each NPC turn
  *    - If player HP <= 0, stop
  * 3. After all NPCs: increment round, reset currentTurnIndex
  */
@@ -24,10 +24,11 @@ import {
   getEncounter,
   getSessionId,
   loadGameState,
+  updateNPC,
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
 import { saveEncounterState, completeEncounter } from "../../../lib/encounterStore";
-import { resolveNPCTurn } from "../../../lib/combatResolver";
+import { resolveNPCTurn, resolveFriendlyNPCTurn, pickHostileTarget } from "../../../lib/combatResolver";
 import { emptyCombatStats } from "../../../lib/gameTypes";
 import type { ParsedRollResult } from "../../../lib/gameTypes";
 import type { AOEResult } from "../../../lib/combatResolver";
@@ -131,76 +132,182 @@ export async function POST(req: NextRequest) {
       const npcId = npcTurnIds[i];
       const npc = encounter.activeNPCs.find(n => n.id === npcId);
 
-      // Skip dead or non-hostile NPCs
-      if (!npc || npc.currentHp <= 0 || npc.disposition !== "hostile") {
+      // Skip dead or neutral NPCs
+      if (!npc || npc.currentHp <= 0 || npc.disposition === "neutral") {
         encounter.currentTurnIndex = i + 2;
         continue;
       }
 
       encounter.currentTurnIndex = i + 1;
 
-      // Pre-roll this NPC's attack
-      const npcResult = resolveNPCTurn(npc, player.armorClass);
-      npcResults.push({ npcId, hit: npcResult.hit, damage: npcResult.damage });
+      if (npc.disposition === "friendly") {
+        // ── Friendly NPC turn: attack a random hostile ──
+        const friendlyResult = resolveFriendlyNPCTurn(npc, encounter.activeNPCs);
+        if (!friendlyResult) {
+          // No living hostiles — skip turn
+          encounter.currentTurnIndex = i + 2;
+          continue;
+        }
 
-      // Apply damage to player immediately
-      if (npcResult.hit && npcResult.damage > 0) {
-        player.currentHP = Math.max(0, player.currentHP - npcResult.damage);
+        npcResults.push({ npcId, hit: friendlyResult.hit, damage: friendlyResult.damage });
 
-        // Accumulate damageTaken stat
-        if (!encounter.combatStats) encounter.combatStats = {};
-        if (!encounter.combatStats[characterId]) encounter.combatStats[characterId] = emptyCombatStats();
-        encounter.combatStats[characterId].damageTaken += npcResult.damage;
-      }
+        // Apply damage to the hostile target
+        if (friendlyResult.hit && friendlyResult.damage > 0) {
+          updateNPC({ id: friendlyResult.targetId, hp_delta: -friendlyResult.damage });
+        }
 
-      // Narrate this NPC's turn (Haiku call)
-      const npcNarration = await narrateNPCTurn(
-        npc,
-        npcResult,
-        player.name,
-        player.currentHP,
-        player.maxHP,
-        encounter.location,
-      );
+        // Find the target NPC for narration (get updated HP after damage)
+        const target = encounter.activeNPCs.find(n => n.id === friendlyResult.targetId);
+        const targetCurrentHP = target?.currentHp ?? 0;
+        const targetMaxHP = target?.maxHp ?? 1;
 
-      roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
-      roundCost += npcNarration.costUsd;
+        // Narrate friendly NPC's turn
+        const npcNarration = await narrateNPCTurn(
+          npc,
+          friendlyResult,
+          friendlyResult.targetName,
+          targetCurrentHP,
+          targetMaxHP,
+          encounter.location,
+        );
 
-      await addMessage(sessionId, {
-        role: "assistant",
-        content: npcNarration.narrative,
-        timestamp: Date.now(),
-      });
+        roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
+        roundCost += npcNarration.costUsd;
 
-      // Persist after each NPC turn (includes lastNpcResult for real-time client labels)
-      encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
-      await Promise.all([
-        saveCharacterState(characterId, {
-          player: gameState.player,
-          story: gameState.story,
-        }),
-        saveEncounterState(encounterId, {
-          activeNPCs: encounter.activeNPCs,
-          positions: encounter.positions,
-          round: encounter.round,
-          turnOrder: encounter.turnOrder,
-          currentTurnIndex: encounter.currentTurnIndex,
-          combatStats: encounter.combatStats,
-          lastNpcResult: encounter.lastNpcResult,
-        }),
-      ]);
-
-      // Check for player death
-      if (player.currentHP <= 0) {
-        console.log(`[Combat Resolve] Player died during ${npc.name}'s turn`);
-        return NextResponse.json({
-          ok: true,
-          npcResults,
-          gameState: getGameState(),
-          encounter,
-          tokensUsed: roundTokens,
-          estimatedCostUsd: roundCost,
+        await addMessage(sessionId, {
+          role: "assistant",
+          content: npcNarration.narrative,
+          timestamp: Date.now(),
         });
+
+        encounter.lastNpcResult = { npcId, hit: friendlyResult.hit, damage: friendlyResult.damage, timestamp: Date.now() };
+        await Promise.all([
+          saveCharacterState(characterId, {
+            player: gameState.player,
+            story: gameState.story,
+          }),
+          saveEncounterState(encounterId, {
+            activeNPCs: encounter.activeNPCs,
+            positions: encounter.positions,
+            round: encounter.round,
+            turnOrder: encounter.turnOrder,
+            currentTurnIndex: encounter.currentTurnIndex,
+            combatStats: encounter.combatStats,
+            lastNpcResult: encounter.lastNpcResult,
+          }),
+        ]);
+
+      } else if (npc.disposition === "hostile") {
+        // ── Hostile NPC turn: target player or a friendly NPC ──
+        const target = pickHostileTarget(encounter.activeNPCs);
+
+        if (target.type === "player") {
+          // Existing behavior: attack the player
+          const npcResult = resolveNPCTurn(npc, player.armorClass);
+          npcResults.push({ npcId, hit: npcResult.hit, damage: npcResult.damage });
+
+          if (npcResult.hit && npcResult.damage > 0) {
+            player.currentHP = Math.max(0, player.currentHP - npcResult.damage);
+
+            if (!encounter.combatStats) encounter.combatStats = {};
+            if (!encounter.combatStats[characterId]) encounter.combatStats[characterId] = emptyCombatStats();
+            encounter.combatStats[characterId].damageTaken += npcResult.damage;
+          }
+
+          const npcNarration = await narrateNPCTurn(
+            npc,
+            npcResult,
+            player.name,
+            player.currentHP,
+            player.maxHP,
+            encounter.location,
+          );
+
+          roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
+          roundCost += npcNarration.costUsd;
+
+          await addMessage(sessionId, {
+            role: "assistant",
+            content: npcNarration.narrative,
+            timestamp: Date.now(),
+          });
+
+          encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          await Promise.all([
+            saveCharacterState(characterId, {
+              player: gameState.player,
+              story: gameState.story,
+            }),
+            saveEncounterState(encounterId, {
+              activeNPCs: encounter.activeNPCs,
+              positions: encounter.positions,
+              round: encounter.round,
+              turnOrder: encounter.turnOrder,
+              currentTurnIndex: encounter.currentTurnIndex,
+              combatStats: encounter.combatStats,
+              lastNpcResult: encounter.lastNpcResult,
+            }),
+          ]);
+
+          // Check for player death
+          if (player.currentHP <= 0) {
+            console.log(`[Combat Resolve] Player died during ${npc.name}'s turn`);
+            return NextResponse.json({
+              ok: true,
+              npcResults,
+              gameState: getGameState(),
+              encounter,
+              tokensUsed: roundTokens,
+              estimatedCostUsd: roundCost,
+            });
+          }
+
+        } else {
+          // Hostile NPC targets a friendly NPC
+          const friendlyTarget = target.npc;
+          const npcResult = resolveNPCTurn(npc, friendlyTarget.ac);
+          npcResults.push({ npcId, hit: npcResult.hit, damage: npcResult.damage });
+
+          if (npcResult.hit && npcResult.damage > 0) {
+            updateNPC({ id: friendlyTarget.id, hp_delta: -npcResult.damage });
+          }
+
+          const updatedFriendly = encounter.activeNPCs.find(n => n.id === friendlyTarget.id);
+          const npcNarration = await narrateNPCTurn(
+            npc,
+            npcResult,
+            friendlyTarget.name,
+            updatedFriendly?.currentHp ?? 0,
+            friendlyTarget.maxHp,
+            encounter.location,
+          );
+
+          roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
+          roundCost += npcNarration.costUsd;
+
+          await addMessage(sessionId, {
+            role: "assistant",
+            content: npcNarration.narrative,
+            timestamp: Date.now(),
+          });
+
+          encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          await Promise.all([
+            saveCharacterState(characterId, {
+              player: gameState.player,
+              story: gameState.story,
+            }),
+            saveEncounterState(encounterId, {
+              activeNPCs: encounter.activeNPCs,
+              positions: encounter.positions,
+              round: encounter.round,
+              turnOrder: encounter.turnOrder,
+              currentTurnIndex: encounter.currentTurnIndex,
+              combatStats: encounter.combatStats,
+              lastNpcResult: encounter.lastNpcResult,
+            }),
+          ]);
+        }
       }
     }
 
@@ -296,6 +403,9 @@ export async function POST(req: NextRequest) {
 
       encounter.turnOrder = [
         "player",
+        ...encounter.activeNPCs
+          .filter(n => n.currentHp > 0 && n.disposition === "friendly")
+          .map(n => n.id),
         ...encounter.activeNPCs
           .filter(n => n.currentHp > 0 && n.disposition === "hostile")
           .map(n => n.id),

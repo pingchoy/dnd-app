@@ -163,6 +163,12 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
           required: ["name", "slug", "disposition"],
         },
       },
+      npcs_to_dismiss: {
+        type: "array",
+        description:
+          "IDs of friendly or neutral NPCs to remove from the party. Use [id=...] from the NPC list. The NPC departs the scene narratively.",
+        items: { type: "string" },
+      },
       // ─── Memory tier fields ───
       milestone: {
         type: "string",

@@ -32,6 +32,24 @@ function findEdgeSlot(occupied: Set<string>): GridPosition {
   return { row: 0, col: 0 };
 }
 
+/** Find an unoccupied cell in rows 16-19 for friendly NPC placement (near player). */
+function findBottomSlot(occupied: Set<string>): GridPosition {
+  for (let row = GRID_SIZE - 4; row <= GRID_SIZE - 2; row++) {
+    for (let col = 3; col < GRID_SIZE - 3; col += 2) {
+      const key = `${row},${col}`;
+      if (!occupied.has(key)) return { row, col };
+    }
+  }
+  // Overflow: try any unoccupied cell in bottom 6 rows
+  for (let row = GRID_SIZE - 6; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      const key = `${row},${col}`;
+      if (!occupied.has(key)) return { row, col };
+    }
+  }
+  return { row: GRID_SIZE - 1, col: 0 };
+}
+
 /**
  * Find an unoccupied cell within a region's cells.
  * Returns null if the region is full.
@@ -102,8 +120,10 @@ export function computeInitialPositions(
       }
     }
 
-    // Fallback: edge placement
-    const pos = findEdgeSlot(occupied);
+    // Disposition-based fallback: friendly near player (bottom), hostile at top (edge)
+    const pos = npc.disposition === "friendly"
+      ? findBottomSlot(occupied)
+      : findEdgeSlot(occupied);
     positions[npc.id] = pos;
     occupied.add(`${pos.row},${pos.col}`);
   }

@@ -101,10 +101,18 @@ Two-phase turn flow:
 Characters are created via the character creation wizard (`/character-creation`). The wizard supports all D&D 5e SRD races and classes with point-buy ability scores, skill selection, archetype selection, feature choices, and spellcasting setup. Character data is persisted to Firestore.
 
 ## Environment Variables
-```
-ANTHROPIC_API_KEY=your-key-here            # Required for AI agents
-NEXT_PUBLIC_DEMIGOD_MODE=true              # Optional: enables debug menu (floating button, bottom-right)
-```
+
+Copy `.env.local.example` to `.env.local` and fill in your values.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ANTHROPIC_API_KEY` | Yes | Claude API key for AI agents |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | Yes | Firebase Admin SDK service account (JSON string) |
+| `FIREBASE_STORAGE_BUCKET` | Yes | Firebase Storage bucket name |
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Yes | Firebase client-side API key |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Yes | Firebase project ID |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase auth domain |
+| `NEXT_PUBLIC_DEMIGOD_MODE` | No | Set to `"true"` to enable debug menu (floating button, bottom-right) |
 
 ## Development
 ```bash
