@@ -130,15 +130,22 @@ function buildStatLines(p: PlayerState, compact: boolean): string[] {
 
   lines.push(
     ...(p.abilities ?? [])
-      .filter(a => a.type === "weapon")
-      .map(a => `Weapon: ${a.name} — ${formatAbilityDamage(a, p.stats)} (${a.damageRoll} base, stat: ${a.weaponStat ?? "str"}, bonus: ${a.weaponBonus ?? 0})`),
+      .filter((a) => a.type === "weapon")
+      .map(
+        (a) =>
+          `Weapon: ${a.name} — ${formatAbilityDamage(a, p.stats)} (${a.damageRoll} base, stat: ${a.weaponStat ?? "str"}, bonus: ${a.weaponBonus ?? 0})`,
+      ),
   );
-  lines.push(`Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`);
+  lines.push(
+    `Conditions: ${p.conditions.length ? p.conditions.join(", ") : "None"}`,
+  );
 
   if (!compact) {
     lines.push(`Gold: ${p.gold}gp`);
     lines.push(`XP: ${p.xp} / ${p.xpToNextLevel} (Level ${p.level})`);
-    lines.push(`Features: ${p.features.map((f) => f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name).join(" | ")}`);
+    lines.push(
+      `Features: ${p.features.map((f) => (f.chosenOption ? `${f.name} (${f.chosenOption})` : f.name)).join(" | ")}`,
+    );
   }
 
   // Spell block (only for casters)
@@ -147,29 +154,40 @@ function buildStatLines(p: PlayerState, compact: boolean): string[] {
     const prof = getProficiencyBonus(p.level);
     const saveDC = 8 + prof + abilityMod;
     const spellAttack = prof + abilityMod;
-    lines.push(`Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`);
+    lines.push(
+      `Spellcasting: ${p.spellcastingAbility.toUpperCase()} (save DC ${saveDC}, spell attack ${formatModifier(spellAttack)})`,
+    );
 
     if (p.cantrips?.length) {
-      lines.push(compact
-        ? `Cantrips: ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`
-        : `Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map(c => c.replace(/-/g, " ")).join(", ")}`);
+      lines.push(
+        compact
+          ? `Cantrips: ${p.cantrips.map((c) => c.replace(/-/g, " ")).join(", ")}`
+          : `Cantrips (${p.cantrips.length}/${p.maxCantrips ?? p.cantrips.length}): ${p.cantrips.map((c) => c.replace(/-/g, " ")).join(", ")}`,
+      );
     }
     if (p.preparedSpells?.length) {
       // Prepared casters (Wizard, Cleric, Druid, Paladin)
-      lines.push(compact
-        ? `Prepared Spells: ${p.preparedSpells.map(s => s.replace(/-/g, " ")).join(", ")}`
-        : `Prepared Spells (${p.preparedSpells.length}/${p.maxPreparedSpells ?? p.preparedSpells.length}): ${p.preparedSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
+      lines.push(
+        compact
+          ? `Prepared Spells: ${p.preparedSpells.map((s) => s.replace(/-/g, " ")).join(", ")}`
+          : `Prepared Spells (${p.preparedSpells.length}/${p.maxPreparedSpells ?? p.preparedSpells.length}): ${p.preparedSpells.map((s) => s.replace(/-/g, " ")).join(", ")}`,
+      );
     } else if (p.knownSpells?.length) {
       // Known casters (Bard, Sorcerer, Ranger, Warlock)
-      lines.push(compact
-        ? `Spells: ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`
-        : `Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.map(s => s.replace(/-/g, " ")).join(", ")}`);
+      lines.push(
+        compact
+          ? `Spells: ${p.knownSpells.map((s) => s.replace(/-/g, " ")).join(", ")}`
+          : `Spells (${p.knownSpells.length}/${p.maxKnownSpells ?? p.knownSpells.length}): ${p.knownSpells.map((s) => s.replace(/-/g, " ")).join(", ")}`,
+      );
     }
     if (p.spellSlots && Object.keys(p.spellSlots).length > 0) {
       const used = p.spellSlotsUsed ?? {};
       const slotStr = Object.entries(p.spellSlots)
         .sort(([a], [b]) => Number(a) - Number(b))
-        .map(([lvl, total]) => `Lv${lvl}: ${total - (used[lvl] ?? 0)}/${total} remaining`)
+        .map(
+          ([lvl, total]) =>
+            `Lv${lvl}: ${total - (used[lvl] ?? 0)}/${total} remaining`,
+        )
         .join(" ");
       lines.push(`Spell Slots: ${slotStr}`);
     }
@@ -259,18 +277,22 @@ export function serializeRegionContext(
   // Region context only applies to combat maps (exploration maps have POIs instead)
   if (map.mapType !== "combat") return "";
 
-  const lines: string[] = ["CURRENT POSITION (authoritative — overrides any prior location references):"];
+  const lines: string[] = [
+    "CURRENT POSITION (authoritative — overrides any prior location references):",
+  ];
 
   for (const [playerName, pos] of Array.from(playerPositions.entries())) {
     // Find which region(s) the player is standing in
     const cellIndex = pos.row * 20 + pos.col;
-    const matchingRegions = map.regions.filter(
-      (r: MapRegion) => (r.cells ?? []).includes(cellIndex),
+    const matchingRegions = map.regions.filter((r: MapRegion) =>
+      (r.cells ?? []).includes(cellIndex),
     );
 
     if (matchingRegions.length > 0) {
       for (const region of matchingRegions) {
-        lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → ${region.name} (${region.type})`);
+        lines.push(
+          `  ${playerName} [row=${pos.row},col=${pos.col}] → ${region.name} (${region.type})`,
+        );
         if (region.dmNote) {
           lines.push(`    Note: ${region.dmNote}`);
         }
@@ -279,7 +301,9 @@ export function serializeRegionContext(
         }
       }
     } else {
-      lines.push(`  ${playerName} [row=${pos.row},col=${pos.col}] → open area (no named region)`);
+      lines.push(
+        `  ${playerName} [row=${pos.row},col=${pos.col}] → open area (no named region)`,
+      );
     }
   }
 
@@ -303,7 +327,9 @@ export function serializeExplorationContext(
     const isCurrent = poi.id === currentPoiId;
     const hiddenTag = poi.isHidden ? " [HIDDEN from players]" : "";
     const currentTag = isCurrent ? " ← PARTY IS HERE" : "";
-    lines.push(`  ${poi.number}. ${poi.name} [id: ${poi.id}]${hiddenTag}${currentTag}`);
+    lines.push(
+      `  ${poi.number}. ${poi.name} [id: ${poi.id}]${hiddenTag}${currentTag}`,
+    );
     lines.push(`     ${poi.description}`);
     if (poi.defaultNPCSlugs?.length) {
       lines.push(`     NPCs: ${poi.defaultNPCSlugs.join(", ")}`);
@@ -328,7 +354,9 @@ export function serializeCampaignContext(
 ): string {
   const lines: string[] = [];
 
-  lines.push("CAMPAIGN BRIEFING (DM ONLY — never reveal plot spoilers, NPC secrets, or future events to the player):");
+  lines.push(
+    "CAMPAIGN BRIEFING (DM ONLY — never reveal plot spoilers, NPC secrets, or future events to the player):",
+  );
   lines.push(campaign.dmSummary);
 
   if (act) {
@@ -337,17 +365,28 @@ export function serializeCampaignContext(
     lines.push(act.dmBriefing);
 
     // Story beat progression — full details for next, names-only for upcoming
-    const completed = new Set((completedStoryBeats ?? []).map((e) => e.toLowerCase()));
-    const remaining = act.storyBeats.filter((e) => !completed.has(e.name.toLowerCase()));
+    const normalizeBeatName = (name: string) => name.trim().toLowerCase();
+    const completed = new Set(
+      (completedStoryBeats ?? []).map((e) => normalizeBeatName(e)),
+    );
+    const remaining = act.storyBeats.filter(
+      (e) => !completed.has(normalizeBeatName(e.name)),
+    );
 
     if (remaining.length > 0) {
       const next = remaining[0];
       lines.push("");
-      lines.push(`>>> NEXT STORY BEAT (GUIDE THE PLAYER HERE): ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`);
-      lines.push(`DIRECTIVE: Steer the player toward "${next.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`);
+      lines.push(
+        `>>> NEXT STORY BEAT (GUIDE THE PLAYER HERE): ${next.name} (${next.type}, ${next.difficulty}) @ ${next.location}`,
+      );
+      lines.push(
+        `DIRECTIVE: Steer the player toward "${next.location}" and trigger this story beat. Use NPC hooks, environmental cues, or escalating urgency to get them there.`,
+      );
       if (next.dmGuidance) lines.push(next.dmGuidance);
       if (next.enemies?.length) {
-        lines.push(`Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`);
+        lines.push(
+          `Enemies: ${next.enemies.map((e) => `${e.count}x ${e.srdMonsterSlug}${e.notes ? ` (${e.notes})` : ""}`).join(", ")}`,
+        );
       }
       if (next.npcInvolvement?.length) {
         lines.push(`NPCs involved: ${next.npcInvolvement.join(", ")}`);
@@ -356,13 +395,16 @@ export function serializeCampaignContext(
         const parts: string[] = [];
         if (next.rewards.xp) parts.push(`${next.rewards.xp} XP`);
         if (next.rewards.gold) parts.push(`${next.rewards.gold} gold`);
-        if (next.rewards.items?.length) parts.push(next.rewards.items.join(", "));
+        if (next.rewards.items?.length)
+          parts.push(next.rewards.items.join(", "));
         if (parts.length) lines.push(`Rewards: ${parts.join(", ")}`);
       }
 
       if (remaining.length > 1) {
         lines.push("");
-        lines.push("UPCOMING STORY BEATS (do not skip ahead — complete the next story beat first):");
+        lines.push(
+          "UPCOMING STORY BEATS (do not skip ahead — complete the next story beat first):",
+        );
         for (const enc of remaining.slice(1)) {
           lines.push(`  - ${enc.name} (${enc.type}, ${enc.difficulty})`);
         }
@@ -383,7 +425,9 @@ export function serializeCampaignContext(
       lines.push("NPCs MET BY PLAYER:");
       for (const npc of metNPCList) {
         const traits = npc.personality.traits.slice(0, 2).join(", ");
-        const actKey = act ? `act${act.actNumber}` as keyof typeof npc.relationshipArc : undefined;
+        const actKey = act
+          ? (`act${act.actNumber}` as keyof typeof npc.relationshipArc)
+          : undefined;
         const rel = actKey ? npc.relationshipArc[actKey] : undefined;
         let line = `  ${npc.name} [id=${npc.id}]: ${traits}`;
         if (rel) line += ` | This act: ${rel}`;
@@ -394,7 +438,9 @@ export function serializeCampaignContext(
 
     if (unmetNPCList.length > 0) {
       lines.push("");
-      lines.push("NPCs NOT YET MET (do not assume the player knows them — introduce naturally when the story calls for it):");
+      lines.push(
+        "NPCs NOT YET MET (do not assume the player knows them — introduce naturally when the story calls for it):",
+      );
       for (const npc of unmetNPCList) {
         const traits = npc.personality.traits.slice(0, 2).join(", ");
         let line = `  ${npc.name} [id=${npc.id}]: ${traits}`;
@@ -407,7 +453,6 @@ export function serializeCampaignContext(
 }
 
 /** Max conversation entries persisted (20 user + 20 assistant turns). */
-
 
 // ─── Singleton state ──────────────────────────────────────────────────────────
 
@@ -429,7 +474,14 @@ let state: GameState = {
     currentHP: 0,
     maxHP: 0,
     armorClass: 10,
-    stats: { strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8 },
+    stats: {
+      strength: 8,
+      dexterity: 8,
+      constitution: 8,
+      intelligence: 8,
+      wisdom: 8,
+      charisma: 8,
+    },
     savingThrowProficiencies: [],
     skillProficiencies: [],
     weaponProficiencies: [],
@@ -516,7 +568,9 @@ export function setCurrentPOIId(poiId: string | undefined): void {
   currentPOIId = poiId;
 }
 
-export function getExplorationPositions(): Record<string, GridPosition> | undefined {
+export function getExplorationPositions():
+  | Record<string, GridPosition>
+  | undefined {
   return currentExplorationPositions;
 }
 
@@ -633,7 +687,8 @@ export function mergeStateChanges(
   }
 
   // Scalar number — latest wins
-  if (incoming.act_advance !== undefined) merged.act_advance = incoming.act_advance;
+  if (incoming.act_advance !== undefined)
+    merged.act_advance = incoming.act_advance;
 
   // Arrays — concatenate
   for (const key of [
@@ -652,16 +707,25 @@ export function mergeStateChanges(
   ] as const) {
     if (incoming[key]?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      merged[key] = [...((merged[key] as any[]) ?? []), ...(incoming[key] as any[])];
+      merged[key] = [
+        ...((merged[key] as any[]) ?? []),
+        ...(incoming[key] as any[]),
+      ];
     }
   }
 
   // Record objects — shallow merge
   if (incoming.feature_choice_updates) {
-    merged.feature_choice_updates = { ...(merged.feature_choice_updates ?? {}), ...incoming.feature_choice_updates };
+    merged.feature_choice_updates = {
+      ...(merged.feature_choice_updates ?? {}),
+      ...incoming.feature_choice_updates,
+    };
   }
   if (incoming.spell_slots_used) {
-    merged.spell_slots_used = { ...(merged.spell_slots_used ?? {}), ...incoming.spell_slots_used };
+    merged.spell_slots_used = {
+      ...(merged.spell_slots_used ?? {}),
+      ...incoming.spell_slots_used,
+    };
   }
 
   return merged;
@@ -683,7 +747,10 @@ export function applyStateChanges(changes: StateChanges): void {
   const s = state.story;
 
   if (changes.hp_delta) {
-    p.currentHP = Math.max(0, Math.min(p.maxHP, p.currentHP + changes.hp_delta));
+    p.currentHP = Math.max(
+      0,
+      Math.min(p.maxHP, p.currentHP + changes.hp_delta),
+    );
   }
   if (changes.items_gained?.length) {
     p.inventory.push(...changes.items_gained);
@@ -703,7 +770,10 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.conditions_removed?.length) {
     p.conditions = p.conditions.filter(
-      (c) => !changes.conditions_removed!.some((r) => r.toLowerCase() === c.toLowerCase()),
+      (c) =>
+        !changes.conditions_removed!.some(
+          (r) => r.toLowerCase() === c.toLowerCase(),
+        ),
     );
   }
   if (changes.location_changed) s.currentLocation = changes.location_changed;
@@ -729,7 +799,10 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.quests_completed?.length) {
     s.activeQuests = s.activeQuests.filter(
-      (q) => !changes.quests_completed!.some((c) => c.toLowerCase() === q.toLowerCase()),
+      (q) =>
+        !changes.quests_completed!.some(
+          (c) => c.toLowerCase() === q.toLowerCase(),
+        ),
     );
   }
   if (changes.npcs_met?.length) {
@@ -745,21 +818,26 @@ export function applyStateChanges(changes: StateChanges): void {
   }
   if (changes.story_beat_completed) {
     if (!s.completedStoryBeats) s.completedStoryBeats = [];
-    const lower = changes.story_beat_completed.toLowerCase();
-    if (!s.completedStoryBeats.includes(lower)) s.completedStoryBeats.push(lower);
+    const key = changes.story_beat_completed.trim().toLowerCase();
+    if (!s.completedStoryBeats.includes(key)) s.completedStoryBeats.push(key);
   }
   if (changes.gold_delta) p.gold = Math.max(0, p.gold + changes.gold_delta);
   // Defer XP during combat — accumulate on encounter, flush to all players when combat ends
   if (changes.xp_gained && changes.xp_gained > 0) {
     if (encounter) {
-      encounter.totalXPAwarded = (encounter.totalXPAwarded ?? 0) + changes.xp_gained;
-      console.log(`[applyStateChanges] Deferred ${changes.xp_gained} XP to encounter (total: ${encounter.totalXPAwarded})`);
+      encounter.totalXPAwarded =
+        (encounter.totalXPAwarded ?? 0) + changes.xp_gained;
+      console.log(
+        `[applyStateChanges] Deferred ${changes.xp_gained} XP to encounter (total: ${encounter.totalXPAwarded})`,
+      );
     } else {
       p.xp = (p.xp ?? 0) + changes.xp_gained;
     }
   }
   if (changes.feature_choice_updates) {
-    for (const [featureName, choice] of Object.entries(changes.feature_choice_updates)) {
+    for (const [featureName, choice] of Object.entries(
+      changes.feature_choice_updates,
+    )) {
       const feature = p.features.find(
         (f) => f.name.toLowerCase() === featureName.toLowerCase(),
       );
@@ -781,7 +859,10 @@ export function applyStateChanges(changes: StateChanges): void {
   if (changes.spells_removed?.length) {
     if (p.knownSpells) {
       p.knownSpells = p.knownSpells.filter(
-        (s) => !changes.spells_removed!.some((r) => r.toLowerCase() === s.toLowerCase()),
+        (s) =>
+          !changes.spells_removed!.some(
+            (r) => r.toLowerCase() === s.toLowerCase(),
+          ),
       );
     }
   }
@@ -810,11 +891,12 @@ export function applyStateChanges(changes: StateChanges): void {
   // Remove weapon abilities for items that were lost
   if (changes.items_lost?.length) {
     if (p.abilities) {
-      p.abilities = p.abilities.filter(a => {
+      p.abilities = p.abilities.filter((a) => {
         if (a.type !== "weapon") return true;
-        return !changes.items_lost!.some(lost =>
-          a.name.toLowerCase().includes(lost.toLowerCase()) ||
-          lost.toLowerCase().includes(a.name.toLowerCase()),
+        return !changes.items_lost!.some(
+          (lost) =>
+            a.name.toLowerCase().includes(lost.toLowerCase()) ||
+            lost.toLowerCase().includes(a.name.toLowerCase()),
         );
       });
     }
@@ -856,11 +938,15 @@ export function createNPC(input: CreateNPCInput): NPC {
     notes: input.notes ?? "",
   };
   if (!encounter) {
-    console.warn(`[createNPC] No active encounter — NPC "${npc.name}" created but not tracked`);
+    console.warn(
+      `[createNPC] No active encounter — NPC "${npc.name}" created but not tracked`,
+    );
   } else {
     encounter.activeNPCs.push(npc);
   }
-  console.log(`[createNPC] Created "${npc.name}" — HP:${npc.maxHp}, AC:${npc.ac}, XP:${npc.xpValue}, disposition:${npc.disposition}`);
+  console.log(
+    `[createNPC] Created "${npc.name}" — HP:${npc.maxHp}, AC:${npc.ac}, XP:${npc.xpValue}, disposition:${npc.disposition}`,
+  );
   return npc;
 }
 
@@ -884,17 +970,37 @@ export interface UpdateNPCResult {
 
 export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   if (!encounter) {
-    console.warn(`[updateNPC] No active encounter — cannot update NPC "${input.id}"`);
-    return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
+    console.warn(
+      `[updateNPC] No active encounter — cannot update NPC "${input.id}"`,
+    );
+    return {
+      found: false,
+      name: input.id,
+      died: false,
+      removed: false,
+      newHp: 0,
+      xpAwarded: 0,
+    };
   }
 
   const npc = encounter.activeNPCs.find((n) => n.id === input.id);
-  if (!npc) return { found: false, name: input.id, died: false, removed: false, newHp: 0, xpAwarded: 0 };
+  if (!npc)
+    return {
+      found: false,
+      name: input.id,
+      died: false,
+      removed: false,
+      newHp: 0,
+      xpAwarded: 0,
+    };
 
   const wasAlive = npc.currentHp > 0;
 
   if (input.hp_delta) {
-    npc.currentHp = Math.max(0, Math.min(npc.maxHp, npc.currentHp + input.hp_delta));
+    npc.currentHp = Math.max(
+      0,
+      Math.min(npc.maxHp, npc.currentHp + input.hp_delta),
+    );
   }
   if (input.conditions_added?.length) {
     for (const c of input.conditions_added) {
@@ -903,7 +1009,10 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
   }
   if (input.conditions_removed?.length) {
     npc.conditions = npc.conditions.filter(
-      (c) => !input.conditions_removed!.some((r) => r.toLowerCase() === c.toLowerCase()),
+      (c) =>
+        !input.conditions_removed!.some(
+          (r) => r.toLowerCase() === c.toLowerCase(),
+        ),
     );
   }
 
@@ -923,13 +1032,20 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
     if (npc.disposition === "hostile" && npc.xpValue > 0) {
       xpAwarded = npc.xpValue;
       encounter.totalXPAwarded = (encounter.totalXPAwarded ?? 0) + xpAwarded;
-      console.log(`[updateNPC] Deferred ${xpAwarded} XP for defeating "${npc.name}" (encounter total: ${encounter.totalXPAwarded})`);
+      console.log(
+        `[updateNPC] Deferred ${xpAwarded} XP for defeating "${npc.name}" (encounter total: ${encounter.totalXPAwarded})`,
+      );
     } else {
-      console.log(`[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`);
+      console.log(
+        `[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`,
+      );
     }
     // Record the kill in recentEvents so the DM agent has context on future turns
-    state.story.recentEvents.push(`Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`);
-    if (state.story.recentEvents.length > 10) state.story.recentEvents = state.story.recentEvents.slice(-10);
+    state.story.recentEvents.push(
+      `Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`,
+    );
+    if (state.story.recentEvents.length > 10)
+      state.story.recentEvents = state.story.recentEvents.slice(-10);
   }
 
   // Explicit remove_from_scene (e.g. NPC flees, DM removes for story reasons)
@@ -938,7 +1054,14 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
     delete encounter.positions[npc.id];
   }
 
-  return { found: true, name: npc.name, died, removed: !!input.remove_from_scene && !died, newHp: npc.currentHp, xpAwarded };
+  return {
+    found: true,
+    name: npc.name,
+    died,
+    removed: !!input.remove_from_scene && !died,
+    newHp: npc.currentHp,
+    xpAwarded,
+  };
 }
 
 // ─── XP / Level-up ────────────────────────────────────────────────────────────
@@ -959,7 +1082,10 @@ const DEFAULT_ASI_LEVELS = [4, 8, 12, 16, 19];
  * Map of features that require player choices at level-up time.
  * Extends the shared FEATURE_CHOICE_OPTIONS with level-up-only entries.
  */
-const LEVELUP_CHOICE_FEATURES: Record<string, { options: string[]; picks?: number }> = {
+const LEVELUP_CHOICE_FEATURES: Record<
+  string,
+  { options: string[]; picks?: number }
+> = {
   ...FEATURE_CHOICE_OPTIONS,
   "additional fighting style": {
     options: FEATURE_CHOICE_OPTIONS["fighting style"].options,
@@ -989,7 +1115,7 @@ async function computePendingLevelUp(
 
     // HP gain: floor(hitDie/2) + 1 + CON mod + hpPerLevel bonuses from features
     const hpPerLevelBonus = player.features
-      .filter(f => f.gameplayEffects?.hpPerLevel)
+      .filter((f) => f.gameplayEffects?.hpPerLevel)
       .reduce((sum, f) => sum + (f.gameplayEffects!.hpPerLevel ?? 0), 0);
     const hpGain = Math.floor(player.hitDie / 2) + 1 + conMod + hpPerLevelBonus;
 
@@ -998,7 +1124,8 @@ async function computePendingLevelUp(
     const isASILevel = asiLevels.includes(lvl);
 
     // Check subclass required: player has no subclass and this is the archetype level
-    const requiresSubclass = !player.subclass && classData?.archetypeLevel === lvl;
+    const requiresSubclass =
+      !player.subclass && classData?.archetypeLevel === lvl;
 
     // Subclass features (if player already has a subclass)
     let newSubclassFeatures: PendingLevelData["newSubclassFeatures"] = [];
@@ -1071,7 +1198,9 @@ async function computePendingLevelUp(
     // Highest spell level the player can cast at this level
     let maxNewSpellLevel = 0;
     if (spellSlots) {
-      const slotLevels = Object.keys(spellSlots).map(Number).filter((n) => spellSlots[String(n)] > 0);
+      const slotLevels = Object.keys(spellSlots)
+        .map(Number)
+        .filter((n) => spellSlots[String(n)] > 0);
       if (slotLevels.length > 0) maxNewSpellLevel = Math.max(...slotLevels);
     }
 
@@ -1107,7 +1236,8 @@ async function computePendingLevelUp(
  */
 export async function loadGameState(characterId: string): Promise<GameState> {
   const stored = await loadCharacter(characterId);
-  if (!stored) throw new Error(`Character "${characterId}" not found in Firestore`);
+  if (!stored)
+    throw new Error(`Character "${characterId}" not found in Firestore`);
 
   currentSessionId = stored.sessionId;
   state = {
@@ -1117,7 +1247,8 @@ export async function loadGameState(characterId: string): Promise<GameState> {
 
   // Load session-level spatial data (exploration map, POI, positions)
   const session = await loadSession(stored.sessionId);
-  currentExplorationMapId = session?.currentExplorationMapId ?? session?.activeMapId;
+  currentExplorationMapId =
+    session?.currentExplorationMapId ?? session?.activeMapId;
   currentPOIId = session?.currentPOIId ?? undefined;
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
@@ -1201,11 +1332,15 @@ export async function applyStateChangesAndPersist(
       if (earnedXP > 0) {
         // Current character: update in-memory singleton directly
         state.player.xp = (state.player.xp ?? 0) + earnedXP;
-        console.log(`[combat-end] Awarded ${earnedXP} XP to ${characterId} (total: ${state.player.xp})`);
+        console.log(
+          `[combat-end] Awarded ${earnedXP} XP to ${characterId} (total: ${state.player.xp})`,
+        );
 
         // Other characters: load from Firestore, add XP, compute level-up, save back
-        const otherIds = allCharacterIds.filter(id => id !== characterId);
-        await Promise.all(otherIds.map(id => awardXPToCharacter(id, earnedXP)));
+        const otherIds = allCharacterIds.filter((id) => id !== characterId);
+        await Promise.all(
+          otherIds.map((id) => awardXPToCharacter(id, earnedXP)),
+        );
       }
 
       // Check level-up for the current character
@@ -1228,7 +1363,10 @@ export async function applyStateChangesAndPersist(
  * @param characterId  Firestore character document ID
  * @param amount       XP to award (0 = just check if current xp triggers level-up)
  */
-export async function awardXPAsync(characterId: string, amount: number): Promise<void> {
+export async function awardXPAsync(
+  characterId: string,
+  amount: number,
+): Promise<void> {
   if (amount > 0) state.player.xp = (state.player.xp ?? 0) + amount;
 
   const currentLevel = state.player.level;
@@ -1252,10 +1390,15 @@ export async function awardXPAsync(characterId: string, amount: number): Promise
  * Award XP to a character who is NOT the in-memory singleton.
  * Loads from Firestore, adds XP, computes pending level-up if needed, and saves back.
  */
-async function awardXPToCharacter(characterId: string, amount: number): Promise<void> {
+async function awardXPToCharacter(
+  characterId: string,
+  amount: number,
+): Promise<void> {
   const charDoc = await loadCharacter(characterId);
   if (!charDoc) {
-    console.warn(`[awardXPToCharacter] Character "${characterId}" not found — skipping`);
+    console.warn(
+      `[awardXPToCharacter] Character "${characterId}" not found — skipping`,
+    );
     return;
   }
 
@@ -1265,11 +1408,17 @@ async function awardXPToCharacter(characterId: string, amount: number): Promise<
   const targetLevel = levelForXP(player.xp);
   if (targetLevel > player.level) {
     const fromLevel = player.pendingLevelUp?.fromLevel ?? player.level;
-    player.pendingLevelUp = await computePendingLevelUp(player, fromLevel, targetLevel);
+    player.pendingLevelUp = await computePendingLevelUp(
+      player,
+      fromLevel,
+      targetLevel,
+    );
   }
 
   await saveCharacterState(characterId, { player });
-  console.log(`[awardXPToCharacter] Awarded ${amount} XP to ${characterId} (total: ${player.xp})`);
+  console.log(
+    `[awardXPToCharacter] Awarded ${amount} XP to ${characterId} (total: ${player.xp})`,
+  );
 }
 
 // ─── Level-up Application ─────────────────────────────────────────────────────
@@ -1290,7 +1439,10 @@ export interface LevelChoices {
  * Build an Ability entry from SRD spell data. Used during level-up and
  * character creation to create combat-ready ability objects from spell slugs.
  */
-function buildSpellAbility(slug: string, srd: Record<string, unknown>): Ability {
+function buildSpellAbility(
+  slug: string,
+  srd: Record<string, unknown>,
+): Ability {
   const range = parseSpellRange((srd.range as string) ?? "self");
   const damageRoll = srd.damageRoll as string | undefined;
   const damageType = (srd.damageTypes as string[] | undefined)?.[0];
@@ -1314,12 +1466,18 @@ function buildSpellAbility(slug: string, srd: Record<string, unknown>): Ability 
     spellLevel: (srd.level as number) ?? 1,
     range,
     attackType,
-    requiresTarget: attackType !== "none" && attackType !== "auto" && range.type !== "self",
+    requiresTarget:
+      attackType !== "none" && attackType !== "auto" && range.type !== "self",
   };
-  if (srd.savingThrowAbility) ability.saveAbility = srd.savingThrowAbility as string;
+  if (srd.savingThrowAbility)
+    ability.saveAbility = srd.savingThrowAbility as string;
   if (damageRoll) ability.damageRoll = damageRoll;
   if (damageType) ability.damageType = damageType;
-  if (srd.upcastScaling) ability.upcastScaling = srd.upcastScaling as Record<string, { damageRoll?: string; targetCount?: number }>;
+  if (srd.upcastScaling)
+    ability.upcastScaling = srd.upcastScaling as Record<
+      string,
+      { damageRoll?: string; targetCount?: number }
+    >;
   if (srd.aoe) {
     ability.aoe = srd.aoe as import("./gameTypes").AOEData;
     ability.requiresTarget = false; // AOE spells target an area, not a single NPC
@@ -1367,7 +1525,8 @@ export async function applyLevelUp(
         // For fighting style, apply the chosen style's gameplay effects
         let effects = feat.gameplayEffects;
         if (feat.name.toLowerCase() === "fighting style" && chosenOption) {
-          const styleEffects = FIGHTING_STYLE_EFFECTS[chosenOption.toLowerCase()];
+          const styleEffects =
+            FIGHTING_STYLE_EFFECTS[chosenOption.toLowerCase()];
           if (styleEffects) effects = styleEffects;
         }
         state.player.features.push({
@@ -1385,7 +1544,8 @@ export async function applyLevelUp(
       const existing = state.player.features.find((f) => f.name === feat.name);
       if (existing) {
         // Scaling: update effects for features re-listed at higher level
-        if (feat.gameplayEffects) existing.gameplayEffects = feat.gameplayEffects;
+        if (feat.gameplayEffects)
+          existing.gameplayEffects = feat.gameplayEffects;
       } else {
         state.player.features.push({
           name: feat.name,
@@ -1393,7 +1553,9 @@ export async function applyLevelUp(
           level: lvl,
           source: state.player.subclass ?? undefined,
           ...(feat.type ? { type: feat.type } : {}),
-          ...(feat.gameplayEffects ? { gameplayEffects: feat.gameplayEffects } : {}),
+          ...(feat.gameplayEffects
+            ? { gameplayEffects: feat.gameplayEffects }
+            : {}),
         });
       }
     }
@@ -1409,7 +1571,9 @@ export async function applyLevelUp(
         // Add feat as a feature
         state.player.features.push({
           name: choice.featChoice,
-          ...(choice.featDescription ? { description: choice.featDescription } : {}),
+          ...(choice.featDescription
+            ? { description: choice.featDescription }
+            : {}),
           level: lvl,
           source: "Feat",
         });
@@ -1418,7 +1582,10 @@ export async function applyLevelUp(
         for (const [stat, bonus] of Object.entries(choice.asiChoices)) {
           if (bonus && bonus > 0) {
             const key = stat as keyof CharacterStats;
-            state.player.stats[key] = Math.min(20, state.player.stats[key] + bonus);
+            state.player.stats[key] = Math.min(
+              20,
+              state.player.stats[key] + bonus,
+            );
           }
         }
       }
@@ -1447,7 +1614,7 @@ export async function applyLevelUp(
           state.player.cantrips.push(slug);
         }
         // Add cantrip ability if not already present
-        if (!state.player.abilities.some(a => a.id === `cantrip:${slug}`)) {
+        if (!state.player.abilities.some((a) => a.id === `cantrip:${slug}`)) {
           const srd = await querySRD("spell", slug);
           if (srd) {
             const ability = buildSpellAbility(slug, srd);
@@ -1470,7 +1637,7 @@ export async function applyLevelUp(
           state.player.knownSpells.push(slug);
         }
         // Add ability if not already present
-        if (!state.player.abilities.some(a => a.id === `spell:${slug}`)) {
+        if (!state.player.abilities.some((a) => a.id === `spell:${slug}`)) {
           const srd = await querySRD("spell", slug);
           if (srd) state.player.abilities.push(buildSpellAbility(slug, srd));
         }
@@ -1482,7 +1649,9 @@ export async function applyLevelUp(
       state.player.preparedSpells = choice.preparedSpells;
       if (!state.player.abilities) state.player.abilities = [];
       // Remove old spell abilities and rebuild from new prepared list
-      state.player.abilities = state.player.abilities.filter(a => a.type !== "spell");
+      state.player.abilities = state.player.abilities.filter(
+        (a) => a.type !== "spell",
+      );
       for (const slug of choice.preparedSpells) {
         const srd = await querySRD("spell", slug);
         if (srd) state.player.abilities.push(buildSpellAbility(slug, srd));
@@ -1502,7 +1671,9 @@ export async function applyLevelUp(
         if (ability.type !== "cantrip") continue;
         const slug = ability.id.replace("cantrip:", "");
         const srd = await querySRD("spell", slug);
-        const scaling = srd?.cantripScaling as Record<string, { damageRoll?: string; targetCount?: number }> | undefined;
+        const scaling = srd?.cantripScaling as
+          | Record<string, { damageRoll?: string; targetCount?: number }>
+          | undefined;
         if (!scaling) continue;
         // Find the highest threshold at or below the new level
         const best = Object.keys(scaling)
@@ -1512,7 +1683,8 @@ export async function applyLevelUp(
         if (best != null) {
           const entry = scaling[String(best)];
           if (entry.damageRoll) ability.damageRoll = entry.damageRoll;
-          if (entry.targetCount != null) ability.targetCount = entry.targetCount;
+          if (entry.targetCount != null)
+            ability.targetCount = entry.targetCount;
         }
       }
     }
