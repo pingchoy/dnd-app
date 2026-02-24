@@ -41,6 +41,7 @@ import {
   serializeExplorationContext,
   serializeRegionContext,
   setEncounter,
+  getSessionSupportingNPCs,
 } from "../../lib/gameState";
 import {
   createEncounter,
@@ -510,6 +511,12 @@ async function processChatAction(
   // Apply state changes and persist to Firestore (including encounter state if active)
   console.log("[Persist] Applying state changes and saving to Firestore...");
   await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
+
+  // Persist session-level supporting NPCs (not part of StoryState, stored on session doc)
+  const supportingNPCs = getSessionSupportingNPCs();
+  if (supportingNPCs.length > 0) {
+    await saveSessionState(sessionId, { supportingNPCs });
+  }
 
   // Auto-complete combat/boss beats when combat ends
   // Check: was in combat at start, encounter now cleared, current beat is combat/boss type,
