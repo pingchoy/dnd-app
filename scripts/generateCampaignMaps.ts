@@ -1,15 +1,24 @@
 /**
  * generateCampaignMaps.ts
  *
- * CLI tool that generates MapDocument-compatible grids from a campaign's
- * CampaignMapSpec definitions. Two pipelines:
+ * CLI tool that generates CampaignMap templates from a campaign's
+ * exploration and combat map spec definitions. Two-phase generation:
  *
- * Image-first (when STABILITY_API_KEY is set and --no-images is not used):
- *   Stability AI → PNG image → Claude Vision (+ spec region hints) → tileData + regions
- *   Image uploaded to Firebase Storage → backgroundImageUrl on the CampaignMap
+ * Phase 1 — Exploration maps (image only, no grid analysis):
+ *   Stability AI generates a zoomed-out bird's-eye view image.
+ *   Image uploaded to Firebase Storage. No tileData or regions needed.
  *
- * Text-to-grid fallback (no STABILITY_API_KEY or --no-images):
- *   Claude Sonnet → tileData + regions from text description
+ * Phase 2 — Combat maps (image + grid, or text-to-grid):
+ *   Image-first (when STABILITY_API_KEY is set and --no-images is not used):
+ *     Stability AI -> image -> Claude Vision (+ spec region hints) -> tileData + regions
+ *     Image uploaded to Firebase Storage -> backgroundImageUrl on the CampaignMap
+ *
+ *   Text-to-grid fallback (no STABILITY_API_KEY or --no-images):
+ *     Claude Sonnet -> tileData + regions from text description
+ *
+ * Legacy fallback: If the campaign uses the deprecated flat `mapSpecs` array
+ * instead of `explorationMapSpecs` + `combatMapSpecs`, combat maps are
+ * generated from `mapSpecs` and no exploration maps are produced.
  *
  * Generated maps are stored as templates in campaignMaps/{campaignSlug}_{mapSpecId}
  * and instantiated into session-scoped maps/ when a campaign starts.
@@ -27,8 +36,9 @@
  *   - FIREBASE_STORAGE_BUCKET env var (required when using image generation)
  *
  * Cost:
- *   Image flow: ~$0.06 per map ($0.03 Stability + ~$0.03 Claude Vision)
- *   Text fallback: ~$0.03-0.05 per map (Claude Sonnet)
+ *   Exploration map: ~$0.03 per map (Stability image only)
+ *   Combat map (image flow): ~$0.06 per map ($0.03 Stability + ~$0.03 Claude Vision)
+ *   Combat map (text fallback): ~$0.03-0.05 per map (Claude Sonnet)
  */
 
 import * as dotenv from "dotenv";
@@ -36,15 +46,14 @@ dotenv.config({ path: ".env.local" });
 import * as admin from "firebase-admin";
 import { ALL_CAMPAIGNS } from "./campaigns";
 import { generateMapFromSpec, analyzeMapImageFromBuffer } from "./lib/mapGenerationAgent";
-import { generateMapImage } from "./lib/stabilityImageAgent";
+import { generateMapImage, generateExplorationMapImage } from "./lib/stabilityImageAgent";
 import { uploadMapImage } from "./lib/firebaseStorageUpload";
-import type { CampaignMapSpec, CampaignMap, MapRegion } from "../src/app/lib/gameTypes";
-
-// Legacy spec shape — includes fields that moved to POI level in Task 1
-interface LegacyMapSpec extends CampaignMapSpec {
-  actNumbers?: number[];
-  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
-}
+import type {
+  CampaignCombatMapSpec,
+  CampaignExplorationMapSpec,
+  CampaignMap,
+  MapRegion,
+} from "../src/app/lib/gameTypes";
 
 // ─── Firebase Admin Init ──────────────────────────────────────────────────────
 
@@ -98,9 +107,9 @@ function parseArgs(): CLIArgs {
   if (!parsed.campaign) {
     console.error("Usage: npm run generate:maps -- --campaign <slug> [--map <mapSpecId>] [--dry-run] [--no-images]");
     console.error("  --campaign    Required. Campaign slug (e.g. 'the-crimson-accord')");
-    console.error("  --map         Optional. Generate only this map spec (e.g. 'valdris-docks')");
+    console.error("  --map         Optional. Generate only this map spec (e.g. 'valdris-docks' or 'valdris-city')");
     console.error("  --dry-run     Optional. Preview generation plan without calling APIs or saving");
-    console.error("  --no-images   Optional. Skip image generation, use text-to-grid only");
+    console.error("  --no-images   Optional. Skip image generation, use text-to-grid only (combat maps)");
     process.exit(1);
   }
 
@@ -112,96 +121,145 @@ function parseArgs(): CLIArgs {
   };
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Phase 1: Exploration Map Generation ──────────────────────────────────────
 
-async function main(): Promise<void> {
-  const args = parseArgs();
+/**
+ * Generate exploration map images (no grid analysis needed).
+ * Exploration maps are zoomed-out overworld images with POI markers —
+ * they have no tileData or region cells.
+ */
+async function generateExplorationMaps(
+  explorationSpecs: CampaignExplorationMapSpec[],
+  campaignSlug: string,
+  db: admin.firestore.Firestore,
+  useImages: boolean,
+  stabilityKey: string | undefined,
+): Promise<{ successCount: number; failCount: number; imageCost: number }> {
+  let successCount = 0;
+  let failCount = 0;
+  let totalImageCost = 0;
 
-  // Determine if image pipeline is available
-  const stabilityKey = process.env.STABILITY_API_KEY;
-  const useImages = !args.noImages && !!stabilityKey;
+  for (const spec of explorationSpecs) {
+    console.log(`Generating exploration map: ${spec.id} ("${spec.name}")...`);
 
-  if (!args.noImages && !stabilityKey) {
-    console.log("⚠ STABILITY_API_KEY not set — falling back to text-to-grid pipeline.\n");
-  }
+    try {
+      let backgroundImageUrl: string | undefined;
+      let imageCost = 0;
 
-  if (useImages && !process.env.FIREBASE_STORAGE_BUCKET) {
-    console.log("⚠ FIREBASE_STORAGE_BUCKET not set — images will be generated but not uploaded.\n");
-  }
+      const docId = `${campaignSlug}_${spec.id}`;
+      const existingSnap = await db.collection("campaignMaps").doc(docId).get();
+      const existing = existingSnap.exists ? (existingSnap.data() as CampaignMap) : null;
 
-  // Find the campaign
-  const campaignData = ALL_CAMPAIGNS.find((c) => c.campaign.slug === args.campaign);
-  if (!campaignData) {
-    console.error(`Campaign "${args.campaign}" not found. Available campaigns:`);
-    for (const c of ALL_CAMPAIGNS) {
-      console.error(`  - ${c.campaign.slug}: ${c.campaign.title}`);
-    }
-    process.exit(1);
-  }
+      if (existing?.backgroundImageUrl) {
+        backgroundImageUrl = existing.backgroundImageUrl;
+        console.log(`  ✓ Existing image found — skipping Stability AI generation`);
+      } else if (useImages) {
+        try {
+          console.log(`  Generating exploration image (Stability AI)...`);
+          const imageResult = await generateExplorationMapImage(spec, { apiKey: stabilityKey });
+          imageCost = imageResult.cost;
+          console.log(`  ✓ Image generated (${(imageResult.imageBuffer.length / 1024).toFixed(0)} KB)`);
 
-  const campaign = campaignData.campaign;
-  const mapSpecs = campaign.mapSpecs;
-
-  if (!mapSpecs || mapSpecs.length === 0) {
-    console.error(`Campaign "${campaign.title}" has no mapSpecs defined.`);
-    process.exit(1);
-  }
-
-  // Filter by --map if provided
-  // Cast to LegacyMapSpec for backwards compat (actNumbers/connections on specs)
-  let specsToGenerate: LegacyMapSpec[];
-  if (args.map) {
-    const found = mapSpecs.find((s) => s.id === args.map);
-    if (!found) {
-      console.error(`Map spec "${args.map}" not found in campaign. Available specs:`);
-      for (const s of mapSpecs) {
-        console.error(`  - ${s.id}: ${s.name}`);
+          // Upload image to Firebase Storage
+          if (process.env.FIREBASE_STORAGE_BUCKET) {
+            try {
+              console.log(`  Uploading image to Firebase Storage...`);
+              backgroundImageUrl = await uploadMapImage(
+                imageResult.imageBuffer,
+                campaignSlug,
+                spec.id,
+              );
+              console.log(`  ✓ Uploaded: ${backgroundImageUrl}`);
+            } catch (uploadErr) {
+              console.log(`  ⚠ Upload failed: ${(uploadErr as Error).message} — continuing without image URL`);
+            }
+          }
+        } catch (imageErr) {
+          console.log(`  ⚠ Image generation failed: ${(imageErr as Error).message}`);
+          console.log(`  Exploration maps require image generation — skipping.`);
+          failCount++;
+          console.log();
+          continue;
+        }
+      } else {
+        console.log(`  ⚠ No image pipeline available — exploration maps require images. Skipping.`);
+        failCount++;
+        console.log();
+        continue;
       }
-      process.exit(1);
-    }
-    specsToGenerate = [found as LegacyMapSpec];
-  } else {
-    specsToGenerate = mapSpecs as LegacyMapSpec[];
-  }
 
-  console.log(`\n── Campaign Map Generation ──`);
-  console.log(`Campaign: ${campaign.title} (${campaign.slug})`);
-  console.log(`Maps to generate: ${specsToGenerate.length}/${mapSpecs.length}`);
-  console.log(`Pipeline: ${useImages ? "image-first (Stability AI → Claude Vision)" : "text-to-grid (Claude Sonnet)"}`);
-  if (args.dryRun) console.log(`Mode: DRY RUN (no API calls, no Firestore writes)`);
-  console.log();
+      // Build the POI data from the spec (without combatMapId — that gets linked at instantiation)
+      const pointsOfInterest = spec.pointsOfInterest.map((poi) => ({
+        id: poi.id,
+        number: poi.number,
+        name: poi.name,
+        description: poi.description,
+        position: poi.position ?? { x: 50, y: 50 },
+        combatMapId: "", // linked at session instantiation time
+        isHidden: poi.isHidden,
+        actNumbers: poi.actNumbers,
+        locationTags: poi.locationTags,
+        ...(poi.defaultNPCSlugs ? { defaultNPCSlugs: poi.defaultNPCSlugs } : {}),
+      }));
 
-  // Preview generation plan
-  for (const spec of specsToGenerate) {
-    console.log(`  ${spec.id}`);
-    console.log(`    Name: ${spec.name}`);
-    console.log(`    Terrain: ${spec.terrain}, Lighting: ${spec.lighting}, Scale: ${spec.feetPerSquare}ft/sq`);
-    console.log(`    Regions: ${spec.regions.length} (${spec.regions.map((r) => r.name).join(", ")})`);
-    if (spec.actNumbers?.length) {
-      console.log(`    Acts: ${spec.actNumbers.join(", ")}`);
+      if (imageCost > 0) {
+        console.log(`  ✓ Generated`);
+        console.log(`    POIs: ${pointsOfInterest.length}`);
+        console.log(`    Cost: Image $${imageCost.toFixed(4)}`);
+      } else {
+        console.log(`  ✓ Using existing image`);
+        console.log(`    POIs: ${pointsOfInterest.length}`);
+      }
+      if (backgroundImageUrl) {
+        console.log(`    Image: ${backgroundImageUrl}`);
+      }
+
+      const campaignMap: CampaignMap = {
+        campaignSlug,
+        mapSpecId: spec.id,
+        mapType: "exploration",
+        name: spec.name,
+        pointsOfInterest,
+        ...(backgroundImageUrl ? { backgroundImageUrl } : {}),
+        generatedAt: Date.now(),
+      };
+
+      await db.collection("campaignMaps").doc(docId).set(campaignMap);
+      console.log(`    Saved: campaignMaps/${docId}`);
+
+      totalImageCost += imageCost;
+      successCount++;
+    } catch (err) {
+      console.error(`  ✗ Failed: ${(err as Error).message}`);
+      failCount++;
     }
-    if (spec.connections?.length) {
-      console.log(`    Connections: ${spec.connections.map((c: { direction: string; targetMapSpecId: string }) => `${c.direction} → ${c.targetMapSpecId}`).join(", ")}`);
-    }
+
     console.log();
   }
 
-  if (args.dryRun) {
-    console.log(`✅ Dry run complete. ${specsToGenerate.length} maps would be generated.`);
-    process.exit(0);
-  }
+  return { successCount, failCount, imageCost: totalImageCost };
+}
 
-  // Initialize Firebase for actual writes (need storage only for image pipeline)
-  initFirebase(useImages);
-  const db = admin.firestore();
+// ─── Phase 2: Combat Map Generation ──────────────────────────────────────────
 
-  let totalClaudeCost = 0;
-  let totalImageCost = 0;
+/**
+ * Generate combat map grids using the image-first or text-to-grid pipeline.
+ * Combat maps require tileData (20x20 grid) and region definitions.
+ */
+async function generateCombatMaps(
+  combatSpecs: CampaignCombatMapSpec[],
+  campaignSlug: string,
+  db: admin.firestore.Firestore,
+  useImages: boolean,
+  stabilityKey: string | undefined,
+): Promise<{ successCount: number; failCount: number; claudeCost: number; imageCost: number }> {
   let successCount = 0;
   let failCount = 0;
+  let totalClaudeCost = 0;
+  let totalImageCost = 0;
 
-  for (const spec of specsToGenerate) {
-    console.log(`Generating: ${spec.id} ("${spec.name}")...`);
+  for (const spec of combatSpecs) {
+    console.log(`Generating combat map: ${spec.id} ("${spec.name}")...`);
 
     try {
       let tileData: number[];
@@ -212,7 +270,7 @@ async function main(): Promise<void> {
       let backgroundImageUrl: string | undefined;
 
       // Check for existing doc — skip image generation if image already exists
-      const docId = `${campaign.slug}_${spec.id}`;
+      const docId = `${campaignSlug}_${spec.id}`;
       const existingSnap = await db.collection("campaignMaps").doc(docId).get();
       const existing = existingSnap.exists ? (existingSnap.data() as CampaignMap) : null;
 
@@ -270,7 +328,7 @@ async function main(): Promise<void> {
               console.log(`  Uploading image to Firebase Storage...`);
               backgroundImageUrl = await uploadMapImage(
                 imageResult.imageBuffer,
-                campaign.slug,
+                campaignSlug,
                 spec.id,
               );
               console.log(`  ✓ Uploaded: ${backgroundImageUrl}`);
@@ -313,7 +371,7 @@ async function main(): Promise<void> {
       }
 
       const campaignMap: CampaignMap = {
-        campaignSlug: campaign.slug,
+        campaignSlug,
         mapSpecId: spec.id,
         mapType: "combat",
         name: spec.name,
@@ -343,24 +401,180 @@ async function main(): Promise<void> {
     console.log();
   }
 
+  return { successCount, failCount, claudeCost: totalClaudeCost, imageCost: totalImageCost };
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const args = parseArgs();
+
+  // Determine if image pipeline is available
+  const stabilityKey = process.env.STABILITY_API_KEY;
+  const useImages = !args.noImages && !!stabilityKey;
+
+  if (!args.noImages && !stabilityKey) {
+    console.log("⚠ STABILITY_API_KEY not set — falling back to text-to-grid pipeline.\n");
+  }
+
+  if (useImages && !process.env.FIREBASE_STORAGE_BUCKET) {
+    console.log("⚠ FIREBASE_STORAGE_BUCKET not set — images will be generated but not uploaded.\n");
+  }
+
+  // Find the campaign
+  const campaignData = ALL_CAMPAIGNS.find((c) => c.campaign.slug === args.campaign);
+  if (!campaignData) {
+    console.error(`Campaign "${args.campaign}" not found. Available campaigns:`);
+    for (const c of ALL_CAMPAIGNS) {
+      console.error(`  - ${c.campaign.slug}: ${c.campaign.title}`);
+    }
+    process.exit(1);
+  }
+
+  const campaign = campaignData.campaign;
+
+  // Resolve exploration and combat map specs (with legacy mapSpecs fallback)
+  const explorationSpecs: CampaignExplorationMapSpec[] = campaign.explorationMapSpecs ?? [];
+  const combatSpecs: CampaignCombatMapSpec[] = campaign.combatMapSpecs ?? campaign.mapSpecs ?? [];
+
+  const isLegacy = !campaign.combatMapSpecs && !!campaign.mapSpecs;
+  if (isLegacy) {
+    console.log("⚠ Campaign uses legacy mapSpecs — treating all specs as combat maps.\n");
+  }
+
+  const totalSpecCount = explorationSpecs.length + combatSpecs.length;
+
+  if (totalSpecCount === 0) {
+    console.error(`Campaign "${campaign.title}" has no map specs defined.`);
+    process.exit(1);
+  }
+
+  // Filter by --map if provided (matches against both exploration and combat spec IDs)
+  let filteredExplorationSpecs = explorationSpecs;
+  let filteredCombatSpecs = combatSpecs;
+
+  if (args.map) {
+    const matchedExploration = explorationSpecs.filter((s) => s.id === args.map);
+    const matchedCombat = combatSpecs.filter((s) => s.id === args.map);
+
+    if (matchedExploration.length === 0 && matchedCombat.length === 0) {
+      console.error(`Map spec "${args.map}" not found in campaign. Available specs:`);
+      if (explorationSpecs.length > 0) {
+        console.error("  Exploration maps:");
+        for (const s of explorationSpecs) {
+          console.error(`    - ${s.id}: ${s.name}`);
+        }
+      }
+      if (combatSpecs.length > 0) {
+        console.error("  Combat maps:");
+        for (const s of combatSpecs) {
+          console.error(`    - ${s.id}: ${s.name}`);
+        }
+      }
+      process.exit(1);
+    }
+
+    filteredExplorationSpecs = matchedExploration;
+    filteredCombatSpecs = matchedCombat;
+  }
+
+  const filteredTotal = filteredExplorationSpecs.length + filteredCombatSpecs.length;
+
+  console.log(`\n── Campaign Map Generation ──`);
+  console.log(`Campaign: ${campaign.title} (${campaign.slug})`);
+  console.log(`Maps to generate: ${filteredTotal}/${totalSpecCount} (${filteredExplorationSpecs.length} exploration, ${filteredCombatSpecs.length} combat)`);
+  console.log(`Pipeline: ${useImages ? "image-first (Stability AI → Claude Vision)" : "text-to-grid (Claude Sonnet)"}`);
+  if (args.dryRun) console.log(`Mode: DRY RUN (no API calls, no Firestore writes)`);
+  console.log();
+
+  // Preview exploration maps
+  if (filteredExplorationSpecs.length > 0) {
+    console.log(`  ── Exploration Maps ──`);
+    for (const spec of filteredExplorationSpecs) {
+      console.log(`  ${spec.id}`);
+      console.log(`    Name: ${spec.name}`);
+      console.log(`    POIs: ${spec.pointsOfInterest.length} (${spec.pointsOfInterest.map((p) => p.name).join(", ")})`);
+      console.log();
+    }
+  }
+
+  // Preview combat maps
+  if (filteredCombatSpecs.length > 0) {
+    console.log(`  ── Combat Maps ──`);
+    for (const spec of filteredCombatSpecs) {
+      console.log(`  ${spec.id}`);
+      console.log(`    Name: ${spec.name}`);
+      console.log(`    Terrain: ${spec.terrain}, Lighting: ${spec.lighting}, Scale: ${spec.feetPerSquare}ft/sq`);
+      console.log(`    Regions: ${spec.regions.length} (${spec.regions.map((r) => r.name).join(", ")})`);
+      console.log();
+    }
+  }
+
+  if (args.dryRun) {
+    console.log(`✅ Dry run complete. ${filteredTotal} maps would be generated (${filteredExplorationSpecs.length} exploration, ${filteredCombatSpecs.length} combat).`);
+    process.exit(0);
+  }
+
+  // Initialize Firebase for actual writes (need storage for image pipeline)
+  initFirebase(useImages);
+  const db = admin.firestore();
+
+  let totalSuccessCount = 0;
+  let totalFailCount = 0;
+  let totalClaudeCost = 0;
+  let totalImageCost = 0;
+
+  // Phase 1: Exploration maps (image only)
+  if (filteredExplorationSpecs.length > 0) {
+    console.log(`── Phase 1: Exploration Maps (${filteredExplorationSpecs.length}) ──\n`);
+    const explorationResult = await generateExplorationMaps(
+      filteredExplorationSpecs,
+      campaign.slug,
+      db,
+      useImages,
+      stabilityKey,
+    );
+    totalSuccessCount += explorationResult.successCount;
+    totalFailCount += explorationResult.failCount;
+    totalImageCost += explorationResult.imageCost;
+  }
+
+  // Phase 2: Combat maps (image + grid analysis, or text-to-grid)
+  if (filteredCombatSpecs.length > 0) {
+    console.log(`── Phase 2: Combat Maps (${filteredCombatSpecs.length}) ──\n`);
+    const combatResult = await generateCombatMaps(
+      filteredCombatSpecs,
+      campaign.slug,
+      db,
+      useImages,
+      stabilityKey,
+    );
+    totalSuccessCount += combatResult.successCount;
+    totalFailCount += combatResult.failCount;
+    totalClaudeCost += combatResult.claudeCost;
+    totalImageCost += combatResult.imageCost;
+  }
+
   // Summary
   console.log(`── Summary ──`);
-  console.log(`  Generated: ${successCount}/${specsToGenerate.length}`);
-  if (failCount > 0) console.log(`  Failed: ${failCount}`);
-  if (totalImageCost > 0) {
-    console.log(`  Cost: Claude $${totalClaudeCost.toFixed(4)} + Image $${totalImageCost.toFixed(4)} = $${(totalClaudeCost + totalImageCost).toFixed(4)}`);
-  } else {
-    console.log(`  Total cost: $${totalClaudeCost.toFixed(4)}`);
+  console.log(`  Generated: ${totalSuccessCount}/${filteredTotal}`);
+  if (totalFailCount > 0) console.log(`  Failed: ${totalFailCount}`);
+  if (totalImageCost > 0 || totalClaudeCost > 0) {
+    const parts: string[] = [];
+    if (totalClaudeCost > 0) parts.push(`Claude $${totalClaudeCost.toFixed(4)}`);
+    if (totalImageCost > 0) parts.push(`Image $${totalImageCost.toFixed(4)}`);
+    const total = totalClaudeCost + totalImageCost;
+    console.log(`  Cost: ${parts.join(" + ")} = $${total.toFixed(4)}`);
   }
   console.log();
 
-  if (failCount > 0) {
-    console.log(`⚠ ${failCount} map(s) failed. Re-run with --map <id> to retry individual maps.`);
+  if (totalFailCount > 0) {
+    console.log(`⚠ ${totalFailCount} map(s) failed. Re-run with --map <id> to retry individual maps.`);
   } else {
     console.log(`✅ All campaign maps generated successfully.`);
   }
 
-  process.exit(failCount > 0 ? 1 : 0);
+  process.exit(totalFailCount > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

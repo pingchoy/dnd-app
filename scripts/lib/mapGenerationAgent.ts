@@ -12,12 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { CampaignMapSpec, MapRegion, RegionType } from "../../src/app/lib/gameTypes";
-
-// Legacy spec shape — includes fields that moved to POI level in Task 1
-interface LegacyMapSpec extends CampaignMapSpec {
-  connections?: Array<{ targetMapSpecId: string; direction: string; description: string }>;
-}
+import type { CampaignCombatMapSpec, MapRegion, RegionType } from "../../src/app/lib/gameTypes";
 
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 4096;
@@ -145,7 +140,7 @@ export interface MapGenerationResult {
  * Returns validated tileData, regions, and estimated cost.
  */
 export async function generateMapFromSpec(
-  spec: CampaignMapSpec | LegacyMapSpec,
+  spec: CampaignCombatMapSpec,
   options?: { apiKey?: string; maxRetries?: number },
 ): Promise<MapGenerationResult> {
   const maxRetries = options?.maxRetries ?? 2;
@@ -164,12 +159,6 @@ export async function generateMapFromSpec(
     })
     .join("\n");
 
-  const legacySpec = spec as LegacyMapSpec;
-  const connectionDescriptions = legacySpec.connections?.length
-    ? "\nConnections to other maps:\n" +
-      legacySpec.connections.map((c) => `  - ${c.direction}: ${c.description}`).join("\n")
-    : "";
-
   const userPrompt = `Generate a 20×20 map grid for: "${spec.name}"
 
 Terrain: ${spec.terrain}
@@ -182,7 +171,6 @@ ${spec.layoutDescription}
 ${spec.atmosphereNotes ? `Atmosphere: ${spec.atmosphereNotes}\n` : ""}
 Required Regions (each must appear in your output with matching id):
 ${regionDescriptions}
-${connectionDescriptions}
 
 Generate the tileData and regions. Every region listed above MUST appear in the output regions array with the same id.`;
 
@@ -235,7 +223,7 @@ Generate the tileData and regions. Every region listed above MUST appear in the 
  */
 export async function analyzeMapImageFromBuffer(
   imageBuffer: Buffer,
-  spec: CampaignMapSpec,
+  spec: CampaignCombatMapSpec,
   options?: { apiKey?: string; maxRetries?: number },
 ): Promise<MapGenerationResult> {
   const maxRetries = options?.maxRetries ?? 2;
@@ -322,7 +310,7 @@ Match each region's bounding box to where that area appears in the image using t
  */
 function validateAndSanitize(
   parsed: Record<string, unknown>,
-  spec: CampaignMapSpec,
+  spec: CampaignCombatMapSpec,
   cost: number,
 ): MapGenerationResult {
   // Accept either "rows" (20×20 array of arrays) or flat "tileData" (400-element array)
