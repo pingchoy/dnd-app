@@ -59,6 +59,10 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
         type: "string",
         description: "Key event to record (past tense, 1 sentence).",
       },
+      important_event: {
+        type: "string",
+        description: "An important event to remember permanently — alliances formed, secrets discovered, promises made, faction shifts. More significant than notable_event (which rolls off after 10), less dramatic than milestone (major plot beats only).",
+      },
       gold_delta: {
         type: "number",
         description: "Gold change. Negative = spending, positive = receiving.",
