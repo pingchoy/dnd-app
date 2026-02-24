@@ -17,6 +17,7 @@ import {
   GameState,
   StateChanges,
   UpdateNPCInput,
+  mergeStateChanges,
   serializePlayerState,
   serializeStoryState,
   updateNPC,
@@ -71,6 +72,7 @@ STATE TRACKING — use update_game_state on EVERY turn to keep the game state cu
 - campaign_summary_update: Rewrite only when the story fundamentally shifts — a new act begins, a major revelation changes everything, or the core quest changes direction. Do NOT update for minor progress.
 - quests_added / quests_completed: Track quest objectives as the player accepts or resolves them. Use short descriptive names ("find the cult leader", "retrieve lyra's stolen holy symbol").
 - npcs_met: Record campaign NPCs the player has met using their [id] from the NPC list (e.g. "lysara-thorne", "captain-aldric-vane"). Only story-relevant characters, not every shopkeeper or guard.
+- story_beat_completed: CRITICAL — set this the SAME TURN the NEXT STORY BEAT wraps up. Use the exact beat name shown in NEXT STORY BEAT. A beat is complete when its core scene has played out: the social encounter concluded, the combat won, the exploration finished, or the key information was delivered. The "Transition:" line in the beat's guidance tells you what marks the end — once that transition happens, the beat is done. Do NOT wait extra turns. If you narrated the transition, include story_beat_completed in the SAME update_game_state call.
 
 FORMATTING:
 - Use **bold** for key names, places, and dramatic moments.
@@ -82,7 +84,7 @@ CAMPAIGN CONTEXT:
 - When a CAMPAIGN BRIEFING is provided, treat it as private DM notes — NEVER reveal plot spoilers, NPC secrets, or future events.
 - Guide the story toward the current act's plot points naturally through NPC dialogue and environmental storytelling — never force the player onto rails.
 - Use act_advance in update_game_state when the party completes a major act transition. Set it to the next act number.
-- When a campaign story beat (shown in NEXT STORY BEAT) reaches its conclusion — combat won, social scene resolved, puzzle completed, exploration finished — call update_game_state with story_beat_completed set to the beat name. This advances the story to the next beat.
+- When the NEXT STORY BEAT concludes, you MUST call update_game_state with story_beat_completed (see STATE TRACKING above). Without this, the story will not advance to the next beat.
 - CURRENT POSITION is the authoritative source of where the player is RIGHT NOW. It overrides any location mentioned in conversation history. If the player has moved to a new region, narrate the new surroundings — do not reference the previous location as if they are still there.
 - EXPLORATION MAP: When a CURRENT EXPLORATION MAP section is provided, it lists POIs the party can visit. The party's current location is marked with "← PARTY IS HERE". POIs marked [HIDDEN from players] have not yet been discovered — reveal them using reveal_poi when the party finds or learns about them.
 
@@ -239,7 +241,8 @@ export async function getDMResponse(
           "[DM Agent] Tool call: update_game_state",
           JSON.stringify(block.input, null, 2),
         );
-        stateChanges = block.input as StateChanges;
+        const incoming = block.input as StateChanges;
+        stateChanges = stateChanges ? mergeStateChanges(stateChanges, incoming) : incoming;
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,

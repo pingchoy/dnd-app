@@ -596,6 +596,78 @@ export interface StateChanges {
 }
 
 /**
+ * Merge two StateChanges bags into one. Used when the DM agent calls
+ * update_game_state multiple times across tool-use loop iterations
+ * (e.g. once before a query_campaign lookup, once after).
+ *
+ * - Numeric deltas (hp_delta, gold_delta, xp_gained) accumulate.
+ * - Scalar strings/numbers use the latest (incoming) value.
+ * - Arrays concatenate.
+ * - Record objects shallow-merge (latest key wins).
+ */
+export function mergeStateChanges(
+  existing: StateChanges,
+  incoming: StateChanges,
+): StateChanges {
+  const merged: StateChanges = { ...existing };
+
+  // Numeric deltas — accumulate
+  for (const key of ["hp_delta", "gold_delta", "xp_gained"] as const) {
+    if (incoming[key] != null) {
+      merged[key] = ((merged[key] as number) ?? 0) + incoming[key]!;
+    }
+  }
+
+  // Scalar strings — latest wins
+  for (const key of [
+    "location_changed",
+    "scene_update",
+    "notable_event",
+    "milestone",
+    "campaign_summary_update",
+    "story_beat_completed",
+    "reveal_poi",
+    "set_current_poi",
+  ] as const) {
+    if (incoming[key] !== undefined) merged[key] = incoming[key];
+  }
+
+  // Scalar number — latest wins
+  if (incoming.act_advance !== undefined) merged.act_advance = incoming.act_advance;
+
+  // Arrays — concatenate
+  for (const key of [
+    "items_gained",
+    "items_lost",
+    "conditions_added",
+    "conditions_removed",
+    "quests_added",
+    "quests_completed",
+    "npcs_met",
+    "npcs_to_create",
+    "weapons_gained",
+    "spells_learned",
+    "spells_removed",
+    "cantrips_learned",
+  ] as const) {
+    if (incoming[key]?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      merged[key] = [...((merged[key] as any[]) ?? []), ...(incoming[key] as any[])];
+    }
+  }
+
+  // Record objects — shallow merge
+  if (incoming.feature_choice_updates) {
+    merged.feature_choice_updates = { ...(merged.feature_choice_updates ?? {}), ...incoming.feature_choice_updates };
+  }
+  if (incoming.spell_slots_used) {
+    merged.spell_slots_used = { ...(merged.spell_slots_used ?? {}), ...incoming.spell_slots_used };
+  }
+
+  return merged;
+}
+
+/**
  * Apply a bag of state mutations to the in-memory singleton.
  *
  * Each field in `StateChanges` maps to a specific mutation — HP delta,

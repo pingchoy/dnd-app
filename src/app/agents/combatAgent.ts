@@ -18,6 +18,7 @@ import type { StoredEncounter } from "../lib/gameTypes";
 import type { PlayerState } from "../lib/gameTypes";
 import {
   StateChanges,
+  mergeStateChanges,
   serializeCombatPlayerState,
   serializeActiveNPCs,
 } from "../lib/gameState";
@@ -165,14 +166,15 @@ export async function getCombatResponse(
 
       if (block.name === "update_game_state") {
         hasSRDOnly = false;
-        stateChanges = block.input as StateChanges;
+        const incoming = block.input as StateChanges;
         // Strip hp_delta — damage is handled by the deterministic engine
-        if (stateChanges.hp_delta) {
+        if (incoming.hp_delta) {
           console.log(
             "[Combat Agent] Stripping hp_delta from state changes — damage is engine-only",
           );
-          delete stateChanges.hp_delta;
+          delete incoming.hp_delta;
         }
+        stateChanges = stateChanges ? mergeStateChanges(stateChanges, incoming) : incoming;
         console.log(
           `[Combat Agent] Tool call: update_game_state — ${JSON.stringify(stateChanges)}`,
         );
