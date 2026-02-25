@@ -72,6 +72,8 @@ export interface UseChatReturn {
   setCurrentPOIId: (id: string | null) => void;
   /** Persistent companions from the session (survives between encounters). */
   persistentCompanions: NPC[];
+  /** Update persistent companions (e.g. from debug actions). */
+  setPersistentCompanions: (companions: NPC[]) => void;
 }
 
 interface UseChatParams {
@@ -352,5 +354,6 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
     currentPOIId,
     setCurrentPOIId,
     persistentCompanions,
+    setPersistentCompanions,
   };
 }

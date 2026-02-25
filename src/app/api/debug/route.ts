@@ -7,6 +7,7 @@
  * Actions:
  *   force_combat   — spawn a Goblin via SRD + NPC agent
  *   force_level_up — award enough XP to reach the next level
+ *   add_companion  — spawn a friendly Guard as a persistent companion
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,12 +17,15 @@ import {
   getEncounter,
   getGameState,
   getSessionId,
+  getSessionCompanions,
+  addCompanion,
+  MAX_COMPANIONS,
   getCampaignSlug,
   loadGameState,
   setEncounter,
   xpForLevel,
 } from "../../lib/gameState";
-import { saveCharacterState, querySRD, loadSession, getCampaignAct } from "../../lib/characterStore";
+import { saveCharacterState, saveSessionState, querySRD, loadSession, getCampaignAct } from "../../lib/characterStore";
 import { createEncounter, computeInitialPositions, saveEncounterState } from "../../lib/encounterStore";
 import { getNPCStats } from "../../agents/npcAgent";
 import { addMessage } from "../../lib/messageStore";
@@ -204,6 +208,76 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           gameState: getGameState(),
           message: `${message} Next beat: ${nextBeat}`,
+        });
+      }
+
+      case "add_companion": {
+        const currentCompanions = getSessionCompanions();
+        if (currentCompanions.length >= MAX_COMPANIONS) {
+          return NextResponse.json(
+            { error: `Already at companion limit (${MAX_COMPANIONS})` },
+            { status: 400 },
+          );
+        }
+
+        // Spawn a friendly Guard as a test companion via SRD
+        const srdData = await querySRD("monster", "guard");
+        console.log("[Debug] SRD guard data:", srdData ? "found" : "null");
+
+        const result = await getNPCStats(
+          { name: "Guard", slug: "guard", disposition: "friendly", count: 1 },
+          srdData,
+        );
+
+        if (result.npcs.length === 0) {
+          return NextResponse.json({ error: "Failed to generate companion stats" }, { status: 500 });
+        }
+
+        // Give the companion a unique name
+        const companionNumber = currentCompanions.length + 1;
+        const npcInput = result.npcs[0];
+        npcInput.name = `Guard Companion ${companionNumber}`;
+
+        // Create the NPC object (without adding to encounter)
+        const npc = {
+          id: `${npcInput.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`,
+          name: npcInput.name,
+          slug: "guard",
+          ac: npcInput.ac,
+          currentHp: npcInput.max_hp,
+          maxHp: npcInput.max_hp,
+          attackBonus: npcInput.attack_bonus,
+          damageDice: npcInput.damage_dice,
+          damageBonus: npcInput.damage_bonus,
+          savingThrowBonus: npcInput.saving_throw_bonus,
+          xpValue: npcInput.xp_value ?? 0,
+          disposition: "friendly" as const,
+          conditions: [] as string[],
+          notes: npcInput.notes ?? "",
+        };
+
+        const added = addCompanion(npc);
+        if (!added) {
+          return NextResponse.json({ error: "Failed to add companion (at cap)" }, { status: 400 });
+        }
+
+        const sessionId = getSessionId();
+        const message = `[DEMIGOD] A friendly ${npc.name} joins the party as a persistent companion! (${getSessionCompanions().length}/${MAX_COMPANIONS})`;
+        await addMessage(sessionId, {
+          role: "assistant",
+          content: message,
+          timestamp: Date.now(),
+        });
+
+        // Persist companions to session
+        await saveSessionState(sessionId, {
+          companions: getSessionCompanions(),
+        });
+
+        return NextResponse.json({
+          gameState: getGameState(),
+          companions: getSessionCompanions(),
+          message,
         });
       }
 

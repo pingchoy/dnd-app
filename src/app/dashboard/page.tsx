@@ -55,6 +55,7 @@ export default function Dashboard() {
     currentPOIId,
     setCurrentPOIId,
     persistentCompanions,
+    setPersistentCompanions,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
   const {
@@ -692,9 +693,10 @@ export default function Dashboard() {
         <DemigodMenu
           characterId={characterId}
           isBusy={isBusy}
-          onResult={(gs, msg, enc) => {
+          onResult={(gs, msg, enc, comp) => {
             applyDebugResult(gs, msg);
             if (enc !== undefined) setEncounter(enc);
+            if (comp) setPersistentCompanions(comp);
           }}
           onError={(msg) =>
             applyDebugResult(gameState, `[DEMIGOD ERROR] ${msg}`)

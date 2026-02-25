@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GameState, StoredEncounter } from "../lib/gameTypes";
+import { GameState, StoredEncounter, NPC } from "../lib/gameTypes";
 
 interface DebugAction {
   key: string;
@@ -25,12 +25,17 @@ const ACTIONS: DebugAction[] = [
     label: "Advance Story Beat",
     description: "Mark the current story beat as completed and advance to the next one.",
   },
+  {
+    key: "add_companion",
+    label: "Add Companion",
+    description: "Spawn a friendly Guard as a persistent party companion (max 3).",
+  },
 ];
 
 interface DemigodMenuProps {
   characterId: string;
   isBusy: boolean;
-  onResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null) => void;
+  onResult: (gameState: GameState, message: string, encounter?: StoredEncounter | null, companions?: NPC[]) => void;
   onError: (msg: string) => void;
 }
 
@@ -63,7 +68,7 @@ export default function DemigodMenu({ characterId, isBusy, onResult, onError }: 
       }
 
       const data = await res.json();
-      onResult(data.gameState, data.message, data.encounter ?? null);
+      onResult(data.gameState, data.message, data.encounter ?? null, data.companions);
       setIsOpen(false);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Debug action failed");
