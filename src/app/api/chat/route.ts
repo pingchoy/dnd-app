@@ -42,6 +42,11 @@ import {
   serializeRegionContext,
   setEncounter,
   getSessionSupportingNPCs,
+  getSessionCompanions,
+  addCompanion,
+  removeCompanion,
+  syncCompanionFromEncounter,
+  MAX_COMPANIONS,
   updateNPC,
 } from "../../lib/gameState";
 import {
@@ -387,7 +392,18 @@ async function processChatAction(
     );
 
     const enc = getEncounter();
+
+    // Inject persistent companions into the new encounter
     if (needsEncounter && enc) {
+      const existingCompanions = getSessionCompanions();
+      if (existingCompanions.length > 0) {
+        for (const companion of existingCompanions) {
+          // Clone to avoid shared references between session and encounter
+          enc.activeNPCs.push({ ...companion });
+        }
+        console.log(`[Encounter] Injected ${existingCompanions.length} persistent companion(s)`);
+      }
+
       enc.positions = computeInitialPositions(
         enc.activeNPCs,
         combatRegions,
@@ -424,6 +440,65 @@ async function processChatAction(
       }
     }
     delete dmResult.stateChanges.npcs_to_dismiss;
+  }
+
+  // ── Companion persistence ────────────────────────────────────────────────
+  if (dmResult.stateChanges?.companions_to_add?.length) {
+    const requests = dmResult.stateChanges.companions_to_add;
+    console.log("[Companions] Adding companions:", requests);
+
+    for (const req of requests) {
+      const currentCompanions = getSessionCompanions();
+      if (currentCompanions.length >= MAX_COMPANIONS) {
+        console.log("[Companions] At cap, skipping:", req.slug);
+        break;
+      }
+
+      // Look up SRD stats for the companion
+      const srdData = req.slug ? await querySRD("monster", req.slug) : null;
+      const npcResult = await getNPCStats(
+        { name: req.name ?? req.slug, slug: req.slug, disposition: "friendly", count: 1 },
+        srdData,
+      );
+
+      if (npcResult.npcs.length > 0) {
+        const npc = createNPC(npcResult.npcs[0]);
+        const added = addCompanion(npc);
+        if (added) {
+          console.log(`[Companions] Added "${npc.name}" (${npc.id})`);
+
+          // Link to SupportingNPC if specified
+          if (req.supportingNpcId) {
+            const supportingNPCs = getSessionSupportingNPCs();
+            const snpc = supportingNPCs.find((s) => s.id === req.supportingNpcId);
+            if (snpc) {
+              snpc.companionNpcId = npc.id;
+              snpc.status = "active";
+            }
+          }
+        }
+      }
+    }
+    delete dmResult.stateChanges.companions_to_add;
+  }
+
+  if (dmResult.stateChanges?.companions_to_remove?.length) {
+    for (const npcId of dmResult.stateChanges.companions_to_remove) {
+      const removed = removeCompanion(npcId);
+      if (removed) {
+        console.log(`[Companions] Removed "${removed.name}"`);
+
+        // Update linked SupportingNPC
+        const supportingNPCs = getSessionSupportingNPCs();
+        const linked = supportingNPCs.find((s) => s.companionNpcId === npcId);
+        if (linked) {
+          linked.companionNpcId = undefined;
+          linked.status = "departed";
+          linked.notes += ` Departed from the party.`;
+        }
+      }
+    }
+    delete dmResult.stateChanges.companions_to_remove;
   }
 
   // Safety net: auto-apply pre-rolled NPC damage if the DM forgot to set hp_delta
@@ -529,24 +604,49 @@ async function processChatAction(
     console.log("[Story] DM did NOT set story_beat_completed this turn");
   }
 
+  // Snapshot encounter state before applyStateChangesAndPersist may clear it
+  const preApplyEncounter = getEncounter();
+
   // Apply state changes and persist to Firestore (including encounter state if active)
   console.log("[Persist] Applying state changes and saving to Firestore...");
   await applyStateChangesAndPersist(dmResult.stateChanges ?? {}, characterId);
 
-  // Persist session-level supporting NPCs (not part of StoryState, stored on session doc)
-  const supportingNPCs = getSessionSupportingNPCs();
-  if (supportingNPCs.length > 0) {
-    await saveSessionState(sessionId, { supportingNPCs });
-  }
-
-  // Auto-complete combat/boss beats when combat ends
-  // Check: was in combat at start, encounter now cleared, current beat is combat/boss type,
-  // and the agent didn't already mark a beat completed this turn.
+  // Check if combat just ended (was in combat at start, no hostiles remaining now)
   const combatJustEnded =
     inCombat &&
     !getEncounter()?.activeNPCs.some(
       (n) => n.disposition === "hostile" && n.currentHp > 0,
     );
+
+  // Sync companion HP/conditions after combat ends
+  if (combatJustEnded && preApplyEncounter) {
+    for (const npc of preApplyEncounter.activeNPCs) {
+      if (npc.disposition === "friendly" && npc.currentHp > 0) {
+        syncCompanionFromEncounter(npc);
+      } else if (npc.disposition === "friendly" && npc.currentHp <= 0) {
+        // Companion died — remove from persistent companions
+        const removed = removeCompanion(npc.id);
+        if (removed) {
+          console.log(`[Companions] "${removed.name}" died in combat — removed`);
+          const sNPCs = getSessionSupportingNPCs();
+          const linked = sNPCs.find((s) => s.companionNpcId === npc.id);
+          if (linked) {
+            linked.companionNpcId = undefined;
+            linked.status = "dead";
+            linked.notes += ` Killed in combat.`;
+          }
+        }
+      }
+    }
+  }
+
+  // Persist session-level data (supporting NPCs, companions)
+  const supportingNPCs = getSessionSupportingNPCs();
+  const sessionCompanions = getSessionCompanions();
+  const sessionUpdates: Partial<import("../../lib/gameTypes").StoredSession> = {};
+  if (supportingNPCs.length > 0) sessionUpdates.supportingNPCs = supportingNPCs;
+  sessionUpdates.companions = sessionCompanions; // Always persist (even empty array clears old data)
+  await saveSessionState(sessionId, sessionUpdates);
   if (
     combatJustEnded &&
     campaignSlug &&
@@ -608,6 +708,7 @@ async function processChatAction(
   return {
     gameState: getGameState(),
     encounter: getEncounter(),
+    companions: getSessionCompanions(),
     currentPOIId: getCurrentPOIId() ?? null,
     tokensUsed: {
       dmInput: dmResult.inputTokens,
@@ -759,6 +860,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       gameState,
       encounter: getEncounter(),
+      companions: getSessionCompanions(),
       sessionId,
       explorationPositions: getExplorationPositions() ?? null,
       activeMapId: activeMapId ?? null,

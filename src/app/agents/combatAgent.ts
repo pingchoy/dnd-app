@@ -63,6 +63,8 @@ The player may want to do things during combat that are not mechanical combat ac
 - Non-standard creative tactics that aren't covered by the grid ("I try to intimidate the goblins into fleeing")
 For these, narrate the outcome in 1-2 paragraphs. You may use update_game_state for non-damage state changes (conditions, items found, spell slots used, story progression).
 
+COMPANION PERSISTENCE: After combat ends with all hostiles defeated, surviving friendly NPCs may be kept as persistent companions. Use companions_to_add with their SRD slug to persist survivors you think should stay with the party. Friendly NPCs not persisted will depart after the encounter. Use companions_to_remove for any companions that died during combat (HP 0).
+
 HARD RULES:
 - Do NOT deal, track, or resolve damage. Do NOT set hp_delta — the game engine handles all HP changes.
 - Never ask the player for rolls, HP confirmation, or any input. Combat stats are authoritative.

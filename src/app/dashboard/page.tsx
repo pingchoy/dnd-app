@@ -54,6 +54,7 @@ export default function Dashboard() {
     activeMap,
     currentPOIId,
     setCurrentPOIId,
+    persistentCompanions,
   } = useChat({ onEncounterData: (enc) => encounterBridgeRef.current?.(enc) });
 
   const {
@@ -149,10 +150,14 @@ export default function Dashboard() {
 
   // Combat state is derived from the encounter (NPCs live in encounters, not sessions)
   const activeNPCs = useMemo(() => encounter?.activeNPCs ?? [], [encounter]);
-  const companions = useMemo(
-    () => activeNPCs.filter(n => n.disposition === "friendly" && n.currentHp > 0),
-    [activeNPCs],
-  );
+  const companions = useMemo(() => {
+    // During combat, show encounter's friendly NPCs (live HP updates from combat grid)
+    if (encounter) {
+      return activeNPCs.filter(n => n.disposition === "friendly" && n.currentHp > 0);
+    }
+    // Outside combat, show persistent companions from session
+    return persistentCompanions;
+  }, [encounter, activeNPCs, persistentCompanions]);
   // Victory screen or active processing keep the combat layout visible even if
   // encounter data is momentarily null due to Firestore/HTTP race conditions.
   const inCombat =

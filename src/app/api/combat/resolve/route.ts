@@ -23,10 +23,14 @@ import {
   getGameState,
   getEncounter,
   getSessionId,
+  getSessionSupportingNPCs,
+  getSessionCompanions,
+  syncCompanionFromEncounter,
+  removeCompanion,
   loadGameState,
   updateNPC,
 } from "../../../lib/gameState";
-import { saveCharacterState } from "../../../lib/characterStore";
+import { saveCharacterState, saveSessionState } from "../../../lib/characterStore";
 import { saveEncounterState, completeEncounter } from "../../../lib/encounterStore";
 import { resolveNPCTurn, resolveFriendlyNPCTurn, pickHostileTarget } from "../../../lib/combatResolver";
 import { emptyCombatStats } from "../../../lib/gameTypes";
@@ -310,6 +314,33 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    // ── Sync companion state after NPC turns ─────────────────────────────
+    for (const npc of encounter.activeNPCs) {
+      if (npc.disposition === "friendly") {
+        if (npc.currentHp > 0) {
+          syncCompanionFromEncounter(npc);
+        } else {
+          const removed = removeCompanion(npc.id);
+          if (removed) {
+            console.log(`[Companions] "${removed.name}" killed in combat — removed`);
+            const supportingNPCs = getSessionSupportingNPCs();
+            const linked = supportingNPCs.find((s) => s.companionNpcId === npc.id);
+            if (linked) {
+              linked.companionNpcId = undefined;
+              linked.status = "dead";
+              linked.notes += ` Killed in combat.`;
+            }
+          }
+        }
+      }
+    }
+
+    // Persist companion state alongside session data
+    await saveSessionState(sessionId, {
+      companions: getSessionCompanions(),
+      supportingNPCs: getSessionSupportingNPCs(),
+    });
 
     // ── Round end ───────────────────────────────────────────────────────────
 

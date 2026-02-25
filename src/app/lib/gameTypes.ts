@@ -730,6 +730,10 @@ export interface SupportingNPC {
   location: string;
   notes: string;
   combatSlug?: string;
+  /** Links to NPC.id in session companions[] when this story NPC is also a combat companion. */
+  companionNpcId?: string;
+  /** Tracks fate of the NPC across the session. Defaults to "active". */
+  status?: "active" | "dead" | "departed";
 }
 
 /** Session document (sessions/{id}) — story + conversation history. */
@@ -751,6 +755,8 @@ export interface StoredSession {
   importantEvents?: string[];
   /** Non-campaign NPCs that emerged during play. */
   supportingNPCs?: SupportingNPC[];
+  /** Persistent friendly NPC companions that survive between encounters. Max 3. */
+  companions?: NPC[];
   createdAt?: number;
   updatedAt?: number;
 }

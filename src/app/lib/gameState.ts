@@ -17,6 +17,7 @@ import {
   loadCharacter,
   loadSession,
   saveCharacterState,
+  saveSessionState,
   querySRD,
 } from "./characterStore";
 
@@ -201,6 +202,20 @@ function buildStatLines(p: PlayerState, compact: boolean): string[] {
 /** Compact single-string summary of the player for injection into prompts. */
 export function serializePlayerState(p: PlayerState): string {
   return buildStatLines(p, false).join("\n");
+}
+
+/** Compact summary of persistent companions for injection into prompts. */
+export function serializeCompanions(companions: NPC[]): string {
+  if (companions.length === 0) return "";
+  return (
+    "Party companions:\n" +
+    companions
+      .map(
+        (c) =>
+          `  [id=${c.id}] ${c.name}: AC ${c.ac}, HP ${c.currentHp}/${c.maxHp}, ATK ${formatModifier(c.attackBonus)} (${c.damageDice}${c.damageBonus ? formatModifier(c.damageBonus) : ""})${c.conditions.length ? ` — ${c.conditions.join(", ")}` : ""}`,
+      )
+      .join("\n")
+  );
 }
 
 /** Compact summary of active NPCs for injection into prompts. Includes unique id for tool calls. */
@@ -542,6 +557,8 @@ let currentCampaignSlug: string | undefined;
 let sessionImportantEvents: string[] | undefined;
 /** Supporting NPCs from the session — set by loadGameState(). */
 let sessionSupportingNPCs: SupportingNPC[] | undefined;
+/** Persistent companions from the session — set by loadGameState(). */
+let sessionCompanions: NPC[] | undefined;
 
 // ─── Encounter singleton ─────────────────────────────────────────────────────
 
@@ -602,6 +619,37 @@ export function addSupportingNPC(npc: SupportingNPC): void {
   sessionSupportingNPCs.push(npc);
 }
 
+/** Max number of persistent companions allowed. */
+export const MAX_COMPANIONS = 3;
+
+export function getSessionCompanions(): NPC[] {
+  return sessionCompanions ?? [];
+}
+
+export function addCompanion(npc: NPC): boolean {
+  if (!sessionCompanions) sessionCompanions = [];
+  if (sessionCompanions.length >= MAX_COMPANIONS) return false;
+  sessionCompanions.push(npc);
+  return true;
+}
+
+export function removeCompanion(npcId: string): NPC | undefined {
+  if (!sessionCompanions) return undefined;
+  const idx = sessionCompanions.findIndex((c) => c.id === npcId);
+  if (idx === -1) return undefined;
+  return sessionCompanions.splice(idx, 1)[0];
+}
+
+/** Sync a companion's HP/conditions back from an encounter NPC. */
+export function syncCompanionFromEncounter(encounterNpc: NPC): void {
+  if (!sessionCompanions) return;
+  const companion = sessionCompanions.find((c) => c.id === encounterNpc.id);
+  if (companion) {
+    companion.currentHp = encounterNpc.currentHp;
+    companion.conditions = [...encounterNpc.conditions];
+  }
+}
+
 export function getEncounter(): StoredEncounter | null {
   return encounter;
 }
@@ -656,6 +704,14 @@ export interface StateChanges {
   npcs_to_create?: NPCToCreate[];
   /** NPC IDs to remove from the scene (friendly/neutral NPCs departing). */
   npcs_to_dismiss?: string[];
+  /** Friendly NPCs to persist as companions. Looked up from SRD by slug. */
+  companions_to_add?: Array<{
+    slug: string;
+    name?: string;
+    supportingNpcId?: string;
+  }>;
+  /** Companion NPC IDs to remove from the party. */
+  companions_to_remove?: string[];
   // ─── Memory tier fields ───
   /** A major plot milestone to record permanently (e.g. "defeated the shadow dragon"). */
   milestone?: string;
@@ -730,6 +786,8 @@ export function mergeStateChanges(
     "npcs_met",
     "npcs_to_create",
     "npcs_to_dismiss",
+    "companions_to_add",
+    "companions_to_remove",
     "weapons_gained",
     "spells_learned",
     "spells_removed",
@@ -1291,9 +1349,10 @@ export async function loadGameState(characterId: string): Promise<GameState> {
   currentExplorationPositions = session?.explorationPositions;
   currentCampaignSlug = session?.campaignSlug;
 
-  // Load session memory (important events, supporting NPCs)
+  // Load session memory (important events, supporting NPCs, companions)
   sessionImportantEvents = session?.importantEvents;
   sessionSupportingNPCs = session?.supportingNPCs;
+  sessionCompanions = session?.companions;
 
   // Hydrate encounter if one is active
   encounter = null;
@@ -1391,6 +1450,13 @@ export async function applyStateChangesAndPersist(
   } else {
     // No active encounter — check for level-up from out-of-combat XP gains
     await awardXPAsync(characterId, 0);
+  }
+
+  // Persist session-level companions
+  if (currentSessionId && sessionCompanions) {
+    await saveSessionState(currentSessionId, {
+      companions: sessionCompanions,
+    });
   }
 
   await persistState(characterId);

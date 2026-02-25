@@ -169,6 +169,34 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
           "IDs of friendly or neutral NPCs to remove from the party. Use [id=...] from the NPC list. The NPC departs the scene narratively.",
         items: { type: "string" },
       },
+      companions_to_add: {
+        type: "array",
+        description:
+          "Persist friendly NPCs as party companions (max 3 total). Use SRD slug for stats. Companions auto-join future combats.",
+        items: {
+          type: "object",
+          properties: {
+            slug: {
+              type: "string",
+              description: "SRD monster slug for stat lookup (e.g. 'guard', 'veteran', 'knight').",
+            },
+            name: {
+              type: "string",
+              description: "Display name. Defaults to the SRD creature name if omitted.",
+            },
+            supporting_npc_id: {
+              type: "string",
+              description: "ID of a SupportingNPC to link this companion to (for story NPCs who also fight).",
+            },
+          },
+          required: ["slug"],
+        },
+      },
+      companions_to_remove: {
+        type: "array",
+        description: "Remove companions from the party by NPC ID. Use when a companion departs or is dismissed.",
+        items: { type: "string" },
+      },
       // ─── Memory tier fields ───
       milestone: {
         type: "string",
@@ -275,6 +303,34 @@ export const COMBAT_UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
           },
           required: ["name", "slug", "disposition"],
         },
+      },
+      companions_to_add: {
+        type: "array",
+        description:
+          "Persist friendly NPCs as party companions (max 3 total). Use SRD slug for stats. Companions auto-join future combats.",
+        items: {
+          type: "object",
+          properties: {
+            slug: {
+              type: "string",
+              description: "SRD monster slug for stat lookup (e.g. 'guard', 'veteran', 'knight').",
+            },
+            name: {
+              type: "string",
+              description: "Display name. Defaults to the SRD creature name if omitted.",
+            },
+            supporting_npc_id: {
+              type: "string",
+              description: "ID of a SupportingNPC to link this companion to (for story NPCs who also fight).",
+            },
+          },
+          required: ["slug"],
+        },
+      },
+      companions_to_remove: {
+        type: "array",
+        description: "Remove companions from the party by NPC ID. Use when a companion departs or is dismissed.",
+        items: { type: "string" },
       },
     },
     required: [],
