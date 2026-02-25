@@ -184,17 +184,21 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
               type: "string",
               description: "Display name. Defaults to the SRD creature name if omitted.",
             },
+            reason: {
+              type: "string",
+              description: "Why this companion joined — used to decide when to dismiss them (e.g. 'hired as escort to the ruins', 'rescued prisoner following party to safety').",
+            },
             supporting_npc_id: {
               type: "string",
               description: "ID of a SupportingNPC to link this companion to (for story NPCs who also fight).",
             },
           },
-          required: ["slug"],
+          required: ["slug", "reason"],
         },
       },
       companions_to_remove: {
         type: "array",
-        description: "Remove companions from the party by NPC ID. Use when a companion departs or is dismissed.",
+        description: "Remove companions from the party by NPC ID. Dismiss when their reason for joining is fulfilled (e.g. escort reached destination, quest complete).",
         items: { type: "string" },
       },
       // ─── Memory tier fields ───
@@ -319,17 +323,21 @@ export const COMBAT_UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
               type: "string",
               description: "Display name. Defaults to the SRD creature name if omitted.",
             },
+            reason: {
+              type: "string",
+              description: "Why this companion joined — used to decide when to dismiss them (e.g. 'hired as escort to the ruins', 'rescued prisoner following party to safety').",
+            },
             supporting_npc_id: {
               type: "string",
               description: "ID of a SupportingNPC to link this companion to (for story NPCs who also fight).",
             },
           },
-          required: ["slug"],
+          required: ["slug", "reason"],
         },
       },
       companions_to_remove: {
         type: "array",
-        description: "Remove companions from the party by NPC ID. Use when a companion departs or is dismissed.",
+        description: "Remove companions from the party by NPC ID. Dismiss when their reason for joining is fulfilled (e.g. escort reached destination, quest complete).",
         items: { type: "string" },
       },
     },

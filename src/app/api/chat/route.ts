@@ -456,8 +456,9 @@ async function processChatAction(
 
       if (npcResult.npcs.length > 0) {
         const npc = createNPC(npcResult.npcs[0]);
+        if (req.reason) npc.companionReason = req.reason;
         addCompanion(npc);
-        console.log(`[Companions] Added "${npc.name}" (${npc.id})`);
+        console.log(`[Companions] Added "${npc.name}" (${npc.id}) reason: ${req.reason ?? "none"}`);
 
         // Link to SupportingNPC if specified
         if (req.supportingNpcId) {

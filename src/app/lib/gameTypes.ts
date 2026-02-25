@@ -425,6 +425,8 @@ export interface NPC {
   conditions: string[];
   notes: string;
   speed?: number; // walking speed in feet (default 30)
+  /** Why this companion joined the party — helps the DM know when to dismiss them. */
+  companionReason?: string;
 }
 
 export interface StoryState {

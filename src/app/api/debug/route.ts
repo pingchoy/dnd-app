@@ -266,6 +266,7 @@ export async function POST(req: NextRequest) {
           disposition: "friendly" as const,
           conditions: [] as string[],
           notes: npcInput.notes ?? "",
+          companionReason: "debug companion spawned via demigod menu",
         };
 
         addCompanion(npc);

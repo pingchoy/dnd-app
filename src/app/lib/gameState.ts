@@ -212,7 +212,7 @@ export function serializeCompanions(companions: NPC[]): string {
     companions
       .map(
         (c) =>
-          `  [id=${c.id}] ${c.name}: AC ${c.ac}, HP ${c.currentHp}/${c.maxHp}, ATK ${formatModifier(c.attackBonus)} (${c.damageDice}${c.damageBonus ? formatModifier(c.damageBonus) : ""})${c.conditions.length ? ` — ${c.conditions.join(", ")}` : ""}`,
+          `  [id=${c.id}] ${c.name}: AC ${c.ac}, HP ${c.currentHp}/${c.maxHp}, ATK ${formatModifier(c.attackBonus)} (${c.damageDice}${c.damageBonus ? formatModifier(c.damageBonus) : ""})${c.companionReason ? ` (${c.companionReason})` : ""}${c.conditions.length ? ` — ${c.conditions.join(", ")}` : ""}`,
       )
       .join("\n")
   );
@@ -703,6 +703,7 @@ export interface StateChanges {
   companions_to_add?: Array<{
     slug: string;
     name?: string;
+    reason?: string;
     supportingNpcId?: string;
   }>;
   /** Companion NPC IDs to remove from the party. */
