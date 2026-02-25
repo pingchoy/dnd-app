@@ -32,22 +32,23 @@ function findEdgeSlot(occupied: Set<string>): GridPosition {
   return { row: 0, col: 0 };
 }
 
-/** Find an unoccupied cell in rows 16-19 for friendly NPC placement (near player). */
+/** Find an unoccupied cell near the player (rows 11-13) for friendly NPC placement. */
 function findBottomSlot(occupied: Set<string>): GridPosition {
-  for (let row = GRID_SIZE - 4; row <= GRID_SIZE - 2; row++) {
+  // Place friendlies just below the player (row 10) — rows 11-13
+  for (let row = 11; row <= 13; row++) {
     for (let col = 3; col < GRID_SIZE - 3; col += 2) {
       const key = `${row},${col}`;
       if (!occupied.has(key)) return { row, col };
     }
   }
-  // Overflow: try any unoccupied cell in bottom 6 rows
-  for (let row = GRID_SIZE - 6; row < GRID_SIZE; row++) {
+  // Overflow: try any unoccupied cell in rows 9-15 around the player
+  for (let row = 9; row <= 15; row++) {
     for (let col = 0; col < GRID_SIZE; col++) {
       const key = `${row},${col}`;
       if (!occupied.has(key)) return { row, col };
     }
   }
-  return { row: GRID_SIZE - 1, col: 0 };
+  return { row: 12, col: 10 };
 }
 
 /**

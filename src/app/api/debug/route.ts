@@ -19,7 +19,6 @@ import {
   getSessionId,
   getSessionCompanions,
   addCompanion,
-  MAX_COMPANIONS,
   getCampaignSlug,
   loadGameState,
   setEncounter,
@@ -88,11 +87,30 @@ export async function POST(req: NextRequest) {
           createNPC(npc);
         }
 
-        // Compute initial grid positions and turn order, then persist
+        // Inject persistent companions into the encounter
         const enc = getEncounter();
+        if (enc) {
+          const existingCompanions = getSessionCompanions();
+          if (existingCompanions.length > 0) {
+            for (const companion of existingCompanions) {
+              enc.activeNPCs.push({ ...companion });
+            }
+            console.log(`[Debug] Injected ${existingCompanions.length} persistent companion(s) into encounter`);
+          }
+        }
+
+        // Compute initial grid positions and turn order, then persist
         if (enc?.id) {
           enc.positions = computeInitialPositions(enc.activeNPCs);
-          enc.turnOrder = ["player", ...enc.activeNPCs.map(n => n.id)];
+          enc.turnOrder = [
+            "player",
+            ...enc.activeNPCs
+              .filter(n => n.disposition === "friendly")
+              .map(n => n.id),
+            ...enc.activeNPCs
+              .filter(n => n.disposition === "hostile")
+              .map(n => n.id),
+          ];
           enc.currentTurnIndex = 0;
           await saveEncounterState(enc.id, {
             activeNPCs: enc.activeNPCs,
@@ -213,12 +231,6 @@ export async function POST(req: NextRequest) {
 
       case "add_companion": {
         const currentCompanions = getSessionCompanions();
-        if (currentCompanions.length >= MAX_COMPANIONS) {
-          return NextResponse.json(
-            { error: `Already at companion limit (${MAX_COMPANIONS})` },
-            { status: 400 },
-          );
-        }
 
         // Spawn a friendly Guard as a test companion via SRD
         const srdData = await querySRD("monster", "guard");
@@ -256,13 +268,10 @@ export async function POST(req: NextRequest) {
           notes: npcInput.notes ?? "",
         };
 
-        const added = addCompanion(npc);
-        if (!added) {
-          return NextResponse.json({ error: "Failed to add companion (at cap)" }, { status: 400 });
-        }
+        addCompanion(npc);
 
         const sessionId = getSessionId();
-        const message = `[DEMIGOD] A friendly ${npc.name} joins the party as a persistent companion! (${getSessionCompanions().length}/${MAX_COMPANIONS})`;
+        const message = `[DEMIGOD] A friendly ${npc.name} joins the party as a persistent companion! (${getSessionCompanions().length} total)`;
         await addMessage(sessionId, {
           role: "assistant",
           content: message,

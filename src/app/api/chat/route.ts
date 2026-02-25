@@ -46,7 +46,6 @@ import {
   addCompanion,
   removeCompanion,
   syncCompanionFromEncounter,
-  MAX_COMPANIONS,
   updateNPC,
 } from "../../lib/gameState";
 import {
@@ -448,12 +447,6 @@ async function processChatAction(
     console.log("[Companions] Adding companions:", requests);
 
     for (const req of requests) {
-      const currentCompanions = getSessionCompanions();
-      if (currentCompanions.length >= MAX_COMPANIONS) {
-        console.log("[Companions] At cap, skipping:", req.slug);
-        break;
-      }
-
       // Look up SRD stats for the companion
       const srdData = req.slug ? await querySRD("monster", req.slug) : null;
       const npcResult = await getNPCStats(
@@ -463,18 +456,16 @@ async function processChatAction(
 
       if (npcResult.npcs.length > 0) {
         const npc = createNPC(npcResult.npcs[0]);
-        const added = addCompanion(npc);
-        if (added) {
-          console.log(`[Companions] Added "${npc.name}" (${npc.id})`);
+        addCompanion(npc);
+        console.log(`[Companions] Added "${npc.name}" (${npc.id})`);
 
-          // Link to SupportingNPC if specified
-          if (req.supportingNpcId) {
-            const supportingNPCs = getSessionSupportingNPCs();
-            const snpc = supportingNPCs.find((s) => s.id === req.supportingNpcId);
-            if (snpc) {
-              snpc.companionNpcId = npc.id;
-              snpc.status = "active";
-            }
+        // Link to SupportingNPC if specified
+        if (req.supportingNpcId) {
+          const supportingNPCs = getSessionSupportingNPCs();
+          const snpc = supportingNPCs.find((s) => s.id === req.supportingNpcId);
+          if (snpc) {
+            snpc.companionNpcId = npc.id;
+            snpc.status = "active";
           }
         }
       }

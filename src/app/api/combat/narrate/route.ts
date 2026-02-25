@@ -15,7 +15,7 @@ import {
   serializeCombatPlayerState,
 } from "../../../lib/gameState";
 import { saveCharacterState } from "../../../lib/characterStore";
-import { addMessage, getRecentMessages } from "../../../lib/messageStore";
+import { addCombatMessage, getRecentCombatMessages } from "../../../lib/messageStore";
 import {
   anthropic,
   MODELS,
@@ -115,7 +115,7 @@ Use **bold** for actions and damage. Use *italics* for sensory details. No heade
 
     // Include last conversation turn for tonal continuity
     const sessionId = getSessionId();
-    const recentMsgs = await getRecentMessages(sessionId, 2);
+    const recentMsgs = await getRecentCombatMessages(sessionId, 2);
     const historyMessages: Anthropic.MessageParam[] = recentMsgs.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
@@ -133,7 +133,7 @@ Use **bold** for actions and damage. Use *italics* for sensory details. No heade
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("\n");
 
-    await addMessage(sessionId, {
+    await addCombatMessage(sessionId, {
       role: "assistant",
       content: narrative,
       timestamp: Date.now(),

@@ -26,7 +26,6 @@ import {
   getSessionSupportingNPCs,
   getSessionCompanions,
   addSupportingNPC,
-  MAX_COMPANIONS,
 } from "../lib/gameState";
 import { getRecentMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
@@ -62,7 +61,7 @@ YOUR ROLE:
   When NEXT ENCOUNTER lists enemies (e.g. "Enemies: 3x bandit, 1x thug"), use those exact slugs and counts in npcs_to_create when the encounter triggers.
 - FRIENDLY NPCs: Introduce friendly NPCs (guards, mercenaries, rescued prisoners, quest allies) when the story calls for it — use npcs_to_create with disposition "friendly" and an appropriate SRD slug. Keep allies balanced: don't introduce overpowered companions that trivialize encounters. Friendly NPCs fight alongside the player in combat automatically — you do not need to narrate their attacks.
 - FRIENDLY NPC DEPARTURE: When a friendly NPC's narrative role is complete (quest finished, destination reached, story diverges), dismiss them using npcs_to_dismiss with their [id]. Narrate their departure naturally — they head home, stay behind to guard something, part ways at a crossroads, etc. Don't keep companions around indefinitely.
-- COMPANIONS: The party may have persistent companions (shown in CAMPAIGN STATE). These are friendly NPCs who travel with the party between encounters and auto-join combat. You can add new companions with companions_to_add (max 3 total — check current count before adding). You can dismiss companions with companions_to_remove when their narrative role is complete. Narrate their departure naturally.
+- COMPANIONS: The party may have persistent companions (shown in CAMPAIGN STATE). These are friendly NPCs who travel with the party between encounters and auto-join combat. You can add new companions with companions_to_add. You can dismiss companions with companions_to_remove when their narrative role is complete. Narrate their departure naturally.
 - Call update_npc after a creature takes damage, gains a condition, or is defeated. Monster kill XP is awarded automatically — do NOT add it to xp_gained.
 - NEVER mention your tools, functions, stat blocks, or internal reasoning to the player. Never say "let me query", "let me create", "I'll generate", "I need to look up", or ANY meta-commentary about what you're doing behind the scenes. Call tools silently — your text output IS the story, nothing else.
 - Use update_game_state xp_gained when the player completes a quest, achieves a meaningful milestone, or demonstrates exceptional roleplay. Typical quest XP: minor 50–150, moderate 200–500, major 500–1000+.
@@ -170,9 +169,6 @@ export async function getDMResponse(
   if (companions.length > 0) {
     userContent += `\n\n${serializeCompanions(companions)}`;
   }
-  if (companions.length >= MAX_COMPANIONS) {
-    userContent += `\n(Party is at the companion limit of ${MAX_COMPANIONS}.)`;
-  }
 
   userContent += `\n\nPLAYER CHARACTER:\n${serializePlayerState(gameState.player)}\n\n---\n\n${playerInput}`;
 
@@ -182,6 +178,7 @@ export async function getDMResponse(
   }
 
   // Fetch recent messages from subcollection for agent context window
+  // Only reads from the `messages` subcollection (combat narration is in `combatMessages`)
   const recentMessages = await getRecentMessages(sessionId, DM_HISTORY_ENTRIES);
   const historyMessages: Anthropic.MessageParam[] = recentMessages.map((m) => ({
     role: m.role,

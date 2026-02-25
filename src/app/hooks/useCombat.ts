@@ -110,7 +110,7 @@ export function useCombat({
         ) {
           lastNpcResultTimestampRef.current = data.lastNpcResult.timestamp;
           combatLabelRef.current?.(
-            "player",
+            data.lastNpcResult.targetId ?? "player",
             data.lastNpcResult.hit,
             data.lastNpcResult.damage,
           );

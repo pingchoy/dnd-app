@@ -172,7 +172,7 @@ export const UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       companions_to_add: {
         type: "array",
         description:
-          "Persist friendly NPCs as party companions (max 3 total). Use SRD slug for stats. Companions auto-join future combats.",
+          "Persist friendly NPCs as party companions. Use SRD slug for stats. Companions auto-join future combats.",
         items: {
           type: "object",
           properties: {
@@ -307,7 +307,7 @@ export const COMBAT_UPDATE_GAME_STATE_TOOL: Anthropic.Tool = {
       companions_to_add: {
         type: "array",
         description:
-          "Persist friendly NPCs as party companions (max 3 total). Use SRD slug for stats. Companions auto-join future combats.",
+          "Persist friendly NPCs as party companions. Use SRD slug for stats. Companions auto-join future combats.",
         items: {
           type: "object",
           properties: {

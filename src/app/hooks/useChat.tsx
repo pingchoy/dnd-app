@@ -159,44 +159,56 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
   }, [sessionId]);
 
   /**
-   * Real-time Firestore listener for the messages subcollection.
-   * Messages are the single source of truth — all narratives, roll results,
-   * and combat turn narrations arrive through this listener.
+   * Real-time Firestore listeners for both message subcollections.
+   *
+   * Narrative messages live in `messages`, combat narrations in `combatMessages`.
+   * Both are merged by timestamp for display. The DM agent only reads `messages`
+   * so combat logs don't pollute its conversation context.
    *
    * On the first snapshot, all doc IDs are recorded as "historical" so their
    * roll results render as compact cards without animation. Subsequent roll
    * result docs are marked isNewRoll=true so they animate for all players.
    */
+  const narrativeDocsRef = useRef<import("firebase/firestore").QueryDocumentSnapshot[]>([]);
+  const combatDocsRef = useRef<import("firebase/firestore").QueryDocumentSnapshot[]>([]);
+
   useEffect(() => {
     if (!sessionId) return;
 
-    // Clean up previous subscription if any
+    // Clean up previous subscriptions
     unsubRef.current?.();
     const db = getClientDb();
-    const messagesRef = collection(db, "sessions", sessionId, "messages");
-    const messagesQuery = query(messagesRef, orderBy("timestamp", "asc"), limitToLast(20));
 
-    const unsub = onSnapshot(messagesQuery, (snapshot) => {
-      // On first snapshot, record all existing doc IDs as historical
+    // Track whether each subcollection has delivered its first snapshot.
+    // We only mark doc IDs as "historical" once BOTH have reported in,
+    // preventing a race where the slower subcollection's docs animate as new.
+    let narrativeReady = false;
+    let combatReady = false;
+
+    // Merge docs from both subcollections, sort by timestamp, convert to ChatMessage[]
+    const mergeAndSetMessages = () => {
+      // Wait for both listeners to deliver their first snapshot before processing
+      if (!narrativeReady || !combatReady) return;
+
+      const allDocs = [...narrativeDocsRef.current, ...combatDocsRef.current]
+        .sort((a, b) => (a.data().timestamp as number) - (b.data().timestamp as number));
+
+      // On first merge, record existing doc IDs as historical
       if (isFirstSnapshotRef.current) {
-        historicalDocIdsRef.current = new Set(snapshot.docs.map((doc) => doc.id));
+        historicalDocIdsRef.current = new Set(allDocs.map((d) => d.id));
         isFirstSnapshotRef.current = false;
       }
 
       const historicalIds = historicalDocIdsRef.current ?? new Set<string>();
-
       const now = Date.now();
-      const msgs: ChatMessage[] = snapshot.docs.map((doc) => {
+
+      const msgs: ChatMessage[] = allDocs.map((doc) => {
         const data = doc.data() as StoredMessage;
         const isHistorical = historicalIds.has(doc.id);
-        // A roll animates only if it's new to this session AND recent (<5s).
-        // The age check prevents replaying animations when components remount.
         const hasRollOrAoe = data.rollResult || data.aoeResult;
         const isNewRoll = hasRollOrAoe
           ? !isHistorical && (now - data.timestamp) < 5000
           : undefined;
-        // Don't animate user messages from this client — they already appeared optimistically.
-        // Other players' messages (different characterId) will still animate.
         const isOwnMessage = data.role === "user" && data.characterId === characterIdRef.current;
         const isNew = !isHistorical && !isOwnMessage && (now - data.timestamp) < 5000;
         return {
@@ -206,19 +218,18 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
           timestamp: data.timestamp,
           rollResult: data.rollResult,
           aoeResult: data.aoeResult,
-          isNewRoll: isNewRoll,
+          isNewRoll,
           isNew,
         };
       });
 
-      // Mark all docs as seen so roll animations don't replay on subsequent snapshots
-      for (const d of snapshot.docs) {
+      // Mark all docs as seen
+      for (const d of allDocs) {
         historicalIds.add(d.id);
       }
 
       if (msgs.length === 0) {
         // Brand-new session — request a campaign-specific intro from the DM agent.
-        // The intro message will arrive via this same Firestore listener once generated.
         if (!campaignIntroRequestedRef.current && characterIdRef.current) {
           campaignIntroRequestedRef.current = true;
           setIsNarrating(true);
@@ -245,10 +256,35 @@ export function useChat({ onEncounterData }: UseChatParams = {}): UseChatReturn 
       } else {
         setMessages(msgs);
       }
+    };
+
+    const narrativeRef = collection(db, "sessions", sessionId, "messages");
+    const narrativeQuery = query(narrativeRef, orderBy("timestamp", "asc"), limitToLast(20));
+
+    const combatRef = collection(db, "sessions", sessionId, "combatMessages");
+    const combatQuery = query(combatRef, orderBy("timestamp", "asc"), limitToLast(20));
+
+    const unsubNarrative = onSnapshot(narrativeQuery, (snapshot) => {
+      narrativeDocsRef.current = snapshot.docs;
+      narrativeReady = true;
+      mergeAndSetMessages();
     }, (err) => {
-      console.error("[useChat] Firestore messages listener error:", err);
+      console.error("[useChat] Firestore narrative messages listener error:", err);
+      narrativeReady = true;
+      mergeAndSetMessages();
     });
 
+    const unsubCombat = onSnapshot(combatQuery, (snapshot) => {
+      combatDocsRef.current = snapshot.docs;
+      combatReady = true;
+      mergeAndSetMessages();
+    }, (err) => {
+      console.error("[useChat] Firestore combat messages listener error:", err);
+      combatReady = true;
+      mergeAndSetMessages();
+    });
+
+    const unsub = () => { unsubNarrative(); unsubCombat(); };
     unsubRef.current = unsub;
     return () => unsub();
   }, [sessionId]);

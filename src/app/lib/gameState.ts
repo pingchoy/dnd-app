@@ -619,18 +619,13 @@ export function addSupportingNPC(npc: SupportingNPC): void {
   sessionSupportingNPCs.push(npc);
 }
 
-/** Max number of persistent companions allowed. */
-export const MAX_COMPANIONS = 3;
-
 export function getSessionCompanions(): NPC[] {
   return sessionCompanions ?? [];
 }
 
-export function addCompanion(npc: NPC): boolean {
+export function addCompanion(npc: NPC): void {
   if (!sessionCompanions) sessionCompanions = [];
-  if (sessionCompanions.length >= MAX_COMPANIONS) return false;
   sessionCompanions.push(npc);
-  return true;
 }
 
 export function removeCompanion(npcId: string): NPC | undefined {

@@ -709,6 +709,8 @@ export interface StoredEncounter {
   /** Most recent NPC attack result — written after each NPC turn for real-time label display. */
   lastNpcResult?: {
     npcId: string;
+    /** Who was attacked — "player" or an NPC id. */
+    targetId: string;
     hit: boolean;
     damage: number;
     timestamp: number;
@@ -755,7 +757,7 @@ export interface StoredSession {
   importantEvents?: string[];
   /** Non-campaign NPCs that emerged during play. */
   supportingNPCs?: SupportingNPC[];
-  /** Persistent friendly NPC companions that survive between encounters. Max 3. */
+  /** Persistent friendly NPC companions that survive between encounters. */
   companions?: NPC[];
   createdAt?: number;
   updatedAt?: number;

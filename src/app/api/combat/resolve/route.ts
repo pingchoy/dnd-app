@@ -36,7 +36,7 @@ import { resolveNPCTurn, resolveFriendlyNPCTurn, pickHostileTarget } from "../..
 import { emptyCombatStats } from "../../../lib/gameTypes";
 import type { ParsedRollResult } from "../../../lib/gameTypes";
 import type { AOEResult } from "../../../lib/combatResolver";
-import { addMessage } from "../../../lib/messageStore";
+import { addCombatMessage } from "../../../lib/messageStore";
 import { narratePlayerTurn, narrateAOETurn, narrateNPCTurn } from "../../../agents/turnNarrator";
 import { generateLoot } from "../../../agents/lootAgent";
 import type { VictoryData } from "../../../lib/gameTypes";
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     roundTokens += playerNarration.inputTokens + playerNarration.outputTokens;
     roundCost += playerNarration.costUsd;
 
-    await addMessage(sessionId, {
+    await addCombatMessage(sessionId, {
       role: "assistant",
       content: playerNarration.narrative,
       timestamp: Date.now(),
@@ -178,13 +178,13 @@ export async function POST(req: NextRequest) {
         roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
         roundCost += npcNarration.costUsd;
 
-        await addMessage(sessionId, {
+        await addCombatMessage(sessionId, {
           role: "assistant",
           content: npcNarration.narrative,
-          timestamp: Date.now(),
+              timestamp: Date.now(),
         });
 
-        encounter.lastNpcResult = { npcId, hit: friendlyResult.hit, damage: friendlyResult.damage, timestamp: Date.now() };
+        encounter.lastNpcResult = { npcId, targetId: friendlyResult.targetId, hit: friendlyResult.hit, damage: friendlyResult.damage, timestamp: Date.now() };
         await Promise.all([
           saveCharacterState(characterId, {
             player: gameState.player,
@@ -230,13 +230,13 @@ export async function POST(req: NextRequest) {
           roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
           roundCost += npcNarration.costUsd;
 
-          await addMessage(sessionId, {
+          await addCombatMessage(sessionId, {
             role: "assistant",
             content: npcNarration.narrative,
-            timestamp: Date.now(),
+                  timestamp: Date.now(),
           });
 
-          encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          encounter.lastNpcResult = { npcId, targetId: "player", hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
           await Promise.all([
             saveCharacterState(characterId, {
               player: gameState.player,
@@ -289,13 +289,13 @@ export async function POST(req: NextRequest) {
           roundTokens += npcNarration.inputTokens + npcNarration.outputTokens;
           roundCost += npcNarration.costUsd;
 
-          await addMessage(sessionId, {
+          await addCombatMessage(sessionId, {
             role: "assistant",
             content: npcNarration.narrative,
-            timestamp: Date.now(),
+                  timestamp: Date.now(),
           });
 
-          encounter.lastNpcResult = { npcId, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          encounter.lastNpcResult = { npcId, targetId: friendlyTarget.id, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
           await Promise.all([
             saveCharacterState(characterId, {
               player: gameState.player,
@@ -398,10 +398,10 @@ export async function POST(req: NextRequest) {
 
       // Write aftermath narrative to messages subcollection
       if (lootResult.narrative) {
-        await addMessage(sessionId, {
+        await addCombatMessage(sessionId, {
           role: "assistant",
           content: lootResult.narrative,
-          timestamp: Date.now(),
+              timestamp: Date.now(),
         });
       }
 

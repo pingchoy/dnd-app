@@ -27,7 +27,7 @@ import {
   serializeCombatPlayerState,
   serializeActiveNPCs,
 } from "../lib/gameState";
-import { getRecentMessages } from "../lib/messageStore";
+import { getRecentCombatMessages } from "../lib/messageStore";
 import { RulesOutcome } from "./rulesAgent";
 import { handleSRDQuery } from "./agentUtils";
 import type { DMResponse } from "./dmAgent";
@@ -125,8 +125,8 @@ export async function getCombatResponse(
     userContent += `\n\n[Player roll result — d20 was ${rulesOutcome.roll}]\n${rulesOutcome.raw}`;
   }
 
-  // Minimal history: last 2 entries (1 user/assistant pair) from messages subcollection
-  const recentMessages = await getRecentMessages(
+  // Minimal history: last 2 entries (1 user/assistant pair) from combat messages subcollection
+  const recentMessages = await getRecentCombatMessages(
     sessionId,
     COMBAT_HISTORY_ENTRIES,
   );

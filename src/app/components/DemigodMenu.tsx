@@ -28,7 +28,7 @@ const ACTIONS: DebugAction[] = [
   {
     key: "add_companion",
     label: "Add Companion",
-    description: "Spawn a friendly Guard as a persistent party companion (max 3).",
+    description: "Spawn a friendly Guard as a persistent party companion.",
   },
 ];
 
