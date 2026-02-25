@@ -1130,13 +1130,14 @@ export function updateNPC(input: UpdateNPCInput): UpdateNPCResult {
         `[updateNPC] No XP awarded for "${npc.name}" — disposition=${npc.disposition}, xpValue=${npc.xpValue}`,
       );
     }
-    // Record the death in recentEvents so the DM agent has context on future turns
-    const deathLabel = npc.disposition === "hostile"
-      ? `Defeated ${npc.name}${xpAwarded > 0 ? ` (${xpAwarded} XP)` : ""}`
-      : `Lost companion ${npc.name}`;
-    state.story.recentEvents.push(deathLabel);
-    if (state.story.recentEvents.length > 10)
-      state.story.recentEvents = state.story.recentEvents.slice(-10);
+    // Individual NPC deaths are NOT recorded here — instead, a single aggregated
+    // combat summary is written to recentEvents when combat ends (see combat/resolve).
+    // Companion losses are still recorded individually since they're narratively significant.
+    if (npc.disposition !== "hostile") {
+      state.story.recentEvents.push(`Lost companion ${npc.name}`);
+      if (state.story.recentEvents.length > 10)
+        state.story.recentEvents = state.story.recentEvents.slice(-10);
+    }
   }
 
   // Explicit remove_from_scene (e.g. NPC flees, DM removes for story reasons)

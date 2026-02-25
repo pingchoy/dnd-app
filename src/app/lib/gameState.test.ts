@@ -488,13 +488,23 @@ describe("updateNPC", () => {
     expect(updated!.conditions).toEqual(["prone"]);
   });
 
-  it("records defeated NPC in recentEvents", async () => {
+  it("does not record hostile NPC death in recentEvents (aggregated at combat end)", async () => {
     const goblin = makeNPC({ currentHp: 1, xpValue: 50, disposition: "hostile" });
     await hydrateState({}, [goblin]);
 
     updateNPC({ id: goblin.id, hp_delta: -10 });
-    expect(getGameState().story.recentEvents).toContainEqual(
+    expect(getGameState().story.recentEvents).not.toContainEqual(
       expect.stringContaining("Defeated Goblin"),
+    );
+  });
+
+  it("records companion death in recentEvents", async () => {
+    const guard = makeNPC({ currentHp: 1, disposition: "friendly", name: "Guard" });
+    await hydrateState({}, [guard]);
+
+    updateNPC({ id: guard.id, hp_delta: -10 });
+    expect(getGameState().story.recentEvents).toContainEqual(
+      expect.stringContaining("Lost companion Guard"),
     );
   });
 });

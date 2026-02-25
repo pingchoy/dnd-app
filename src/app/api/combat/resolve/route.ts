@@ -405,6 +405,21 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Write a single aggregated combat summary to recentEvents.
+      // Group defeated NPCs by name (e.g. "3 Goblins, 1 Orc") instead of one entry per kill.
+      const nameCounts = new Map<string, number>();
+      for (const npc of defeated) {
+        nameCounts.set(npc.name, (nameCounts.get(npc.name) ?? 0) + 1);
+      }
+      const defeatedSummary = Array.from(nameCounts.entries())
+        .map(([name, count]) => count > 1 ? `${count} ${name}s` : name)
+        .join(", ");
+      const totalXP = encounter.totalXPAwarded ?? 0;
+      const combatSummary = `Combat ended: defeated ${defeatedSummary}${totalXP > 0 ? ` (${totalXP} XP)` : ""} in ${encounter.round} rounds`;
+      gameState.story.recentEvents.push(combatSummary);
+      if (gameState.story.recentEvents.length > 10)
+        gameState.story.recentEvents = gameState.story.recentEvents.slice(-10);
+
       // Update currentScene to reflect combat aftermath
       const defeatedNames = defeated.map(n => n.name).join(", ");
       gameState.story.currentScene = `Combat ended — defeated ${defeatedNames} at ${encounter.location}.`;
