@@ -716,6 +716,10 @@ export interface StoredEncounter {
     hit: boolean;
     damage: number;
     timestamp: number;
+    /** Grid position the NPC moved from (if movement occurred this turn). */
+    movedFrom?: GridPosition;
+    /** Grid position the NPC moved to (if movement occurred this turn). */
+    movedTo?: GridPosition;
   };
   /** Populated when combat ends — consumed by the frontend victory screen. */
   victoryData?: VictoryData;

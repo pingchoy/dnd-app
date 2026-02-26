@@ -63,6 +63,34 @@ export function useCombatGrid(
     prevEncounterIdRef.current = encounterId;
   }, [inCombat, encounter]);
 
+  // Sync NPC positions from Firestore encounter updates during combat.
+  // This picks up server-side NPC movement (from /api/combat/resolve) without
+  // overriding the player's local (optimistic) position.
+  const lastSyncedPositionsRef = useRef<string>("");
+  useEffect(() => {
+    if (!inCombat || !encounter?.positions) return;
+
+    // Serialize to detect actual changes (encounter reference changes on every snapshot)
+    const posJson = JSON.stringify(encounter.positions);
+    if (posJson === lastSyncedPositionsRef.current) return;
+    lastSyncedPositionsRef.current = posJson;
+
+    setPositions((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      for (const [id, pos] of Object.entries(encounter.positions)) {
+        // Skip "player" — player position is managed by optimistic local updates
+        if (id === "player") continue;
+        const current = next.get(id);
+        if (!current || current.row !== pos.row || current.col !== pos.col) {
+          next.set(id, pos);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [inCombat, encounter?.positions]);
+
   // Exploration mode: initialize from session's persisted positions
   useEffect(() => {
     if (inCombat || initializedExplorationRef.current) return;
