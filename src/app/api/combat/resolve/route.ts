@@ -39,6 +39,7 @@ import type { AOEResult } from "../../../lib/combatResolver";
 import { addCombatMessage } from "../../../lib/messageStore";
 import { narratePlayerTurn, narrateAOETurn, narrateNPCTurn } from "../../../agents/turnNarrator";
 import { generateLoot } from "../../../agents/lootAgent";
+import { moveNPCTowardTarget } from "../../../lib/npcMovement";
 import type { VictoryData } from "../../../lib/gameTypes";
 
 interface CombatResolveBody {
@@ -153,6 +154,16 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // Move toward the targeted hostile before attacking
+        const friendlyMove = moveNPCTowardTarget(
+          npc, friendlyResult.targetId, encounter.positions,
+          encounter.activeNPCs, encounter.gridSize,
+        );
+        if (friendlyMove.moved) {
+          friendlyResult.movedFrom = friendlyMove.from;
+          friendlyResult.movedTo = friendlyMove.to;
+        }
+
         npcResults.push({ npcId, hit: friendlyResult.hit, damage: friendlyResult.damage });
 
         // Apply damage to the hostile target
@@ -184,7 +195,13 @@ export async function POST(req: NextRequest) {
               timestamp: Date.now(),
         });
 
-        encounter.lastNpcResult = { npcId, targetId: friendlyResult.targetId, hit: friendlyResult.hit, damage: friendlyResult.damage, timestamp: Date.now() };
+        encounter.lastNpcResult = {
+          npcId, targetId: friendlyResult.targetId,
+          hit: friendlyResult.hit, damage: friendlyResult.damage,
+          timestamp: Date.now(),
+          ...(friendlyResult.movedFrom ? { movedFrom: friendlyResult.movedFrom } : {}),
+          ...(friendlyResult.movedTo ? { movedTo: friendlyResult.movedTo } : {}),
+        };
         await Promise.all([
           saveCharacterState(characterId, {
             player: gameState.player,
@@ -206,8 +223,16 @@ export async function POST(req: NextRequest) {
         const target = pickHostileTarget(encounter.activeNPCs);
 
         if (target.type === "player") {
-          // Existing behavior: attack the player
+          // Move toward the player before attacking
+          const hostileMove = moveNPCTowardTarget(
+            npc, "player", encounter.positions,
+            encounter.activeNPCs, encounter.gridSize,
+          );
           const npcResult = resolveNPCTurn(npc, player.armorClass);
+          if (hostileMove.moved) {
+            npcResult.movedFrom = hostileMove.from;
+            npcResult.movedTo = hostileMove.to;
+          }
           npcResults.push({ npcId, hit: npcResult.hit, damage: npcResult.damage });
 
           if (npcResult.hit && npcResult.damage > 0) {
@@ -236,7 +261,13 @@ export async function POST(req: NextRequest) {
                   timestamp: Date.now(),
           });
 
-          encounter.lastNpcResult = { npcId, targetId: "player", hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          encounter.lastNpcResult = {
+            npcId, targetId: "player",
+            hit: npcResult.hit, damage: npcResult.damage,
+            timestamp: Date.now(),
+            ...(npcResult.movedFrom ? { movedFrom: npcResult.movedFrom } : {}),
+            ...(npcResult.movedTo ? { movedTo: npcResult.movedTo } : {}),
+          };
           await Promise.all([
             saveCharacterState(characterId, {
               player: gameState.player,
@@ -269,7 +300,16 @@ export async function POST(req: NextRequest) {
         } else {
           // Hostile NPC targets a friendly NPC
           const friendlyTarget = target.npc;
+          // Move toward the friendly NPC target before attacking
+          const hostileMoveF = moveNPCTowardTarget(
+            npc, friendlyTarget.id, encounter.positions,
+            encounter.activeNPCs, encounter.gridSize,
+          );
           const npcResult = resolveNPCTurn(npc, friendlyTarget.ac);
+          if (hostileMoveF.moved) {
+            npcResult.movedFrom = hostileMoveF.from;
+            npcResult.movedTo = hostileMoveF.to;
+          }
           npcResults.push({ npcId, hit: npcResult.hit, damage: npcResult.damage });
 
           if (npcResult.hit && npcResult.damage > 0) {
@@ -295,7 +335,13 @@ export async function POST(req: NextRequest) {
                   timestamp: Date.now(),
           });
 
-          encounter.lastNpcResult = { npcId, targetId: friendlyTarget.id, hit: npcResult.hit, damage: npcResult.damage, timestamp: Date.now() };
+          encounter.lastNpcResult = {
+            npcId, targetId: friendlyTarget.id,
+            hit: npcResult.hit, damage: npcResult.damage,
+            timestamp: Date.now(),
+            ...(npcResult.movedFrom ? { movedFrom: npcResult.movedFrom } : {}),
+            ...(npcResult.movedTo ? { movedTo: npcResult.movedTo } : {}),
+          };
           await Promise.all([
             saveCharacterState(characterId, {
               player: gameState.player,

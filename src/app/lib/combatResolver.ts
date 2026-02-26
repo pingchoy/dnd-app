@@ -73,6 +73,10 @@ export interface NPCTurnResult {
   attackTotal: number;
   hit: boolean;
   damage: number;
+  /** Grid position the NPC moved from (if movement occurred). */
+  movedFrom?: GridPosition;
+  /** Grid position the NPC moved to (if movement occurred). */
+  movedTo?: GridPosition;
 }
 
 export interface FriendlyNPCTurnResult extends NPCTurnResult {

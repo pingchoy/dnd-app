@@ -149,6 +149,15 @@ function clampScale(s: number): number {
 const DEAD_OPACITY = 0.15;
 /** Duration of the death fade-out animation in ms. */
 const DEATH_FADE_MS = 1200;
+/** Duration of NPC movement animation in ms. */
+const MOVE_ANIM_MS = 400;
+
+/** Active token slide animation (NPC moving from one cell to another). */
+interface TokenAnimation {
+  from: GridPosition;
+  to: GridPosition;
+  startTime: number;
+}
 
 /**
  * Draw a single token on the canvas.
@@ -370,6 +379,10 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
   const tokenImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   /** Tracks when each NPC died (performance.now timestamp) for fade animation. */
   const deathTimestampsRef = useRef<Map<string, number>>(new Map());
+  /** Active token slide animations — keyed by token id. */
+  const tokenAnimationsRef = useRef<Map<string, TokenAnimation>>(new Map());
+  /** Previous positions snapshot for detecting NPC movement. */
+  const prevPositionsRef = useRef<Map<string, GridPosition>>(new Map());
   /** Background battle map image (loaded from /battle-map.png). */
   const battleMapRef = useRef<HTMLImageElement | null>(null);
 
@@ -498,6 +511,25 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     ];
     preloadTokenImages(entries, tokenImageCacheRef.current);
   }, [player.race, activeNPCs]);
+
+  /* ── Detect NPC position changes and create slide animations ── */
+  useEffect(() => {
+    const prev = prevPositionsRef.current;
+    const anims = tokenAnimationsRef.current;
+    const now = performance.now();
+
+    for (const [id, pos] of positions) {
+      // Only animate NPC tokens (not the player dragging their own token)
+      if (id === "player") continue;
+      const old = prev.get(id);
+      if (old && (old.row !== pos.row || old.col !== pos.col)) {
+        anims.set(id, { from: old, to: pos, startTime: now });
+      }
+    }
+
+    // Snapshot current positions for next comparison
+    prevPositionsRef.current = new Map(positions);
+  }, [positions]);
 
   /* ── ResizeObserver ── */
   useEffect(() => {
@@ -745,14 +777,33 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
         );
       }
 
+      // Clean up completed movement animations
+      const anims = tokenAnimationsRef.current;
+      for (const [animId, anim] of anims) {
+        if (now - anim.startTime > MOVE_ANIM_MS) anims.delete(animId);
+      }
+
       // 3b) Living NPC tokens (above corpses in z-order)
       for (const npc of s.activeNPCs) {
         if (npc.currentHp <= 0) continue;
         if (npc.id === s.dragId) continue;
         const pos = s.positions.get(npc.id);
         if (!pos) continue;
-        const cx = pos.col * s.cellStep + s.cellSize / 2;
-        const cy = pos.row * s.cellStep + s.cellSize / 2;
+
+        // Interpolate position if this NPC has an active slide animation
+        let drawCol = pos.col;
+        let drawRow = pos.row;
+        const anim = anims.get(npc.id);
+        if (anim) {
+          const t = Math.min(1, (now - anim.startTime) / MOVE_ANIM_MS);
+          // Ease-out cubic for smooth deceleration
+          const ease = 1 - Math.pow(1 - t, 3);
+          drawCol = anim.from.col + (anim.to.col - anim.from.col) * ease;
+          drawRow = anim.from.row + (anim.to.row - anim.from.row) * ease;
+        }
+
+        const cx = drawCol * s.cellStep + s.cellSize / 2;
+        const cy = drawRow * s.cellStep + s.cellSize / 2;
 
         // Targeting highlight: pulsing ring around hostile NPCs in range
         if (
