@@ -518,7 +518,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     const anims = tokenAnimationsRef.current;
     const now = performance.now();
 
-    for (const [id, pos] of positions) {
+    for (const [id, pos] of Array.from(positions.entries())) {
       // Only animate NPC tokens (not the player dragging their own token)
       if (id === "player") continue;
       const old = prev.get(id);
@@ -528,7 +528,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
     }
 
     // Snapshot current positions for next comparison
-    prevPositionsRef.current = new Map(positions);
+    prevPositionsRef.current = new Map(Array.from(positions.entries()));
   }, [positions]);
 
   /* ── ResizeObserver ── */
@@ -779,7 +779,7 @@ const CombatGrid = forwardRef<CombatGridHandle, Props>(function CombatGrid(
 
       // Clean up completed movement animations
       const anims = tokenAnimationsRef.current;
-      for (const [animId, anim] of anims) {
+      for (const [animId, anim] of Array.from(anims.entries())) {
         if (now - anim.startTime > MOVE_ANIM_MS) anims.delete(animId);
       }
 
