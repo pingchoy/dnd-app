@@ -9,7 +9,7 @@
  */
 
 import { adminDb } from "./firebaseAdmin";
-import type { NPC, GridPosition, StoredEncounter, MapRegion } from "./gameTypes";
+import type { NPC, GridPosition, StoredEncounter, MapRegion, PlacementArea } from "./gameTypes";
 
 const GRID_SIZE = 20;
 
@@ -66,19 +66,35 @@ function findRegionSlot(region: MapRegion, occupied: Set<string>): GridPosition 
 }
 
 /**
+ * Find an unoccupied cell within a placement area's cells.
+ * Returns null if the area is full.
+ */
+function findPlacementAreaSlot(area: PlacementArea, occupied: Set<string>): GridPosition | null {
+  for (const cellIndex of area.cells) {
+    const row = Math.floor(cellIndex / GRID_SIZE);
+    const col = cellIndex % GRID_SIZE;
+    const key = `${row},${col}`;
+    if (!occupied.has(key)) return { row, col };
+  }
+  return null;
+}
+
+/**
  * Compute initial grid positions for a set of NPCs.
  *
- * When a map with regions is provided, NPCs whose SRD slug matches a region's
- * `defaultNPCSlugs` list are placed inside that region's bounds. Non-matching
- * NPCs fall back to edge placement. If a region is full, also falls back.
+ * Placement priority (highest to lowest):
+ *   1. Exploration positions — seamless exploration → combat transition
+ *   2. Placement areas — map-defined spawn zones for "enemy" / "player" types
+ *   3. Region slug matching — NPCs placed in regions whose defaultNPCSlugs match
+ *   4. Disposition fallback — hostile at top edge, friendly near player
  *
- * When `explorationPositions` are provided, they seed the initial positions
- * (so exploration → combat is seamless — no token teleportation).
+ * Players use the "player" placement area if defined, otherwise center (10,10).
  */
 export function computeInitialPositions(
   npcs: NPC[],
   regions?: MapRegion[],
   explorationPositions?: Record<string, GridPosition>,
+  placementAreas?: PlacementArea[],
 ): Record<string, GridPosition> {
   const positions: Record<string, GridPosition> = {};
   const occupied = new Set<string>();
@@ -91,10 +107,24 @@ export function computeInitialPositions(
     }
   }
 
-  // Player at center if not already placed
+  // Resolve placement areas by type
+  const playerArea = placementAreas?.find(a => a.type === "player" && a.cells.length > 0);
+  const enemyArea = placementAreas?.find(a => a.type === "enemy" && a.cells.length > 0);
+
+  // Player placement: placement area → center fallback
   if (!positions["player"]) {
-    positions["player"] = { row: 10, col: 10 };
-    occupied.add("10,10");
+    if (playerArea) {
+      const slot = findPlacementAreaSlot(playerArea, occupied);
+      if (slot) {
+        positions["player"] = slot;
+        occupied.add(`${slot.row},${slot.col}`);
+      }
+    }
+    // Fallback to center if placement area is missing or full
+    if (!positions["player"]) {
+      positions["player"] = { row: 10, col: 10 };
+      occupied.add("10,10");
+    }
   }
 
   // Build slug → region lookup for region-aware placement
@@ -107,10 +137,11 @@ export function computeInitialPositions(
     }
   }
 
-  // Place NPCs — region-aware if a matching region exists, else edge placement
+  // Place NPCs — placement area → region match → disposition fallback
   for (const npc of npcs) {
     if (positions[npc.id]) continue; // already placed from exploration
 
+    // 1. Region slug match (most specific — NPC placed in its designated region)
     const matchingRegion = npc.slug ? slugToRegion.get(npc.slug) : undefined;
     if (matchingRegion) {
       const regionPos = findRegionSlot(matchingRegion, occupied);
@@ -121,7 +152,18 @@ export function computeInitialPositions(
       }
     }
 
-    // Disposition-based fallback: friendly near player (bottom), hostile at top (edge)
+    // 2. Placement area (enemy area for hostile NPCs, player area for friendly)
+    const area = npc.disposition === "friendly" ? playerArea : enemyArea;
+    if (area) {
+      const areaPos = findPlacementAreaSlot(area, occupied);
+      if (areaPos) {
+        positions[npc.id] = areaPos;
+        occupied.add(`${areaPos.row},${areaPos.col}`);
+        continue;
+      }
+    }
+
+    // 3. Disposition-based fallback: friendly near player (bottom), hostile at top (edge)
     const pos = npc.disposition === "friendly"
       ? findBottomSlot(occupied)
       : findEdgeSlot(occupied);
@@ -141,6 +183,8 @@ interface CreateEncounterOptions {
   regions?: MapRegion[];
   /** Exploration positions to seed initial combat positions (seamless transition). */
   explorationPositions?: Record<string, GridPosition>;
+  /** Placement areas defining spawn zones for enemies and players. */
+  placementAreas?: PlacementArea[];
 }
 
 /**
@@ -164,6 +208,7 @@ export async function createEncounter(
     npcs,
     options?.regions,
     options?.explorationPositions,
+    options?.placementAreas,
   );
   const now = Date.now();
 

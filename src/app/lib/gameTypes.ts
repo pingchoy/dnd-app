@@ -22,6 +22,18 @@ export type RegionType =
   | "safe" // players can long rest here
   | "custom"; // freeform — use dmNote for description
 
+/** Type of token that can be placed in a placement area. */
+export type PlacementAreaType = "enemy" | "player";
+
+/**
+ * A designated zone on a combat map where tokens can spawn.
+ * Painted in the map editor, consumed by computeInitialPositions.
+ */
+export interface PlacementArea {
+  type: PlacementAreaType; // "enemy" or "player"
+  cells: number[]; // flat cell indices (row * 20 + col) — arbitrary shape
+}
+
 /** Semantic region painted on a map — tells the DM what's at each location. */
 export interface MapRegion {
   id: string; // "region_tavern_main"
@@ -100,6 +112,7 @@ export interface CombatMapDocument extends BaseMapDocument {
   gridSize: number; // always 20
   feetPerSquare: number; // 5 for detailed, 50-100 for zone
   regions: MapRegion[];
+  placementAreas?: PlacementArea[]; // designated spawn zones for enemies and players
   tileData?: number[]; // flat array [gridSize*gridSize]: 0=floor, 1=wall, 2=door
   parentMapId?: string; // Firestore ID of the parent ExplorationMapDocument
   poiId?: string; // PointOfInterest.id this combat map is linked from
@@ -501,6 +514,7 @@ export interface CampaignMap {
   feetPerSquare?: number;
   tileData?: number[]; // 400-element flat array (combat maps only)
   regions?: MapRegion[]; // combat maps only
+  placementAreas?: PlacementArea[]; // combat maps only — spawn zones for enemies/players
   // Exploration map fields
   pointsOfInterest?: PointOfInterest[]; // exploration maps only
   backgroundImageUrl?: string;

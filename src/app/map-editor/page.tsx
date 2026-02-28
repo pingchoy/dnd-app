@@ -12,7 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import MapEditor from "../components/MapEditor";
 import ExplorationMapEditor from "../components/ExplorationMapEditor";
 import { normalizeRegions } from "../lib/gameTypes";
-import type { CampaignMap, CampaignPOISpec, MapRegion } from "../lib/gameTypes";
+import type { CampaignMap, CampaignPOISpec, MapRegion, PlacementArea } from "../lib/gameTypes";
 
 const GRID_SIZE = 20;
 
@@ -39,6 +39,7 @@ function MapEditorContent() {
     new Array(GRID_SIZE * GRID_SIZE).fill(0),
   );
   const [regions, setRegions] = useState<MapRegion[]>([]);
+  const [placementAreas, setPlacementAreas] = useState<PlacementArea[]>([]);
   const [pointsOfInterest, setPointsOfInterest] = useState<CampaignPOISpec[]>(
     [],
   );
@@ -208,6 +209,7 @@ function MapEditorContent() {
     } else {
       setTileData(map.tileData ?? new Array(GRID_SIZE * GRID_SIZE).fill(0));
       setRegions(normalizeRegions(map.regions ?? []));
+      setPlacementAreas(map.placementAreas ?? []);
       setPointsOfInterest([]);
     }
   }, [campaignMaps, selectedMapSpecId]);
@@ -221,6 +223,7 @@ function MapEditorContent() {
     setFeetPerSquare(5);
     setTileData(new Array(GRID_SIZE * GRID_SIZE).fill(0));
     setRegions([]);
+    setPlacementAreas([]);
     setPointsOfInterest([]);
     setBackgroundImageUrl(undefined);
     setAnalysisConfidence(null);
@@ -252,6 +255,7 @@ function MapEditorContent() {
                 feetPerSquare,
                 tileData,
                 regions,
+                placementAreas,
                 backgroundImageUrl,
               };
         response = await fetch("/api/maps", {
@@ -287,6 +291,7 @@ function MapEditorContent() {
                 feetPerSquare,
                 tileData,
                 regions,
+                placementAreas,
                 backgroundImageUrl,
               };
         response = await fetch("/api/maps", {
@@ -557,9 +562,11 @@ function MapEditorContent() {
           <MapEditor
             tileData={tileData}
             regions={regions}
+            placementAreas={placementAreas}
             backgroundImageUrl={backgroundImageUrl}
             onTileDataChange={setTileData}
             onRegionsChange={setRegions}
+            onPlacementAreasChange={setPlacementAreas}
           />
         )}
 

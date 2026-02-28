@@ -26,6 +26,7 @@ import type {
   CombatMapDocument,
   ExplorationMapDocument,
   MapRegion,
+  PlacementArea,
   PointOfInterest,
 } from "../../lib/gameTypes";
 
@@ -70,6 +71,7 @@ interface CreateMapBody {
   backgroundImageUrl?: string;
   tileData?: number[];
   regions?: MapRegion[];
+  placementAreas?: PlacementArea[];
   // Exploration map fields
   pointsOfInterest?: PointOfInterest[];
 }
@@ -163,6 +165,7 @@ export async function POST(req: NextRequest) {
       backgroundImageUrl,
       tileData,
       regions,
+      placementAreas,
       pointsOfInterest,
     } = body as CreateMapBody;
     if (!sessionId || !name) {
@@ -201,6 +204,7 @@ export async function POST(req: NextRequest) {
       gridSize: 20,
       feetPerSquare: feetPerSquare || 5,
       regions: regions || [],
+      ...(placementAreas?.length ? { placementAreas } : {}),
       ...(resolvedImageUrl ? { backgroundImageUrl: resolvedImageUrl } : {}),
       ...(tileData ? { tileData } : {}),
     } satisfies Omit<CombatMapDocument, "id" | "createdAt" | "updatedAt">);

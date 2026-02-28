@@ -324,9 +324,11 @@ async function processChatAction(
       needsEncounter && activeMapId
         ? await loadMap(sessionId, activeMapId)
         : null;
-    // Extract combat regions (only combat maps have regions)
+    // Extract combat regions and placement areas (only combat maps have these)
     const combatRegions =
       activeMap?.mapType === "combat" ? activeMap.regions : undefined;
+    const combatPlacementAreas =
+      activeMap?.mapType === "combat" ? activeMap.placementAreas : undefined;
 
     if (needsEncounter) {
       console.log("[Encounter] Creating new encounter for hostile NPCs...");
@@ -341,6 +343,7 @@ async function processChatAction(
         {
           mapId: activeMapId,
           regions: combatRegions,
+          placementAreas: combatPlacementAreas,
           explorationPositions: getExplorationPositions(),
         },
       );

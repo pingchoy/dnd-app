@@ -252,6 +252,7 @@ export async function instantiateCampaignMaps(
         feetPerSquare: template.feetPerSquare ?? 5,
         tileData: template.tileData,
         regions: template.regions ?? [],
+        ...(template.placementAreas ? { placementAreas: template.placementAreas } : {}),
         parentMapId,
         poiId,
         ...(template.backgroundImageUrl ? { backgroundImageUrl: template.backgroundImageUrl } : {}),
@@ -347,6 +348,7 @@ export async function instantiateCampaignMaps(
         feetPerSquare: template.feetPerSquare ?? 5,
         tileData: template.tileData,
         regions: template.regions ?? [],
+        ...(template.placementAreas ? { placementAreas: template.placementAreas } : {}),
       };
     }
 
